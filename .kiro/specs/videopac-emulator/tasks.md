@@ -156,7 +156,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
 
 
 - [ ] 4. Implement memory system
-  - [ ] 4.1 Create memory system state structure (memory.h)
+  - [x] 4.1 Create memory system state structure (memory.h)
     - Define MemoryState struct with BIOS ROM array (1KB)
     - Define cartridge ROM array (up to 8KB)
     - Define external RAM array (128 bytes)
@@ -164,7 +164,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Define ROM size and bank count
     - _Requirements: 2.1, 2.2, 2.4_
 
-  - [ ] 4.2 Implement memory system class (memory.cpp)
+  - [x] 4.2 Implement memory system class (memory.cpp)
     - Implement load_bios() to load BIOS ROM from file
     - Implement load_cartridge() to load ROM and detect size
     - Implement read_program() for ROM access
@@ -174,26 +174,26 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Implement get_state() and set_state() for save states
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.8, 11.1, 11.2_
 
-  - [ ] 4.3 Implement bank switching logic
+  - [x] 4.3 Implement bank switching logic
     - Monitor Port 1 pins P10 and P11 for bank selection
     - Switch active ROM bank based on pin states
     - Support 2-bank (4KB) and 4-bank (8KB) cartridges
     - _Requirements: 2.3, 11.3, 11.4, 11.5_
 
-  - [ ] 4.4 Implement memory access control
+  - [x] 4.4 Implement memory access control
     - Check Port 1 pin P13 for VDC enable
     - Check Port 1 pin P14 for external RAM enable
     - Check Port 1 pin P16 for copy mode
     - Route memory access to correct component
     - _Requirements: 2.5, 2.6, 2.7_
 
-  - [ ] 4.5 Implement ROM validation
+  - [x] 4.5 Implement ROM validation
     - Check file size is valid (2KB, 4KB, or 8KB)
     - Verify file can be read successfully
     - Return error for invalid or corrupted files
     - _Requirements: 11.6, 11.7_
 
-  - [ ]* 4.6 Write unit tests for memory system
+  - [x]* 4.6 Write unit tests for memory system
     - Test BIOS and ROM loading
     - Test bank switching with different ROM sizes
     - Test memory access control via Port 1
