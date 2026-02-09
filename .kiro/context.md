@@ -8,8 +8,9 @@ When making commits, always follow this process:
 
 1. **Test First**: Run the test suite to ensure all tests pass
    ```bash
-   cd build && ./videopac_tests
+   ./build/videopac_tests
    ```
+   **CRITICAL**: All tests MUST pass before committing. Never commit with failing tests.
 
 2. **Stage Relevant Files**: Add only the files related to the current change
    ```bash
@@ -96,7 +97,7 @@ Updated files
 ## Code Review Checklist
 
 Before committing, verify:
-- [ ] All tests pass
+- [ ] **All tests pass** (MANDATORY - never commit with failing tests)
 - [ ] No compiler warnings
 - [ ] Code follows C++17 standards
 - [ ] No unused variables or parameters (use `(void)var` for intentional unused)

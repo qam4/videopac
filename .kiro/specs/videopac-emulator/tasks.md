@@ -115,7 +115,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Trigger timer interrupt on overflow
     - _Requirements: 8.6, 8.7, 9.3, 9.4_
 
-  - [ ]* 3.12 Write unit tests for CPU instructions
+  - [x]* 3.12 Write unit tests for CPU instructions
     - Test specific instruction examples (ADD, MOV, JMP, CALL, etc.)
     - Test edge cases (stack overflow, timer overflow)
     - Test flag updates for arithmetic operations

@@ -23,6 +23,9 @@ struct CPUState {
     bool timer_running;         // Timer enabled flag
     bool interrupts_enabled;    // Interrupts enabled
     bool timer_interrupts_enabled;  // Timer interrupts enabled
+    uint8 timer_prescaler;      // Timer prescaler counter (0-31)
+                                // Reference: doc/mcs-48-assembly-language-manual.md, "Timer Flag" section
+                                // The timer increments every 32 instruction cycles via this prescaler
     uint64 clock_cycles;        // Total cycles executed
     uint8 current_bank;         // Current register bank (0 or 1)
 };

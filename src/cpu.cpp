@@ -272,8 +272,9 @@ uint8 CPU::execute_instruction() {
         case 0x94: case 0xB4: case 0xD4: case 0xF4: {
             uint8 addr_low = fetch_byte();
             uint16 addr = ((opcode & 0xE0) << 3) | addr_low;
-            push_stack(state_.pc);
+            // Push PSW bits 4-7 first, then PC
             push_stack(state_.psw & 0xF0);
+            push_stack(state_.pc);
             state_.pc = addr;
             cycles = 2;
             break;
@@ -439,6 +440,40 @@ uint8 CPU::execute_instruction() {
         // Enables timer/counter overflow to generate interrupts.
         case 0x25:
             state_.timer_interrupts_enabled = true;
+            break;
+            
+        // STRT T - Start timer (0x55)
+        // Operation: Start timer, clear prescaler
+        // Flags affected: None
+        // Cycles: 1
+        // Initiates timer accumulation. Timer is incremented every 32 instruction cycles.
+        // The prescaler is cleared but the timer register is not.
+        // Reference: doc/mcs-48-assembly-language-manual.md, "Start Timer" section
+        case 0x55:
+            state_.timer_running = true;
+            state_.timer_prescaler = 0;  // Clear prescaler
+            break;
+            
+        // STRT CNT - Start event counter (0x45)
+        // Operation: Enable T1 pin as event counter input and start
+        // Flags affected: None
+        // Cycles: 1
+        // Enables the T1 pin as event counter input. Counter increments on high-to-low transitions.
+        // For this emulator, we treat it the same as STRT T since we don't emulate external pins.
+        // Reference: doc/mcs-48-assembly-language-manual.md, "Start Event Counter" section
+        case 0x45:
+            state_.timer_running = true;
+            state_.timer_prescaler = 0;  // Clear prescaler
+            break;
+            
+        // STOP TCNT - Stop timer/event counter (0x65)
+        // Operation: Stop timer or disable event counter
+        // Flags affected: None
+        // Cycles: 1
+        // Stops both time accumulation and event counting.
+        // Reference: doc/mcs-48-assembly-language-manual.md, "Stop Timer/Event Counter" section
+        case 0x65:
+            state_.timer_running = false;
             break;
             
         // ========== INPUT/OUTPUT INSTRUCTIONS ==========
@@ -1081,6 +1116,30 @@ uint8 CPU::execute_instruction() {
     }
     
     state_.clock_cycles += cycles;
+    
+    // Timer/counter logic: increment timer every 32 cycles when running
+    // The Intel 8048 timer increments every 32 instruction cycles via a prescaler.
+    // Reference: doc/mcs-48-assembly-language-manual.md, "Timer Flag" section
+    // Quote: "incremented by a prescaler having a periodic duration equivalent to 32 instruction cycles"
+    if (state_.timer_running) {
+        state_.timer_prescaler += cycles;
+        if (state_.timer_prescaler >= 32) {
+            state_.timer_prescaler -= 32;
+            uint8 old_timer = state_.timer;
+            state_.timer++;
+            
+            // Check for timer overflow (0xFF -> 0x00)
+            // Reference: doc/mcs-48-assembly-language-manual.md, "Timer Flag" section
+            // Quote: "the 8-bit timer register will overflow every 8192 cycles (256 x 32)"
+            if (old_timer == 0xFF && state_.timer == 0x00) {
+                // Timer overflowed - trigger interrupt if enabled
+                if (state_.timer_interrupts_enabled && state_.interrupts_enabled) {
+                    trigger_interrupt(0x007);  // Timer interrupt vector
+                }
+            }
+        }
+    }
+    
     return cycles;
 }
 
