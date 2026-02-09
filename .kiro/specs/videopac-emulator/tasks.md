@@ -155,7 +155,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - **Validates: Requirements 9.7, 9.8**
 
 
-- [ ] 4. Implement memory system
+- [x] 4. Implement memory system
   - [x] 4.1 Create memory system state structure (memory.h)
     - Define MemoryState struct with BIOS ROM array (1KB)
     - Define cartridge ROM array (up to 8KB)
@@ -221,7 +221,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - **Validates: Requirements 11.6**
 
 
-- [ ] 5. Checkpoint - Core components functional
+- [x] 5. Checkpoint - Core components functional
   - Ensure all tests pass for CPU and memory system
   - Verify CPU can execute basic instruction sequences
   - Verify memory system correctly loads ROMs and handles banking
