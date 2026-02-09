@@ -298,8 +298,72 @@ void VDC::render_characters(int y) {
 // Rendering helper: Render sprites for scanline
 // Reference: doc/o2doc.md section 4.3, doc/8245.md lines 150-200
 void VDC::render_sprites(int y) {
-    // Sprite rendering will be implemented in task 6.4
-    (void)y;
+    // Check if display is enabled
+    if (!state_.display_enabled) {
+        return;
+    }
+    
+    // Render all 4 sprites (in reverse order for proper priority)
+    // Sprite 0 has highest priority, so render it last
+    for (int sprite_num = 3; sprite_num >= 0; sprite_num--) {
+        // Get sprite control registers
+        uint8 base_addr = VDCRegisters::SPRITE0_Y + (sprite_num * 4);
+        uint8 sprite_y = state_.registers[base_addr + 0];
+        uint8 sprite_x = state_.registers[base_addr + 1];
+        uint8 sprite_color_attr = state_.registers[base_addr + 2];
+        
+        // Extract sprite attributes from color register
+        // Reference: doc/o2doc.md section 4.3.1
+        uint8 color = (sprite_color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT;
+        bool double_size = (sprite_color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
+        bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
+        bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
+        
+        // Calculate sprite height and check if current scanline intersects sprite
+        int sprite_height = double_size ? 16 : 8;
+        if (y < sprite_y || y >= sprite_y + sprite_height) {
+            continue;  // Scanline doesn't intersect this sprite
+        }
+        
+        // Calculate which row of the sprite pattern to render
+        int sprite_row = y - sprite_y;
+        if (double_size) {
+            sprite_row /= 2;  // Each pattern row is rendered twice in double-size mode
+        }
+        
+        // Get sprite pattern byte for this row
+        uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (sprite_num * 8) + sprite_row;
+        uint8 pattern = state_.registers[pattern_addr];
+        
+        // Render sprite pixels for this scanline
+        int sprite_width = double_size ? 16 : 8;
+        for (int x = 0; x < sprite_width; x++) {
+            // Calculate pixel position on screen
+            int screen_x = sprite_x + x;
+            
+            // Apply horizontal shift if enabled
+            bool is_even_row = (sprite_row & 1) == 0;
+            if (shift_full) {
+                screen_x += 1;
+            } else if (shift_even && is_even_row) {
+                screen_x += 1;
+            }
+            
+            // Check if pixel is within framebuffer bounds
+            if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
+                continue;
+            }
+            
+            // Get bit from pattern (bit 7 = leftmost pixel)
+            int pattern_x = double_size ? (x / 2) : x;
+            bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;
+            
+            // Draw pixel if it's on (sprites are transparent where pattern bit is 0)
+            if (pixel_on) {
+                state_.framebuffer[y][screen_x] = color;
+            }
+        }
+    }
 }
 
 // Collision detection helper

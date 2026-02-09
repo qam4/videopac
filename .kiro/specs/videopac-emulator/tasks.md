@@ -249,7 +249,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Implement get_state() and set_state() for save states
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.10, 3.11, 6.1, 6.2_
 
-  - [ ] 6.3 Implement timing and synchronization
+  - [x] 6.3 Implement timing and synchronization
     - Calculate cycles per scanline for PAL and NTSC
     - Track current scanline (0-311 PAL, 0-261 NTSC)
     - Track beam position within scanline
@@ -259,7 +259,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Update beam position registers (0xA4, 0xA5)
     - _Requirements: 3.2, 3.3, 3.4, 3.5, 3.10, 3.11, 8.2, 8.3_
 
-  - [ ] 6.4 Implement sprite rendering
+  - [x] 6.4 Implement sprite rendering
     - Parse sprite control registers for position, color, pattern
     - Render 4 sprites (8x8 pixels each)
     - Support double-size sprites (16x16 pixels)
