@@ -633,7 +633,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Display system state when paused
     - _Requirements: 15.5, 15.6, 15.7_
 
-  - [ ] 12.4 Create debugger UI or command interface
+  - [x] 12.4 Create debugger UI or command interface
     - Implement text-based debugger commands
     - Display CPU registers, memory, and VDC state
     - Show disassembly around current PC

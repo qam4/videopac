@@ -36,6 +36,7 @@ set(CORE_SOURCES
     src/disassembler.cpp
     src/savestate.cpp
     src/debugger.cpp
+    src/debugger_ui.cpp
 )
 
 # Core emulator library
