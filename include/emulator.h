@@ -1,0 +1,82 @@
+#ifndef VIDEOPAC_EMULATOR_H
+#define VIDEOPAC_EMULATOR_H
+
+#include "types.h"
+#include "cpu.h"
+#include "vdc.h"
+#include "memory.h"
+#include "input.h"
+#include <memory>
+
+namespace videopac {
+
+// Configuration
+struct Configuration {
+    VideoStandard video_standard;
+    std::string bios_path;
+    
+    Configuration() : video_standard(VideoStandard::NTSC) {}
+};
+
+// Emulator core
+class EmulatorCore {
+public:
+    explicit EmulatorCore(const Configuration& config);
+    ~EmulatorCore() = default;
+    
+    // ROM loading
+    Result<void> load_bios(const std::string& path);
+    Result<void> load_rom(const std::string& path);
+    
+    // Emulation control
+    void reset();
+    void run_frame();
+    void step();  // Single instruction for debugging
+    
+    // Output
+    const uint8* get_framebuffer() const;
+    void get_audio_buffer(int16* buffer, size_t samples);
+    
+    // Input
+    void set_input(const InputState& input);
+    InputHandler& get_input_handler() { return input_; }
+    
+    // State management
+    Result<void> save_state(const std::string& path);
+    Result<void> load_state(const std::string& path);
+    
+    // Status
+    bool is_running() const { return running_; }
+    bool is_paused() const { return paused_; }
+    void set_paused(bool paused) { paused_ = paused; }
+    uint64 get_frame_count() const { return frame_count_; }
+    
+    // Component access (for debugging)
+    CPU& get_cpu() { return cpu_; }
+    VDC& get_vdc() { return vdc_; }
+    MemorySystem& get_memory() { return memory_; }
+
+private:
+    Configuration config_;
+    
+    // Components
+    CPU cpu_;
+    VDC vdc_;
+    MemorySystem memory_;
+    InputHandler input_;
+    
+    // State
+    bool running_;
+    bool paused_;
+    uint64 frame_count_;
+    uint32 cycles_per_frame_;
+    uint32 cycles_per_scanline_;
+    
+    // Helpers
+    void calculate_timing();
+    void handle_interrupts();
+};
+
+} // namespace videopac
+
+#endif // VIDEOPAC_EMULATOR_H
