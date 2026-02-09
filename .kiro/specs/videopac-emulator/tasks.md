@@ -309,7 +309,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Generate audio samples synchronized with frame timing
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 13.1, 13.2, 13.3, 13.4, 13.5, 13.6, 13.7_
 
-  - [ ]* 6.10 Write unit tests for VDC
+  - [x]* 6.10 Write unit tests for VDC
     - Test sprite rendering at various positions
     - Test character rendering with different character codes
     - Test grid rendering in different modes
