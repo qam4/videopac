@@ -299,7 +299,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Set status register bit 7 for character-to-character collisions
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
 
-  - [ ] 6.9 Implement audio generation
+  - [x] 6.9 Implement audio generation
     - Load 24-bit pattern from registers 0xA7-0xA9
     - Implement shift register with configurable frequency (983Hz or 3933Hz)
     - Implement noise mode with XOR feedback

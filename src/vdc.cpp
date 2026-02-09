@@ -50,6 +50,11 @@ void VDC::reset() {
 void VDC::tick(uint8 cycles) {
     state_.cycle_counter += cycles;
     
+    // Update audio for each cycle
+    for (uint8 i = 0; i < cycles; i++) {
+        update_audio();
+    }
+    
     // Check if we've completed a scanline
     if (state_.cycle_counter >= cycles_per_scanline_) {
         state_.cycle_counter -= cycles_per_scanline_;
@@ -247,13 +252,13 @@ int16 VDC::get_audio_sample() {
     if (!state_.audio_enabled) {
         return 0;
     }
-    
-    // Get current bit from shift register
-    uint8 bit = (state_.audio_shift_register >> state_.audio_shift_counter) & 1;
-    
-    // Scale by volume (0-15 maps to 0-32767)
+
+    // Get current bit from shift register (bit 0 is output)
+    uint8 bit = state_.audio_shift_register & 1;
+
+    // Scale by volume (0-15 maps to -32767 to +32767)
     int16 sample = bit ? (state_.audio_volume * 2184) : -(state_.audio_volume * 2184);
-    
+
     return sample;
 }
 
@@ -648,13 +653,69 @@ void VDC::detect_collisions(int y) {
 // Audio update helper
 // Reference: doc/o2doc.md section 4.10, doc/8245.md lines 380-420
 void VDC::update_audio() {
-    // Audio update will be implemented in task 6.9
+    if (!state_.audio_enabled) {
+        return;
+    }
+
+    // Calculate how many cycles have passed
+    // Audio shift frequency determines how often we shift
+    // 983Hz = shift every 1017us, 3933Hz = shift every 254us
+    // At 1.79MHz / 5 = 358kHz instruction cycle
+    // 983Hz: ~364 cycles per shift, 3933Hz: ~91 cycles per shift
+
+    uint32 cycles_per_shift = (state_.audio_frequency == AUDIO_FREQ_LOW) ? 364 : 91;
+
+    state_.audio_cycle_accumulator += 1;  // Called once per VDC cycle
+
+    while (state_.audio_cycle_accumulator >= cycles_per_shift) {
+        state_.audio_cycle_accumulator -= cycles_per_shift;
+        shift_audio_register();
+    }
 }
 
 // Audio shift register helper
 // Reference: doc/o2doc.md section 4.10, doc/8245.md lines 380-420
 void VDC::shift_audio_register() {
-    // Audio shift will be implemented in task 6.9
+    if (!state_.audio_enabled) {
+        return;
+    }
+
+    // Get the output bit (bit 0)
+    uint8 output_bit = state_.audio_shift_register & 1;
+
+    // Shift right by 1
+    state_.audio_shift_register >>= 1;
+
+    // Handle noise mode with XOR feedback
+    if (state_.audio_noise) {
+        // Noise generation using Linear Feedback Shift Register (LFSR)
+        // Creates pseudo-random bit sequence by XORing tap positions
+        // XOR feedback: new_bit_23 = old_bit_0 XOR old_bit_1
+        // This creates a pseudo-random sequence that sounds like white noise
+        // Note: Actual Intel 8245 tap positions are undocumented; this is a
+        // reasonable approximation using a 2-tap LFSR configuration
+        uint8 feedback_bit = output_bit ^ ((state_.audio_shift_register >> 1) & 1);
+        state_.audio_shift_register |= (feedback_bit << 23);
+    } else if (state_.audio_loop) {
+        // Loop mode: recirculate bit 0 to bit 23
+        // Pattern repeats continuously for sustained tones
+        state_.audio_shift_register |= (output_bit << 23);
+    }
+
+    // Increment shift counter
+    state_.audio_shift_counter++;
+
+    // Check if we've shifted all 24 bits
+    if (state_.audio_shift_counter >= 24) {
+        state_.audio_shift_counter = 0;
+
+        // If not in loop mode and not noise mode, disable audio
+        if (!state_.audio_loop && !state_.audio_noise) {
+            state_.audio_enabled = false;
+            // Set sound needs service bit in status register
+            state_.registers[VDCRegisters::STATUS] |= StatusBits::SOUND_NEEDS_SERVICE;
+        }
+    }
 }
 
 // Character ROM data (64 characters, 8 bytes each = 512 bytes total)
