@@ -57,6 +57,11 @@ public:
     CPU& get_cpu() { return cpu_; }
     VDC& get_vdc() { return vdc_; }
     MemorySystem& get_memory() { return memory_; }
+    
+    // State access (for debugger inspection)
+    CPUState get_cpu_state() const { return cpu_.get_state(); }
+    VDCState get_vdc_state() const { return vdc_.get_state(); }
+    MemoryState get_memory_state() const { return memory_.get_state(); }
 
 private:
     Configuration config_;
