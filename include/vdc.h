@@ -221,6 +221,11 @@ private:
     uint32 total_scanlines_;
     uint32 vblank_start_;
     
+    // Character ROM (64 characters, 8 bytes each for 8x7 patterns)
+    // Reference: doc/o2doc.md Appendix C, doc/8245.md lines 700-750
+    // TODO: Replace with actual character ROM patterns from BIOS or reference
+    static const uint8 character_rom_[64 * 8];
+    
     // Rendering helpers
     void render_background(int y);
     void render_grid(int y);

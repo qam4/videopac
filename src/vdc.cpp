@@ -291,8 +291,121 @@ void VDC::render_grid(int y) {
 // Rendering helper: Render characters for scanline
 // Reference: doc/o2doc.md section 4.4-4.5, doc/8245.md lines 200-250
 void VDC::render_characters(int y) {
-    // Character rendering will be implemented in task 6.5
-    (void)y;
+    // Check if display is enabled
+    if (!state_.display_enabled) {
+        return;
+    }
+    
+    // Render single characters (12 characters, 4 bytes each, starting at 0x10)
+    // Reference: doc/o2doc.md section 4.4
+    for (int char_num = 0; char_num < 12; char_num++) {
+        uint8 base_addr = VDCRegisters::CHAR_BASE + (char_num * 4);
+        uint8 char_y = state_.registers[base_addr + 0];
+        uint8 char_x = state_.registers[base_addr + 1];
+        uint8 char_ptr_low = state_.registers[base_addr + 2];
+        uint8 char_attr = state_.registers[base_addr + 3];
+        
+        // Extract character attributes
+        uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);  // 9-bit character pointer
+        uint8 color = (char_attr >> 1) & 0x07;  // Bits 1-3: color
+        
+        // Characters are 8x7 (8 pixels wide, 7 lines tall, but stored as 8 bytes)
+        // Check if current scanline intersects this character
+        if (y < char_y || y >= char_y + 14) {  // 14 lines (7 rows * 2 scan lines each)
+            continue;
+        }
+        
+        // Calculate which row of the character to render
+        int char_row = (y - char_y) / 2;  // Each character row spans 2 scanlines
+        
+        // Get character pattern from ROM
+        // Character pointer is an offset into the character ROM
+        uint16 rom_addr = (char_ptr + char_row) & 0x1FF;  // 9-bit address, wrap at 512
+        uint8 char_index = rom_addr / 8;  // Which character (0-63)
+        uint8 row_index = rom_addr % 8;   // Which row within character
+        
+        if (char_index >= 64) {
+            continue;  // Invalid character index
+        }
+        
+        uint8 pattern = character_rom_[char_index * 8 + row_index];
+        
+        // Render character pixels (8 pixels wide, but only 7 are used)
+        for (int x = 0; x < 8; x++) {
+            int screen_x = char_x + x;
+            
+            // Check if pixel is within framebuffer bounds
+            if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
+                continue;
+            }
+            
+            // Get bit from pattern (bit 7 = leftmost pixel)
+            bool pixel_on = (pattern & (0x80 >> x)) != 0;
+            
+            // Draw pixel if it's on
+            if (pixel_on) {
+                state_.framebuffer[y][screen_x] = color;
+            }
+        }
+    }
+    
+    // Render quad characters (4 groups, 16 bytes each, starting at 0x40)
+    // Reference: doc/o2doc.md section 4.5
+    for (int quad_num = 0; quad_num < 4; quad_num++) {
+        uint8 base_addr = VDCRegisters::QUAD_BASE + (quad_num * 16);
+        
+        // Each quad has 4 characters, last character's position determines the group position
+        uint8 quad_x = state_.registers[base_addr + 13];  // X of 4th character
+        
+        // Render all 4 characters in the quad
+        for (int sub_char = 0; sub_char < 4; sub_char++) {
+            uint8 char_offset = sub_char * 4;
+            uint8 char_y = state_.registers[base_addr + char_offset + 0];
+            uint8 char_ptr_low = state_.registers[base_addr + char_offset + 2];
+            uint8 char_attr = state_.registers[base_addr + char_offset + 3];
+            
+            // Calculate actual position (relative to quad position)
+            int char_x = quad_x + (sub_char * 8);  // Characters are spaced 8 pixels apart
+            
+            // Extract character attributes
+            uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);
+            uint8 color = (char_attr >> 1) & 0x07;
+            
+            // Check if current scanline intersects this character
+            if (y < char_y || y >= char_y + 14) {
+                continue;
+            }
+            
+            // Calculate which row to render
+            int char_row = (y - char_y) / 2;
+            
+            // Get character pattern from ROM
+            uint16 rom_addr = (char_ptr + char_row) & 0x1FF;
+            uint8 char_index = rom_addr / 8;
+            uint8 row_index = rom_addr % 8;
+            
+            if (char_index >= 64) {
+                continue;
+            }
+            
+            uint8 pattern = character_rom_[char_index * 8 + row_index];
+            
+            // Render character pixels
+            for (int x = 0; x < 8; x++) {
+                int screen_x = char_x + x;
+                
+                if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
+                    continue;
+                }
+                
+                bool pixel_on = (pattern & (0x80 >> x)) != 0;
+                
+                if (pixel_on) {
+                    state_.framebuffer[y][screen_x] = color;
+                }
+            }
+        }
+    }
 }
 
 // Rendering helper: Render sprites for scanline
@@ -384,5 +497,11 @@ void VDC::update_audio() {
 void VDC::shift_audio_register() {
     // Audio shift will be implemented in task 6.9
 }
+
+// Character ROM data (64 characters, 8 bytes each = 512 bytes total)
+// Reference: doc/o2doc.md Appendix C
+// TODO: Replace with actual character ROM patterns extracted from BIOS
+// This is a placeholder with all zeros - actual patterns will be loaded from BIOS
+const uint8 VDC::character_rom_[64 * 8] = {0};
 
 } // namespace videopac

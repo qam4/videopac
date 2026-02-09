@@ -267,7 +267,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Handle sprite enable/disable via control register bit 5
     - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-  - [ ] 6.5 Implement character rendering
+  - [x] 6.5 Implement character rendering
     - Load built-in 64-character set patterns
     - Parse character control registers for position, color, character code
     - Render up to 12 single characters
