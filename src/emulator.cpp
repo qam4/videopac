@@ -31,8 +31,10 @@ void EmulatorCore::reset() {
     input_.reset();
     frame_count_ = 0;
     
-    // Jump to cartridge entry point
-    // TODO: Set PC to 0x400 after BIOS initialization
+    // According to doc/o2doc.md section 6.1:
+    // The BIOS jumps to address 0x400 when the system is powered up or reset
+    // The CPU reset() already sets PC to 0x000 (BIOS start)
+    // The BIOS will then jump to 0x400 (cartridge entry point)
 }
 
 void EmulatorCore::run_frame() {
@@ -40,9 +42,31 @@ void EmulatorCore::run_frame() {
         return;
     }
     
-    // TODO: Implement frame execution loop
-    // This will be implemented in task 8
-    // For now, just increment frame counter
+    // Execute one complete frame
+    // Frame consists of multiple scanlines, each with CPU execution and VDC rendering
+    uint32 scanlines = (config_.video_standard == VideoStandard::NTSC) ? 
+                       NTSC_SCANLINES : PAL_SCANLINES;
+    
+    for (uint32 scanline = 0; scanline < scanlines; ++scanline) {
+        // Execute CPU for this scanline's worth of cycles
+        uint32 cycles_executed = 0;
+        while (cycles_executed < cycles_per_scanline_) {
+            uint8 instruction_cycles = cpu_.execute_instruction();
+            cycles_executed += instruction_cycles;
+            
+            // Advance VDC by the same number of cycles
+            vdc_.tick(instruction_cycles);
+        }
+        
+        // Render this scanline if not in VBLANK
+        if (!vdc_.is_vblank()) {
+            vdc_.render_scanline();
+        }
+        
+        // Check for interrupts at specific points
+        handle_interrupts();
+    }
+    
     frame_count_++;
 }
 
@@ -95,8 +119,16 @@ void EmulatorCore::calculate_timing() {
 }
 
 void EmulatorCore::handle_interrupts() {
-    // TODO: Implement interrupt handling
-    // This will be implemented in task 8
+    // Check for VBLANK interrupt (triggered at start of VBLANK)
+    // According to doc/o2doc.md, cartridge vector 0x406 is the VBLANK service routine
+    if (vdc_.is_vblank()) {
+        // Trigger VBLANK interrupt to cartridge vector 0x406
+        cpu_.trigger_interrupt(0x406);
+    }
+    
+    // TODO: Add timer interrupt handling
+    // TODO: Add external interrupt handling
+    // TODO: Add horizontal line interrupt handling (if enabled in VDC control register)
 }
 
 } // namespace videopac

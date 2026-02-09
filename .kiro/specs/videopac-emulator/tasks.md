@@ -399,7 +399,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Support two independent joysticks
     - _Requirements: 7.4, 7.5, 7.6, 7.7_
 
-  - [ ]* 7.5 Write unit tests for input handler
+  - [x]* 7.5 Write unit tests for input handler
     - Test keyboard matrix reading with various key combinations
     - Test joystick reading for both joysticks
     - Test host key mapping
@@ -419,14 +419,14 @@ The implementation follows a bottom-up approach: core data structures and utilit
 
 
 - [ ] 8. Implement emulator core orchestration
-  - [ ] 8.1 Create emulator core state structure (emulator.h)
+  - [x] 8.1 Create emulator core state structure (emulator.h)
     - Define EmulatorCore class containing CPU, VDC, Memory, and Input instances
     - Define configuration structure (video standard, timing parameters)
     - Define running/paused state flags
     - Define frame counter and cycle counters
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
 
-  - [ ] 8.2 Implement emulator core class (emulator.cpp)
+  - [x] 8.2 Implement emulator core class (emulator.cpp)
     - Implement constructor to initialize all components
     - Implement load_bios() to load BIOS into memory system
     - Implement load_rom() to load cartridge into memory system
@@ -437,7 +437,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Implement get_audio_buffer() to retrieve audio samples
     - _Requirements: 8.1, 8.10, 10.1, 10.2, 11.1, 11.8, 15.7_
 
-  - [ ] 8.3 Implement frame execution loop
+  - [x] 8.3 Implement frame execution loop
     - Calculate cycles per frame based on video standard (PAL/NTSC)
     - Calculate cycles per scanline
     - Execute CPU instructions for appropriate cycle count per scanline
@@ -449,7 +449,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Generate audio samples for the frame
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.8, 8.9, 9.5, 9.6_
 
-  - [ ] 8.4 Implement interrupt handling
+  - [x] 8.4 Implement interrupt handling
     - Trigger external interrupts via CPU interrupt pin
     - Trigger timer interrupts on counter overflow
     - Trigger VBLANK interrupts at end of frame
@@ -463,7 +463,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Handle frame skipping if emulation falls behind
     - _Requirements: 8.1, 8.2, 8.3, 8.10_
 
-  - [ ] 8.6 Implement BIOS integration
+  - [x] 8.6 Implement BIOS integration
     - Load 1KB BIOS ROM at startup
     - Jump to cartridge vector 0x400 on reset
     - Support BIOS routine calls from cartridges
