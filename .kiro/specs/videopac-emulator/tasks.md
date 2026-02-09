@@ -528,13 +528,13 @@ The implementation follows a bottom-up approach: core data structures and utilit
 
 
 - [ ] 11. Implement disassembler component
-  - [ ] 11.1 Create disassembler structures (disassembler.h)
+  - [x] 11.1 Create disassembler structures (disassembler.h)
     - Define Instruction struct (address, opcode, operand, mnemonic, operand_text, cycles, size)
     - Define opcode to mnemonic mapping table
     - Define BIOS routine address to name mapping
     - _Requirements: 16.1, 16.3, 16.7_
 
-  - [ ] 11.2 Implement disassembler class (disassembler.cpp)
+  - [x] 11.2 Implement disassembler class (disassembler.cpp)
     - Implement disassemble_instruction() for single instruction
     - Implement disassemble_range() for address range
     - Implement disassemble_rom() for entire ROM
@@ -542,20 +542,20 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Implement identify_bios_call() to label known BIOS routines
     - _Requirements: 16.1, 16.2, 16.3, 16.7, 16.8_
 
-  - [ ] 11.3 Implement instruction decoding
+  - [x] 11.3 Implement instruction decoding
     - Decode all 96 Intel 8048 instructions
     - Handle 1-byte and 2-byte instructions
     - Extract operands (immediate values, register numbers, addresses)
     - _Requirements: 16.1, 16.3_
 
-  - [ ] 11.4 Implement operand formatting
+  - [x] 11.4 Implement operand formatting
     - Format immediate values in hexadecimal with 0x prefix
     - Format register operands (R0-R7, A, etc.)
     - Format memory addresses in hexadecimal
     - Calculate and display branch target addresses
     - _Requirements: 16.4, 16.5, 16.6_
 
-  - [ ] 11.5 Implement disassembly output formatting
+  - [x] 11.5 Implement disassembly output formatting
     - Display address for each instruction
     - Display mnemonic and operands
     - Align output for readability
@@ -574,7 +574,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Highlight current instruction
     - _Requirements: 16.10_
 
-  - [ ]* 11.8 Write unit tests for disassembler
+  - [x]* 11.8 Write unit tests for disassembler
     - Test disassembly of specific instructions
     - Test operand formatting
     - Test branch target calculation
