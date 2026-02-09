@@ -34,8 +34,8 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - _Requirements: 14.1, 14.5_
 
 
-- [ ] 3. Implement CPU component (Intel 8048)
-  - [ ] 3.1 Create CPU state structure (cpu.h)
+- [x] 3. Implement CPU component (Intel 8048)
+  - [x] 3.1 Create CPU state structure (cpu.h)
     - Define CPUState struct with all registers (PC, A, PSW, R0-R7, R0'-R7')
     - Define internal RAM array (64 bytes)
     - Define stack array (8 levels) and stack pointer
@@ -45,7 +45,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Define clock cycle counter
     - _Requirements: 1.3, 1.4, 1.5, 1.6, 1.10_
 
-  - [ ] 3.2 Implement CPU class interface (cpu.cpp)
+  - [x] 3.2 Implement CPU class interface (cpu.cpp)
     - Implement reset() method to initialize CPU state
     - Implement execute_instruction() method skeleton
     - Implement read_memory() and write_memory() methods
@@ -54,54 +54,54 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Implement get_state() and set_state() for save states
     - _Requirements: 1.1, 1.2, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6_
 
-  - [ ] 3.3 Implement instruction decoder
+  - [x] 3.3 Implement instruction decoder
     - Create opcode lookup table mapping opcodes to instruction handlers
     - Implement instruction fetch logic
     - Implement operand fetch for 2-byte instructions
     - Return cycle count (1 or 2) for each instruction
     - _Requirements: 1.1, 1.8, 1.9_
 
-  - [ ] 3.4 Implement data transfer instructions
+  - [x] 3.4 Implement data transfer instructions
     - Implement MOV variants (register, immediate, indirect)
     - Implement MOVX (external memory access)
     - Implement MOVP (program memory read)
     - Implement XCH and XCHD (exchange operations)
     - _Requirements: 1.1_
 
-  - [ ] 3.5 Implement arithmetic instructions
+  - [x] 3.5 Implement arithmetic instructions
     - Implement ADD and ADDC (add with carry)
     - Implement INC and DEC (increment/decrement)
     - Implement DA (decimal adjust)
     - Update carry and auxiliary carry flags correctly
     - _Requirements: 1.1, 1.2, 1.5_
 
-  - [ ] 3.6 Implement logical instructions
+  - [x] 3.6 Implement logical instructions
     - Implement ANL, ORL, XRL (AND, OR, XOR)
     - Implement CLR and CPL (clear, complement)
     - Update flags as appropriate
     - _Requirements: 1.1, 1.2, 1.5_
 
-  - [ ] 3.7 Implement branch instructions
+  - [x] 3.7 Implement branch instructions
     - Implement JMP (unconditional jump)
     - Implement conditional jumps (JC, JNC, JZ, JNZ, JT0, JNT0, JT1, JNT1, JF0, JF1, JTF, JNIBF, JOBF)
     - Implement DJNZ (decrement and jump if not zero)
     - Update program counter correctly for all branches
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 3.8 Implement subroutine instructions
+  - [x] 3.8 Implement subroutine instructions
     - Implement CALL (push PC to stack, jump to address)
     - Implement RET (pop PC from stack)
     - Implement RETR (return from interrupt, restore PSW)
     - Handle stack overflow/underflow
     - _Requirements: 1.1, 1.10, 9.7, 9.8_
 
-  - [ ] 3.9 Implement I/O instructions
+  - [x] 3.9 Implement I/O instructions
     - Implement IN and OUT (port I/O)
     - Implement INS and OUTL (bus I/O)
     - Implement ANL and ORL for port operations
     - _Requirements: 1.1, 1.6_
 
-  - [ ] 3.10 Implement control instructions
+  - [x] 3.10 Implement control instructions
     - Implement NOP (no operation)
     - Implement EN I and DIS I (enable/disable interrupts)
     - Implement EN TCNTI and DIS TCNTI (timer interrupts)
@@ -109,7 +109,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Implement SEL RB0 and SEL RB1 (register bank selection)
     - _Requirements: 1.1, 1.4, 8.6, 8.7, 9.1, 9.3_
 
-  - [ ] 3.11 Implement timer/counter functionality
+  - [x] 3.11 Implement timer/counter functionality
     - Implement timer increment logic
     - Implement timer overflow detection
     - Trigger timer interrupt on overflow
