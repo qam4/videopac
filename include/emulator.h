@@ -10,6 +10,9 @@
 
 namespace videopac {
 
+// Forward declaration
+class Debugger;
+
 // Configuration
 struct Configuration {
     VideoStandard video_standard;
@@ -62,6 +65,10 @@ public:
     CPUState get_cpu_state() const { return cpu_.get_state(); }
     VDCState get_vdc_state() const { return vdc_.get_state(); }
     MemoryState get_memory_state() const { return memory_.get_state(); }
+    
+    // Debugger integration
+    void set_debugger(Debugger* debugger) { debugger_ = debugger; }
+    Debugger* get_debugger() { return debugger_; }
 
 private:
     Configuration config_;
@@ -71,6 +78,9 @@ private:
     VDC vdc_;
     MemorySystem memory_;
     InputHandler input_;
+    
+    // Debugger (optional)
+    Debugger* debugger_;
     
     // State
     bool running_;
@@ -82,6 +92,8 @@ private:
     // Helpers
     void calculate_timing();
     void handle_interrupts();
+    void check_debugger_breakpoint();
+    void log_debugger_trace();
 };
 
 } // namespace videopac

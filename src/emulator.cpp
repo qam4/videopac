@@ -1,10 +1,12 @@
 #include "emulator.h"
+#include "debugger.h"
 #include "savestate.h"
 
 namespace videopac {
 
 EmulatorCore::EmulatorCore(const Configuration& config)
-    : config_(config), vdc_(config.video_standard), running_(false), paused_(false), frame_count_(0) {
+    : config_(config), vdc_(config.video_standard), debugger_(nullptr), 
+      running_(false), paused_(false), frame_count_(0) {
     
     // Connect components
     cpu_.set_memory_system(&memory_);
@@ -61,12 +63,26 @@ void EmulatorCore::run_frame() {
     uint32 scanlines = (config_.video_standard == VideoStandard::NTSC) ? 
                        NTSC_SCANLINES : PAL_SCANLINES;
     
+    uint32 total_cycles = 0;
+    
     for (uint32 scanline = 0; scanline < scanlines; ++scanline) {
         // Execute CPU for this scanline's worth of cycles
         uint32 cycles_executed = 0;
         while (cycles_executed < cycles_per_scanline_) {
+            // Check for breakpoint before executing instruction
+            check_debugger_breakpoint();
+            
+            // If paused by debugger, stop execution
+            if (paused_) {
+                return;
+            }
+            
+            // Log instruction trace if enabled
+            log_debugger_trace();
+            
             uint8 instruction_cycles = cpu_.execute_instruction();
             cycles_executed += instruction_cycles;
+            total_cycles += instruction_cycles;
             
             // Advance VDC by the same number of cycles
             vdc_.tick(instruction_cycles);
@@ -81,6 +97,11 @@ void EmulatorCore::run_frame() {
         handle_interrupts();
     }
     
+    // Update debugger frame statistics
+    if (debugger_) {
+        debugger_->update_frame_stats(total_cycles);
+    }
+    
     frame_count_++;
 }
 
@@ -88,6 +109,12 @@ void EmulatorCore::step() {
     if (!running_) {
         return;
     }
+    
+    // Check for breakpoint before executing instruction
+    check_debugger_breakpoint();
+    
+    // Log instruction trace if enabled
+    log_debugger_trace();
     
     cpu_.execute_instruction();
 }
@@ -161,6 +188,30 @@ void EmulatorCore::handle_interrupts() {
     // TODO: Add timer interrupt handling
     // TODO: Add external interrupt handling
     // TODO: Add horizontal line interrupt handling (if enabled in VDC control register)
+}
+
+void EmulatorCore::check_debugger_breakpoint() {
+    if (!debugger_) {
+        return;
+    }
+    
+    // Get current PC
+    CPUState cpu_state = cpu_.get_state();
+    uint16 pc = cpu_state.pc;
+    
+    // Check if breakpoint is hit
+    if (debugger_->check_breakpoint(pc)) {
+        paused_ = true;
+        debugger_->pause();
+    }
+}
+
+void EmulatorCore::log_debugger_trace() {
+    if (!debugger_ || !debugger_->is_trace_enabled()) {
+        return;
+    }
+    
+    debugger_->log_instruction();
 }
 
 } // namespace videopac

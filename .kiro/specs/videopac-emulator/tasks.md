@@ -617,7 +617,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Define debugger commands (continue, step, break, inspect)
     - _Requirements: 15.1, 15.5, 15.6, 15.7_
 
-  - [ ] 12.2 Implement debugger class (debugger.cpp)
+  - [x] 12.2 Implement debugger class (debugger.cpp)
     - Implement breakpoint management (add, remove, check)
     - Implement single-step execution
     - Implement instruction trace logging
@@ -626,7 +626,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Implement frame timing statistics (FPS, cycle count)
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8_
 
-  - [ ] 12.3 Integrate debugger into emulator core
+  - [x] 12.3 Integrate debugger into emulator core
     - Check breakpoints before each instruction
     - Pause execution when breakpoint is hit
     - Log instruction trace when trace mode is enabled
