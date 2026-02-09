@@ -282,7 +282,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Handle grid enable/disable via control register bit 3
     - _Requirements: 4.7, 4.8, 4.9, 4.10_
 
-  - [ ] 6.7 Implement rendering pipeline
+  - [x] 6.7 Implement rendering pipeline
     - Clear scanline buffer to background color
     - Render grid elements if enabled
     - Render characters if enabled

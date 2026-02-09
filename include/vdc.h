@@ -233,6 +233,11 @@ private:
     void render_sprites(int y);
     void detect_collisions(int y);
     
+    // Collision tracking helpers
+    void track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable);
+    void track_character_objects(int y, uint8* object_buffer, uint8 collision_enable);
+    void track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8 collision_enable);
+    
     // Audio helpers
     void update_audio();
     void shift_audio_register();

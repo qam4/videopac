@@ -119,6 +119,14 @@ void VDC::write_register(uint8 address, uint8 value) {
             state_.grid_enabled = (value & ControlBits::ENABLE_GRID) != 0;
             break;
             
+        case VDCRegisters::COLLISION:
+            // Collision register - writing sets which objects to track
+            // Clear collision state when new enable mask is written
+            // Reference: doc/o2doc.md section 4.8
+            state_.collision_state = 0;
+            state_.collision_detected = false;
+            break;
+            
         case VDCRegisters::SOUND0:
         case VDCRegisters::SOUND1:
         case VDCRegisters::SOUND2:
@@ -169,12 +177,18 @@ uint8 VDC::read_register(uint8 address) {
             }
             
         case VDCRegisters::COLLISION:
-            // Reading collision register clears it
+            // Reading collision register returns collision state and clears it
             // Reference: doc/o2doc.md section 4.8, doc/8245.md lines 500-520
             {
-                uint8 collision = state_.registers[address];
-                state_.registers[address] = 0;
+                // Return the accumulated collision state
+                uint8 collision = state_.collision_state;
+                
+                // Clear collision state after read
+                state_.collision_state = 0;
                 state_.collision_detected = false;
+                
+                // Keep the enable mask in the register
+                // (the register value is the enable mask, collision_state is the result)
                 return collision;
             }
             
@@ -594,8 +608,41 @@ void VDC::render_sprites(int y) {
 // Collision detection helper
 // Reference: doc/o2doc.md section 4.8, doc/8245.md lines 500-520
 void VDC::detect_collisions(int y) {
-    // Collision detection will be implemented in task 6.8
-    (void)y;
+    // Collision detection only works during VBLANK
+    // We track collisions during rendering and update the register during VBLANK
+
+    // Get which objects are enabled for collision detection
+    uint8 collision_enable = state_.registers[VDCRegisters::COLLISION];
+
+    if (collision_enable == 0) {
+        return;  // No collision detection enabled
+    }
+
+    // Create a buffer to track which objects are present at each pixel
+    // Bit flags: 0=sprite0, 1=sprite1, 2=sprite2, 3=sprite3, 4=vgrid, 5=hgrid, 7=char
+    uint8 object_buffer[FRAMEBUFFER_WIDTH];
+    std::memset(object_buffer, 0, sizeof(object_buffer));
+
+    // Track grid objects first (lowest priority)
+    if (collision_enable & (CollisionBits::VERT_GRID | CollisionBits::HORIZ_GRID)) {
+        track_grid_objects(y, object_buffer, collision_enable);
+    }
+
+    // Track character objects
+    if (collision_enable & CollisionBits::CHARACTERS) {
+        track_character_objects(y, object_buffer, collision_enable);
+    }
+
+    // Track sprite objects (highest priority)
+    for (int sprite_num = 0; sprite_num < 4; sprite_num++) {
+        uint8 sprite_bit = (1 << sprite_num);
+        if (collision_enable & sprite_bit) {
+            track_sprite_object(y, sprite_num, object_buffer, collision_enable);
+        }
+    }
+
+    // The collision bits are accumulated during the frame
+    // They will be read during VBLANK
 }
 
 // Audio update helper
@@ -615,5 +662,286 @@ void VDC::shift_audio_register() {
 // TODO: Replace with actual character ROM patterns extracted from BIOS
 // This is a placeholder with all zeros - actual patterns will be loaded from BIOS
 const uint8 VDC::character_rom_[64 * 8] = {0};
+// Collision tracking helper: Track grid objects
+// Reference: doc/o2doc.md section 4.8
+void VDC::track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable) {
+    if (!state_.grid_enabled) {
+        return;
+    }
+
+    uint8 control = state_.registers[VDCRegisters::CONTROL];
+    bool fill_mode = (control & ControlBits::ENABLE_FILL_MODE) != 0;
+    bool dot_mode = (control & ControlBits::ENABLE_DOT_GRID) != 0;
+
+    const int GRID_START_Y = 24;
+    const int GRID_ROW_HEIGHT = 24;
+    const int GRID_LINE_HEIGHT = 3;
+    const int GRID_START_X = 10;
+    const int GRID_COL_WIDTH = 16;
+    const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
+
+    // Track horizontal grid lines
+    if ((collision_enable & CollisionBits::HORIZ_GRID) && y >= GRID_START_Y) {
+        int y_offset = y - GRID_START_Y;
+        int grid_row = y_offset / GRID_ROW_HEIGHT;
+        int row_offset = y_offset % GRID_ROW_HEIGHT;
+
+        if (grid_row < 9 && row_offset < GRID_LINE_HEIGHT) {
+            uint8 h_line_data;
+            if (grid_row < 8) {
+                h_line_data = state_.registers[VDCRegisters::GRID_H_BASE + grid_row];
+            } else {
+                h_line_data = 0;
+                for (int col = 0; col < 9; col++) {
+                    if (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) {
+                        h_line_data |= (1 << col);
+                    }
+                }
+            }
+
+            for (int col = 0; col < 9; col++) {
+                if (h_line_data & (1 << col)) {
+                    int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                    int x_end = x_start + 14;
+
+                    for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                        // Check for collision with existing objects
+                        if (object_buffer[x] != 0) {
+                            state_.collision_state |= CollisionBits::HORIZ_GRID;
+                            state_.collision_detected = true;
+                        }
+                        object_buffer[x] |= CollisionBits::HORIZ_GRID;
+                    }
+                }
+            }
+        }
+    }
+
+    // Track vertical grid lines
+    if ((collision_enable & CollisionBits::VERT_GRID) && y >= GRID_START_Y) {
+        int y_offset = y - GRID_START_Y;
+        int grid_row = y_offset / GRID_ROW_HEIGHT;
+
+        if (grid_row < 8) {
+            for (int col = 0; col < 10; col++) {
+                uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+
+                if (v_line_data & (1 << grid_row)) {
+                    int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                    int x_end = x_start + VERT_LINE_WIDTH;
+
+                    for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                        if (object_buffer[x] != 0) {
+                            state_.collision_state |= CollisionBits::VERT_GRID;
+                            state_.collision_detected = true;
+                        }
+                        object_buffer[x] |= CollisionBits::VERT_GRID;
+                    }
+                }
+            }
+        }
+    }
+
+    // Track dot grid
+    if ((collision_enable & CollisionBits::HORIZ_GRID) && dot_mode && y >= GRID_START_Y) {
+        int y_offset = y - GRID_START_Y;
+        int grid_row = y_offset / GRID_ROW_HEIGHT;
+        int row_offset = y_offset % GRID_ROW_HEIGHT;
+
+        if (grid_row < 9 && row_offset < 3) {
+            for (int col = 0; col < 10; col++) {
+                int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                int x_end = x_start + 2;
+
+                for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                    if (object_buffer[x] != 0) {
+                        state_.collision_state |= CollisionBits::HORIZ_GRID;
+                        state_.collision_detected = true;
+                    }
+                    object_buffer[x] |= CollisionBits::HORIZ_GRID;
+                }
+            }
+        }
+    }
+}
+
+// Collision tracking helper: Track character objects
+// Reference: doc/o2doc.md section 4.8
+void VDC::track_character_objects(int y, uint8* object_buffer, uint8 /* collision_enable */) {
+    if (!state_.display_enabled) {
+        return;
+    }
+
+    bool char_to_char_collision = false;
+
+    // Track single characters
+    for (int char_num = 0; char_num < 12; char_num++) {
+        uint8 base_addr = VDCRegisters::CHAR_BASE + (char_num * 4);
+        uint8 char_y = state_.registers[base_addr + 0];
+        uint8 char_x = state_.registers[base_addr + 1];
+        uint8 char_ptr_low = state_.registers[base_addr + 2];
+        uint8 char_attr = state_.registers[base_addr + 3];
+
+        if (y < char_y || y >= char_y + 14) {
+            continue;
+        }
+
+        int char_row = (y - char_y) / 2;
+        uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);
+        uint16 rom_addr = (char_ptr + char_row) & 0x1FF;
+        uint8 char_index = rom_addr / 8;
+        uint8 row_index = rom_addr % 8;
+
+        if (char_index >= 64) {
+            continue;
+        }
+
+        uint8 pattern = character_rom_[char_index * 8 + row_index];
+
+        for (int x = 0; x < 8; x++) {
+            int screen_x = char_x + x;
+
+            if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
+                continue;
+            }
+
+            bool pixel_on = (pattern & (0x80 >> x)) != 0;
+
+            if (pixel_on) {
+                // Check for collision with existing objects
+                if (object_buffer[screen_x] != 0) {
+                    state_.collision_state |= CollisionBits::CHARACTERS;
+                    state_.collision_detected = true;
+
+                    // Check for character-to-character collision
+                    if (object_buffer[screen_x] & CollisionBits::CHARACTERS) {
+                        char_to_char_collision = true;
+                    }
+                }
+                object_buffer[screen_x] |= CollisionBits::CHARACTERS;
+            }
+        }
+    }
+
+    // Track quad characters
+    for (int quad_num = 0; quad_num < 4; quad_num++) {
+        uint8 base_addr = VDCRegisters::QUAD_BASE + (quad_num * 16);
+        uint8 quad_x = state_.registers[base_addr + 13];
+
+        for (int sub_char = 0; sub_char < 4; sub_char++) {
+            uint8 char_offset = sub_char * 4;
+            uint8 char_y = state_.registers[base_addr + char_offset + 0];
+            uint8 char_ptr_low = state_.registers[base_addr + char_offset + 2];
+            uint8 char_attr = state_.registers[base_addr + char_offset + 3];
+
+            int char_x = quad_x + (sub_char * 8);
+
+            if (y < char_y || y >= char_y + 14) {
+                continue;
+            }
+
+            int char_row = (y - char_y) / 2;
+            uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);
+            uint16 rom_addr = (char_ptr + char_row) & 0x1FF;
+            uint8 char_index = rom_addr / 8;
+            uint8 row_index = rom_addr % 8;
+
+            if (char_index >= 64) {
+                continue;
+            }
+
+            uint8 pattern = character_rom_[char_index * 8 + row_index];
+
+            for (int x = 0; x < 8; x++) {
+                int screen_x = char_x + x;
+
+                if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
+                    continue;
+                }
+
+                bool pixel_on = (pattern & (0x80 >> x)) != 0;
+
+                if (pixel_on) {
+                    if (object_buffer[screen_x] != 0) {
+                        state_.collision_state |= CollisionBits::CHARACTERS;
+                        state_.collision_detected = true;
+
+                        if (object_buffer[screen_x] & CollisionBits::CHARACTERS) {
+                            char_to_char_collision = true;
+                        }
+                    }
+                    object_buffer[screen_x] |= CollisionBits::CHARACTERS;
+                }
+            }
+        }
+    }
+
+    // Set status register bit 7 for character-to-character collisions
+    // Reference: doc/o2doc.md section 4.7
+    if (char_to_char_collision) {
+        state_.registers[VDCRegisters::STATUS] |= StatusBits::CHAR_OVERLAP;
+    }
+}
+
+// Collision tracking helper: Track sprite object
+// Reference: doc/o2doc.md section 4.8
+void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8 /* collision_enable */) {
+    if (!state_.display_enabled) {
+        return;
+    }
+
+    uint8 base_addr = VDCRegisters::SPRITE0_Y + (sprite_num * 4);
+    uint8 sprite_y = state_.registers[base_addr + 0];
+    uint8 sprite_x = state_.registers[base_addr + 1];
+    uint8 sprite_color_attr = state_.registers[base_addr + 2];
+
+    bool double_size = (sprite_color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
+    bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
+    bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
+
+    int sprite_height = double_size ? 16 : 8;
+    if (y < sprite_y || y >= sprite_y + sprite_height) {
+        return;
+    }
+
+    int sprite_row = y - sprite_y;
+    if (double_size) {
+        sprite_row /= 2;
+    }
+
+    uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (sprite_num * 8) + sprite_row;
+    uint8 pattern = state_.registers[pattern_addr];
+
+    uint8 sprite_bit = (1 << sprite_num);
+    int sprite_width = double_size ? 16 : 8;
+
+    for (int x = 0; x < sprite_width; x++) {
+        int screen_x = sprite_x + x;
+
+        bool is_even_row = (sprite_row & 1) == 0;
+        if (shift_full) {
+            screen_x += 1;
+        } else if (shift_even && is_even_row) {
+            screen_x += 1;
+        }
+
+        if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
+            continue;
+        }
+
+        int pattern_x = double_size ? (x / 2) : x;
+        bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;
+
+        if (pixel_on) {
+            // Check for collision with existing objects
+            if (object_buffer[screen_x] != 0) {
+                state_.collision_state |= sprite_bit;
+                state_.collision_detected = true;
+            }
+            object_buffer[screen_x] |= sprite_bit;
+        }
+    }
+}
+
 
 } // namespace videopac
