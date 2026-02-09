@@ -18,8 +18,8 @@ The implementation follows a bottom-up approach: core data structures and utilit
   - Set up compiler flags for warnings and optimizations
   - _Requirements: All (foundational)_
 
-- [ ] 2. Implement core data types and utilities
-  - [ ] 2.1 Create common types header (types.h)
+- [x] 2. Implement core data types and utilities
+  - [x] 2.1 Create common types header (types.h)
     - Define uint8, uint16, uint32, uint64 type aliases
     - Define VideoStandard enum (PAL, NTSC)
     - Define Result/Error types for error handling
@@ -27,7 +27,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Define palette constants for 8 colors (bright and dim)
     - _Requirements: 3.1, 12.6, 12.7_
 
-  - [ ] 2.2 Implement utility functions
+  - [x] 2.2 Implement utility functions
     - Create bit manipulation helpers (get_bit, set_bit, clear_bit)
     - Create byte packing/unpacking utilities
     - Create checksum calculation function for save states
