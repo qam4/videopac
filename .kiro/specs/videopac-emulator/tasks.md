@@ -648,7 +648,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.7_
 
 
-- [ ] 13. Checkpoint - Debugging tools complete
+- [x] 13. Checkpoint - Debugging tools complete
   - Ensure debugger can set breakpoints and single-step
   - Verify instruction trace produces correct output
   - Verify memory and register inspection works
