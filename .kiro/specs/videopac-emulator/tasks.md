@@ -228,7 +228,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
   - Ask the user if questions arise
 
 - [ ] 6. Implement VDC component (Intel 8245)
-  - [ ] 6.1 Create VDC state structure (vdc.h)
+  - [x] 6.1 Create VDC state structure (vdc.h)
     - Define VDCState struct with register array (256 bytes)
     - Define framebuffer array (160x200 pixels)
     - Define scanline and beam position counters
@@ -238,7 +238,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Define audio state (frequency, volume, enable)
     - _Requirements: 3.1, 3.6, 3.10, 3.11, 6.1_
 
-  - [ ] 6.2 Implement VDC class interface (vdc.cpp)
+  - [x] 6.2 Implement VDC class interface (vdc.cpp)
     - Implement reset() method
     - Implement write_register() and read_register() methods
     - Implement tick() to advance VDC by cycle count
