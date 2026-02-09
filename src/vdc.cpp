@@ -284,8 +284,120 @@ void VDC::render_background(int y) {
 // Rendering helper: Render grid elements for scanline
 // Reference: doc/o2doc.md section 4.2, doc/8245.md lines 300-350
 void VDC::render_grid(int y) {
-    // Grid rendering will be implemented in task 6.6
-    (void)y;
+    // Check if grid is enabled
+    if (!state_.grid_enabled) {
+        return;
+    }
+    
+    // Get grid color from color register (bits 0-2)
+    uint8 color_reg = state_.registers[VDCRegisters::COLOR];
+    uint8 grid_color = color_reg & 0x07;
+    
+    // Check control register for grid modes
+    uint8 control = state_.registers[VDCRegisters::CONTROL];
+    bool fill_mode = (control & ControlBits::ENABLE_FILL_MODE) != 0;
+    bool dot_mode = (control & ControlBits::ENABLE_DOT_GRID) != 0;
+    
+    // Grid layout: 8 rows and 9 columns
+    // Each horizontal bar is 3 scanlines tall, spaced by 21 scanlines
+    // First horizontal bar starts at scanline 24 (relative to end of VBLANK)
+    // Reference: doc/o2doc.md section 4.2, doc/8245.md lines 300-350
+    
+    // Calculate grid row (0-8) based on scanline
+    // Grid starts at scanline 24, each row is 24 scanlines apart (3 lines + 21 spacing)
+    const int GRID_START_Y = 24;
+    const int GRID_ROW_HEIGHT = 24;
+    const int GRID_LINE_HEIGHT = 3;
+    
+    // Check if we're on a horizontal grid line
+    if (y >= GRID_START_Y) {
+        int y_offset = y - GRID_START_Y;
+        int grid_row = y_offset / GRID_ROW_HEIGHT;
+        int row_offset = y_offset % GRID_ROW_HEIGHT;
+        
+        // Render horizontal grid lines (9 lines total, including line 9)
+        if (grid_row < 9 && row_offset < GRID_LINE_HEIGHT) {
+            // Get horizontal grid line data
+            uint8 h_line_data;
+            if (grid_row < 8) {
+                // Lines 0-7 from 0xC0-0xC7
+                h_line_data = state_.registers[VDCRegisters::GRID_H_BASE + grid_row];
+            } else {
+                // Line 8 (9th line) from 0xD0-0xD8, only bit 0 used per column
+                h_line_data = 0;
+                for (int col = 0; col < 9; col++) {
+                    if (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) {
+                        h_line_data |= (1 << col);
+                    }
+                }
+            }
+            
+            // Render horizontal line segments
+            const int GRID_START_X = 10;  // Grid starts at column 10 (10 clock cycles from HBL end)
+            const int GRID_COL_WIDTH = 16; // 14 spacing + 2 for vertical line
+            
+            for (int col = 0; col < 9; col++) {
+                if (h_line_data & (1 << col)) {
+                    int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                    int x_end = x_start + 14;  // Segment is 14 pixels wide
+                    
+                    for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                        state_.framebuffer[y][x] = grid_color;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Render vertical grid lines (10 lines, columns 0-9)
+    // Each vertical bar is 2 or 16 clock intervals wide depending on fill mode
+    // Reference: doc/o2doc.md section 4.2
+    const int GRID_START_X = 10;
+    const int GRID_COL_WIDTH = 16;
+    const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
+    
+    // Calculate which grid row we're in for vertical line rendering
+    if (y >= GRID_START_Y) {
+        int y_offset = y - GRID_START_Y;
+        int grid_row = y_offset / GRID_ROW_HEIGHT;
+        
+        if (grid_row < 8) {
+            // Render vertical grid lines
+            for (int col = 0; col < 10; col++) {
+                uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+                
+                if (v_line_data & (1 << grid_row)) {
+                    int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                    int x_end = x_start + VERT_LINE_WIDTH;
+                    
+                    for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                        state_.framebuffer[y][x] = grid_color;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Render dot grid if enabled
+    // Dots appear at intersections of grid lines
+    // Reference: doc/o2doc.md section 4.2
+    if (dot_mode && y >= GRID_START_Y) {
+        int y_offset = y - GRID_START_Y;
+        int grid_row = y_offset / GRID_ROW_HEIGHT;
+        int row_offset = y_offset % GRID_ROW_HEIGHT;
+        
+        // Dots are 3 scanlines tall, 2 pixels wide, at grid intersections
+        if (grid_row < 9 && row_offset < 3) {
+            for (int col = 0; col < 10; col++) {
+                int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                int x_end = x_start + 2;
+                
+                for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                    state_.framebuffer[y][x] = grid_color;
+                }
+            }
+        }
+    }
 }
 
 // Rendering helper: Render characters for scanline

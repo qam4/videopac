@@ -274,7 +274,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Render up to 4 quad character groups (16 characters total)
     - _Requirements: 4.5, 4.6_
 
-  - [ ] 6.6 Implement grid rendering
+  - [x] 6.6 Implement grid rendering
     - Render background grid with 8 rows and 9 columns
     - Support grid fill mode (bit 7 of 0xA0)
     - Support dot grid mode (bit 6 of 0xA0)
