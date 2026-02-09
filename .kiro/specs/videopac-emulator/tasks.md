@@ -470,7 +470,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Provide access to BIOS routines (VDC enable, RAM enable, joystick read, display on/off, select game)
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8_
 
-  - [ ]* 8.7 Write integration tests for emulator core
+  - [x]* 8.7 Write integration tests for emulator core
     - Test complete frame execution with all components
     - Test interrupt handling across components
     - Test BIOS integration and routine calls

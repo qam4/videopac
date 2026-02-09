@@ -26,7 +26,9 @@ public:
     
     // ROM loading
     Result<void> load_bios(const std::string& path);
+    Result<void> load_bios(const uint8* data, size_t size);
     Result<void> load_rom(const std::string& path);
+    Result<void> load_rom(const uint8* data, size_t size);
     
     // Emulation control
     void reset();

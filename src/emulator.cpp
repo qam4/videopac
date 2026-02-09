@@ -16,8 +16,21 @@ Result<void> EmulatorCore::load_bios(const std::string& path) {
     return memory_.load_bios(path);
 }
 
+Result<void> EmulatorCore::load_bios(const uint8* data, size_t size) {
+    return memory_.load_bios(data, size);
+}
+
 Result<void> EmulatorCore::load_rom(const std::string& path) {
     auto result = memory_.load_cartridge(path);
+    if (result.is_ok()) {
+        reset();
+        running_ = true;
+    }
+    return result;
+}
+
+Result<void> EmulatorCore::load_rom(const uint8* data, size_t size) {
+    auto result = memory_.load_cartridge(data, size);
     if (result.is_ok()) {
         reset();
         running_ = true;
