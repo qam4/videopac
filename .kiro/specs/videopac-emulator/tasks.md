@@ -372,13 +372,13 @@ The implementation follows a bottom-up approach: core data structures and utilit
 
 
 - [ ] 7. Implement input handler
-  - [ ] 7.1 Create input handler state structure (input.h)
+  - [x] 7.1 Create input handler state structure (input.h)
     - Define keyboard matrix state (8x8 array)
     - Define joystick state structures (2 joysticks, 5 bits each)
     - Define key mapping table (host keys to Videopac keys)
     - _Requirements: 7.1, 7.4, 7.8_
 
-  - [ ] 7.2 Implement input handler class (input.cpp)
+  - [x] 7.2 Implement input handler class (input.cpp)
     - Implement set_key_state() for keyboard input
     - Implement set_joystick_state() for joystick directions
     - Implement set_joystick_button() for fire buttons
@@ -387,13 +387,13 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Implement map_host_key() to convert host keys to Videopac keys
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9_
 
-  - [ ] 7.3 Implement keyboard matrix logic
+  - [x] 7.3 Implement keyboard matrix logic
     - Support row selection via Port 1 (P10-P17)
     - Return column states via Port 2 (P20-P27) when P12=0
     - Map all Videopac keys to correct row/column positions
     - _Requirements: 7.1, 7.2, 7.3_
 
-  - [ ] 7.4 Implement joystick reading logic
+  - [x] 7.4 Implement joystick reading logic
     - Support joystick selection via Port 2 (P20-P22)
     - Return 5-bit joystick state (up, down, left, right, fire)
     - Support two independent joysticks

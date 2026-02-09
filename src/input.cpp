@@ -17,6 +17,12 @@ void InputHandler::set_key_state(uint8 row, uint8 col, bool pressed) {
     }
 }
 
+void InputHandler::set_key_state(VidKey key, bool pressed) {
+    uint8 row = get_row(key);
+    uint8 col = get_col(key);
+    set_key_state(row, col, pressed);
+}
+
 uint8 InputHandler::read_keyboard(uint8 row_select) {
     uint8 result = 0xFF;
     
@@ -74,12 +80,15 @@ uint8 InputHandler::read_joystick(uint8 select_bits) {
     return result;
 }
 
-void InputHandler::map_host_key(int host_key, uint8 row, uint8 col) {
-    (void)host_key;
-    (void)row;
-    (void)col;
-    // TODO: Implement host key mapping table
-    // This will be used by the frontend
+void InputHandler::map_host_key(int host_key, VidKey vid_key) {
+    key_mapping_[host_key] = vid_key;
+}
+
+void InputHandler::process_host_key(int host_key, bool pressed) {
+    auto it = key_mapping_.find(host_key);
+    if (it != key_mapping_.end()) {
+        set_key_state(it->second, pressed);
+    }
 }
 
 InputState InputHandler::get_state() const {
