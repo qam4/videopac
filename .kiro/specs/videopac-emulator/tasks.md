@@ -486,14 +486,14 @@ The implementation follows a bottom-up approach: core data structures and utilit
   - Ask the user if questions arise
 
 - [ ] 10. Implement state management (save states)
-  - [ ] 10.1 Create save state structure (savestate.h)
+  - [x] 10.1 Create save state structure (savestate.h)
     - Define SaveState struct with version number
     - Include CPUState, VDCState, MemoryState, InputState
     - Include frame counter
     - Include checksum field
     - _Requirements: 14.1_
 
-  - [ ] 10.2 Implement save state serialization (savestate.cpp)
+  - [x] 10.2 Implement save state serialization (savestate.cpp)
     - Implement serialize() to convert state to binary format
     - Implement deserialize() to restore state from binary
     - Calculate and verify checksum
@@ -501,13 +501,13 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Handle file I/O errors
     - _Requirements: 14.2, 14.3, 14.5, 14.6_
 
-  - [ ] 10.3 Integrate save states into emulator core
+  - [x] 10.3 Integrate save states into emulator core
     - Implement save_state() method in EmulatorCore
     - Implement load_state() method in EmulatorCore
     - Support multiple save state slots
     - _Requirements: 14.2, 14.3, 14.4_
 
-  - [ ]* 10.4 Write unit tests for save states
+  - [x]* 10.4 Write unit tests for save states
     - Test serialization and deserialization
     - Test checksum validation
     - Test version compatibility checking

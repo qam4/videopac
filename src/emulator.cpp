@@ -1,4 +1,5 @@
 #include "emulator.h"
+#include "savestate.h"
 
 namespace videopac {
 
@@ -108,17 +109,35 @@ void EmulatorCore::set_input(const InputState& input) {
 }
 
 Result<void> EmulatorCore::save_state(const std::string& path) {
-    (void)path;
-    // TODO: Implement save state
-    // This will be implemented in task 10
-    return Result<void>::err("Not implemented");
+    // Gather state from all components
+    SaveState state;
+    state.cpu_state = cpu_.get_state();
+    state.vdc_state = vdc_.get_state();
+    state.memory_state = memory_.get_state();
+    state.input_state = input_.get_state();
+    state.frame_count = frame_count_;
+    
+    // Save to file
+    return SaveStateManager::save(path, state);
 }
 
 Result<void> EmulatorCore::load_state(const std::string& path) {
-    (void)path;
-    // TODO: Implement load state
-    // This will be implemented in task 10
-    return Result<void>::err("Not implemented");
+    // Load from file
+    auto result = SaveStateManager::load(path);
+    if (!result.is_ok()) {
+        return Result<void>::err(result.error);
+    }
+    
+    SaveState state = result.value.value();
+    
+    // Restore state to all components
+    cpu_.set_state(state.cpu_state);
+    vdc_.set_state(state.vdc_state);
+    memory_.set_state(state.memory_state);
+    input_.set_state(state.input_state);
+    frame_count_ = state.frame_count;
+    
+    return Result<void>::ok();
 }
 
 void EmulatorCore::calculate_timing() {
