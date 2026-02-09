@@ -103,6 +103,7 @@ if(BUILD_TESTS)
         tests/test_input.cpp
         tests/test_disassembler.cpp
         tests/test_savestate.cpp
+        tests/test_debugger.cpp
         tests/test_integration.cpp
         tests/test_utils.cpp
         tests/property_tests.cpp

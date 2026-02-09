@@ -640,7 +640,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Show frame timing statistics
     - _Requirements: 15.2, 15.3, 15.4, 15.8_
 
-  - [ ]* 12.5 Write unit tests for debugger
+  - [x]* 12.5 Write unit tests for debugger
     - Test breakpoint functionality
     - Test single-step execution
     - Test instruction trace logging
