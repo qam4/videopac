@@ -50,9 +50,47 @@ cmake -DBUILD_TESTS=OFF ..
 
 ### Standalone Emulator
 
+Basic usage:
 ```bash
-./videopac <rom_file>
+./videopac --bios <bios_file> <rom_file>
 ```
+
+Example:
+```bash
+./videopac --bios "roms/Philips C52 BIOS (19xx)(Philips)(FR).bin" "roms/Satellite Attack (1981)(Philips)(EU).bin"
+```
+
+Command-line options:
+- `--bios <file>` - Load BIOS from file (required)
+- `--pal` - Use PAL timing (default: NTSC)
+- `--headless` - Run without display (for testing)
+- `--frames <n>` - Run for N frames then exit (headless mode)
+- `--screenshot <n>` - Save screenshot every N frames (headless mode)
+- `--debug` - Enable debugger
+- `--help` - Show help message
+
+### Controls
+
+- **ESC** - Quit emulator
+- **F5** - Reset emulator
+- **P** or **PAUSE** - Pause/unpause
+- **F12** - Save screenshot
+- **0-9, A-Z** - Videopac keyboard keys
+- **Space, Enter, +, -, *, /, =, ?** - Special keys
+
+### Running on Remote Systems (NICE DCV)
+
+If running on a remote system via SSH (e.g., AWS EC2 with NICE DCV):
+
+1. Ensure NICE DCV is installed and a session is running
+2. Set the DISPLAY environment variable and use software rendering:
+```bash
+export DISPLAY=:0
+export SDL_RENDER_DRIVER=software
+./videopac --bios <bios_file> <rom_file>
+```
+
+Note: Audio may not work on systems without ALSA, but the emulator will continue without audio.
 
 ### Running Tests
 

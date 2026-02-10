@@ -1,6 +1,6 @@
 #include "frontend_headless.h"
 #ifdef ENABLE_SDL
-// SDL frontend will be included here when implemented
+#include "frontend_sdl.h"
 #endif
 #include <iostream>
 #include <cstring>
@@ -70,8 +70,16 @@ int main(int argc, char* argv[]) {
     // Determine which frontend to use
 #ifdef ENABLE_SDL
     if (!force_headless) {
-        std::cout << "SDL frontend not yet implemented, using headless mode" << std::endl;
-        force_headless = true;
+        SDLFrontend frontend;
+        
+        if (!frontend.initialize(config)) {
+            std::cerr << "Failed to initialize SDL frontend" << std::endl;
+            return 1;
+        }
+        
+        frontend.run();
+        frontend.shutdown();
+        return 0;
     }
 #else
     force_headless = true;

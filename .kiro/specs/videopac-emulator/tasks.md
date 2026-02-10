@@ -291,7 +291,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Enforce rendering priority order
     - _Requirements: 3.1, 4.1, 4.5, 4.7, 12.9_
 
-  - [ ] 6.8 Implement collision detection
+  - [x] 6.8 Implement collision detection
     - Track enabled objects from collision register (0xA2)
     - Detect pixel overlaps during rendering
     - Set collision bits for: sprites 0-3, vertical grid, horizontal grid, dots, characters
@@ -663,7 +663,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
     - Define MenuAction enum for user actions
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 13.1, 18.1, 18.2, 18.3, 18.4, 18.5_
 
-  - [ ] 14.2 Implement SDL2-based frontend (frontend_sdl.cpp)
+  - [x] 14.2 Implement SDL2-based frontend (frontend_sdl.cpp)
     - Initialize SDL2 for video, audio, and input
     - Create window with appropriate size and scaling
     - Set up OpenGL or SDL_Renderer for rendering
