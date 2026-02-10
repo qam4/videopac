@@ -7,6 +7,7 @@ namespace videopac {
 
 // Forward declarations
 class MemorySystem;
+class InputHandler;
 
 // CPU state structure
 struct CPUState {
@@ -28,6 +29,7 @@ struct CPUState {
                                 // The timer increments every 32 instruction cycles via this prescaler
     uint64 clock_cycles;        // Total cycles executed
     uint8 current_bank;         // Current register bank (0 or 1)
+                                // Note: F1 flag is PSW bit 4, same as Bank Select (BS)
 };
 
 // Intel 8048 CPU emulation
@@ -42,6 +44,7 @@ public:
     
     // Memory access (connected to memory system)
     void set_memory_system(MemorySystem* mem);
+    void set_input_handler(InputHandler* input);
     uint8 read_memory(uint16 address);
     void write_memory(uint16 address, uint8 value);
     
@@ -64,6 +67,7 @@ public:
 private:
     CPUState state_;
     MemorySystem* memory_;
+    InputHandler* input_;
     
     // Instruction execution helpers
     uint8 fetch_byte();

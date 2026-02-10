@@ -1,0 +1,1241 @@
+
+cold_boot:
+; ****************************************************************************
+; ****************************************************************************
+;
+;                       Odyssey II BIOS Disassembly
+;                       ===========================
+;
+;                    by Paul Robson (AutismUk@aol.com)
+;
+;       Version 1.0     (26-Nov-1997)
+;
+;
+;       To do : 0293 - 02C2 - What is this all about ?
+;               03B1 - 03E9 - Some more mysterious data processing
+;
+; ****************************************************************************
+;
+;       BIOS ROM Routine Addresses:
+;
+;               $000    Cold Boot
+;               $003    External T0 Interrupt
+;               $007    Timer/Clock Interrupt
+;               $009    VBlank Interrupt Routine 1
+;               $01A    VBlank Interrupt Routine 2 (Collision & Clock)
+;               $044    VBlank Interrupt Routine 3 (Tune)
+;               $089    RAM to VDC VBlank Copying Check Code
+;               $0A3    Copying Code
+;               $0B0    Keyboard Routine
+;               $0E7    Set up VDC Access
+;               $0EC    Set up RAM Access
+;               $0F1    Reset
+;               $11C    Display Off
+;               $127    Display On
+;               $132    Enable Data Copy next VSYNC
+;               $13D    Get Keystroke
+;               $14B    Character/Colour Translation
+;               $16B    Clear all Characters
+;               $176    Wait for Interrupt
+;               $17C    Display 2 digit BCD Characters
+;               $1A2    Start Tune
+;               $1B0    Up/Down Counter
+;               $23A    Set up Quad Score Characters
+;               $261    Translate & Copy Character & Colour
+;               $26A    Bit test
+;               $280    Bit clear
+;               $28A    Bit set
+;               $293    [Unknown]
+;               $2C3    Select Game
+;               $300    Frequency Data
+;               $34A    Tune Data
+;               $376    Keyboard In routine (end)
+;               $37E    Miscellaneous Interrupt Handlers for Banked Roms
+;               $38F    Read Joystick
+;               $3B1    [Unknown]
+;               $3CF    [Unknown]
+;               $3EA    Character Write
+;
+; ****************************************************************************
+;
+;       Vectors in Odyssey II ROM Cartridges.
+;
+;               $400    Restart
+;               $402    VBlank (External) Interrupt
+;               $404    Timer/Clock Interrupt
+;               $406    VBlank Routine Vector (if $402 = JMP $009)
+;               $408    End of Select Game, A = Selection
+;               $40A    Continuation of VBlank (if $406 = JMP $01A)
+;
+; ****************************************************************************
+0x000: 84 00  JMP restart                         ; start the game
+0x002: 00     NOP
+
+external_t0_interrupt:
+0x003: 84 02  JMP vblank_external_interrupt       ; external interrupt ?
+0x005: 00     NOP
+0x006: 00     NOP
+
+timer_clock_interrupt:
+0x007: 84 04  JMP timer_clock_interrupt_cart      ; timer/clock interrupt
+
+vblank_interrupt_routine_1:
+; ****************************************************************************
+;
+;       External Interrupt are often redirected here, by 0402 = Jmp 0009.
+;       This damages Registers 5 and 6 of the base set.
+;       It completes by going to $0406 if VBLANK is on, returning otherwise.
+;       (Presumably this is timeable VBlank Code.)
+;
+; ****************************************************************************
+0x009: c5     SEL RB0                             ; back to main bank
+0x00a: ad     MOV R5,A                            ; save A in R5
+0x00b: 09     IN A,P1                             ; read enable/switch status
+0x00c: ae     MOV R6,A                            ; save in r6
+0x00d: 14 e7  CALL set_up_vdc_access              ; access the VDC
+0x00f: b8 a1  MOV R0,##0xa1                       ; read $0A1 in VDC
+0x011: 80     MOVX A,@R0
+0x012: 72 18  JB3 loc_0018                        ; in VSYNC ?
+
+loc_0014:
+0x014: fe     MOV A,R6                            ; get the old switch status
+0x015: 39     OUTL P1,A                           ; set the enable/switch status
+0x016: fd     MOV A,R5                            ; restore A
+0x017: 93     RETR                                ; return from interrupt
+
+loc_0018:
+0x018: 84 06  JMP vblank_routine_vector           ; VSYNC vector
+
+vblank_interrupt_routine_2:
+; ****************************************************************************
+;
+;       Alternative Vertical Sync Routine. Above routine can
+;       be directed here by $406 = JMP $01A. Completes by going
+;       to $408.
+;
+;       Registers : 3D = Collision,3E = Clock,3F = Status
+;
+;       3F bit 7 if set causes copy from RAM to VDC, see later.
+;       3F bit 6 causes delay in passing on to $408 (for tune player)
+;
+; ****************************************************************************
+0x01a: a5     CLR F1                              ; Set F1
+0x01b: b5     CPL F1
+0x01c: b9 a2  MOV R1,##0xa2                       ; R1 = $A2 (Collision)
+0x01e: b8 3d  MOV R0,##0x3d                       ; R0 = $3D ?
+0x020: 81     MOVX A,@R1                          ; A = Collision Register
+
+loc_0021:
+0x021: a0     MOV @R0,A                           ; put in R$3D
+0x022: 18     INC R0                              ; increment R0 (now $3E)
+0x023: 10     INC @R0                             ; increment R$3E (Clock)
+0x024: f0     MOV A,@R0
+0x025: 53 3f  ANL A,##0x3f                        ; mask $3E with 00111111
+0x027: d3 3c  XRL A,##0x3c                        ; zero now if $3E was 60(dec)
+0x029: 96 2f  JNZ loc_002f                        ; if non zero skip
+0x02b: f0     MOV A,@R0                           ; wrap it round back to zero
+0x02c: 53 c0  ANL A,##0xc0
+0x02e: a0     MOV @R0,A
+
+loc_002f:
+0x02f: 18     INC R0                              ; look at $3F which is some
+0x030: f0     MOV A,@R0                           ; sort of status flag
+0x031: 37     CPL A
+0x032: f2 3a  JB7 loc_003a                        ; if bit 7 of 3F was set
+0x034: 37     CPL A                               ; clear bit 7
+0x035: 53 7f  ANL A,##0x7f
+0x037: a0     MOV @R0,A                           ; update register $3F
+0x038: 14 89  CALL ram_to_vdc_vblank_copying_check ; do the data copy
+
+loc_003a:
+0x03a: b9 3f  MOV R1,##0x3f                       ; look at R$3F but 6
+0x03c: f1     MOV A,@R1
+0x03d: 37     CPL A
+0x03e: d2 14  JB6 loc_0014                        ; if its clear, exit
+0x040: eb 14  DJNZ R3,loc_0014                    ; don't do user routine yet.
+0x042: 84 0a  JMP continuation_of_vblank          ; call user routine
+
+vblank_interrupt_routine_3:
+; ****************************************************************************
+;
+;       Yet another VSYNC Routine. Continuation by setting $40A to
+;       jmp $044. Doesn't seem very popular..... I think it is some
+;       sort of sound playing routine - it is unpacking a tune from
+;       $0300
+;
+; ****************************************************************************
+0x044: fc     MOV A,R4                            ; A= R4 (delay from above ?)
+0x045: e3     MOVP3 A,@A                          ; Read Data Table into A
+0x046: a9     MOV R1,A                            ; and R1 [300+R4]
+0x047: 1c     INC R4
+0x048: fc     MOV A,R4
+0x049: e3     MOVP3 A,@A                          ; R2 = [301+R4], R4 inc.
+0x04a: aa     MOV R2,A
+0x04b: f9     MOV A,R1                            ; test 300+R4 bits
+0x04c: f2 5c  JB7 loc_005c                        ; bit 7 do the set note data
+0x04e: d2 73  JB6 loc_0073                        ; bit 6 set the delay & freq ?
+0x050: b2 7d  JB5 loc_007d                        ; bit 5 silence
+0x052: 92 84  JB4 loc_0084                        ; bit 4 tune finished.
+0x054: b9 3f  MOV R1,##0x3f                       ; bits 4,5,6,7 all clear
+0x056: f1     MOV A,@R1                           ; turn sound off again
+0x057: 53 bf  ANL A,##0xbf                        ; clear bit 6 of Reg $3F
+0x059: a1     MOV @R1,A
+0x05a: 04 14  JMP loc_0014                        ; exit interrupt routine
+
+loc_005c:
+                                                ; *** BIT 7 SET ***
+0x05c: 53 7f  ANL A,##0x7f                        ; bit 7 set
+0x05e: ab     MOV R3,A                            ; R3 = Value in table
+0x05f: b8 aa  MOV R0,##0xaa                       ; R0 = $AA
+0x061: 27     CLR A
+0x062: 90     MOVX @R0,A                          ; Clear ($AA) (sound off)
+0x063: b8 a7  MOV R0,##0xa7                       ; R0 = $A7
+0x065: b9 03  MOV R1,##0x03                       ; R1 = 3
+
+loc_0067:
+0x067: fa     MOV A,R2                            ; Read value from table
+0x068: e3     MOVP3 A,@A                          ; ($300+2nd value)
+0x069: 90     MOVX @R0,A                          ; Copying three bytes from
+0x06a: 18     INC R0                              ; 2nd value in table to
+0x06b: 1a     INC R2                              ; $A7,$A8,$A9
+0x06c: e9 67  DJNZ R1,loc_0067
+0x06e: fa     MOV A,R2                            ; 2nd Value = (300+2nd Value)
+0x06f: e3     MOVP3 A,@A                          ; e.g. the next one
+0x070: aa     MOV R2,A                            ; plonk it in R2
+0x071: 04 76  JMP loc_0076
+
+loc_0073:
+                                                ; *** BIT 6 SET ***
+0x073: 53 3f  ANL A,##0x3f                        ; mask out
+0x075: ab     MOV R3,A                            ; plonk it in R3. (delay)
+
+loc_0076:
+0x076: 1c     INC R4                              ; skip the 2nd value
+
+loc_0077:
+0x077: b8 aa  MOV R0,##0xaa                       ; $(AA) is the last value
+0x079: fa     MOV A,R2
+0x07a: 90     MOVX @R0,A
+0x07b: 04 14  JMP loc_0014                        ; continue the handler
+
+loc_007d:
+                                                ; *** BIT 5 SET ***
+0x07d: 53 1f  ANL A,##0x1f                        ; set delay to bits 0..4
+0x07f: ab     MOV R3,A
+0x080: ba 00  MOV R2,##0x00                       ; volume = 0
+0x082: 04 77  JMP loc_0077                        ; set it
+
+loc_0084:
+                                                ; *** BIT 4 SET ***
+0x084: fa     MOV A,R2                            ; bit 4 is a 'jump'
+
+loc_0085:
+0x085: ac     MOV R4,A                            ; to the second value
+0x086: 84 0a  JMP continuation_of_vblank          ; tune complete !
+0x088: 00     NOP
+
+ram_to_vdc_vblank_copying_check:
+; ****************************************************************************
+;
+;       RAM to VDC Copier.
+;       Called in VBlank Handler once if R3F Bit 7 is set. Bit is
+;       cleared by the interrupt handler.
+;
+; ****************************************************************************
+0x089: b8 7f  MOV R0,##0x7f                       ; R0 = $7F Copy Count
+0x08b: b9 a0  MOV R1,##0xa0                       ; R1 = $A0 VDC Control
+0x08d: 81     MOVX A,@R1                          ; Turn off Grid,Foreground
+0x08e: 53 d6  ANL A,##0xd6
+0x090: 91     MOVX @R1,A
+0x091: 89 7c  ORL P1,##0x7c                       ; set : !kbscan !vdcen !ramen copyen
+0x093: 99 e7  ANL P1,##0xe7                       ; clear : !vdcen !ramen
+
+loc_0095:
+0x095: 80     MOVX A,@R0                          ; if RAM($7F) is non-zero
+0x096: 96 a3  JNZ copying_code                    ; jump to $A3
+0x098: 89 bc  ORL P1,##0xbc                       ; set : !kbscan !vdcen !ramen  lumen
+0x09a: 99 b7  ANL P1,##0xb7                       ; clear : !vdcen copyen
+0x09c: b9 a0  MOV R1,##0xa0                       ; turn on grid & foreground
+0x09e: 81     MOVX A,@R1
+0x09f: 43 28  ORL A,##0x28
+0x0a1: 91     MOVX @R1,A
+0x0a2: 83     RET
+
+copying_code:
+; ****************************************************************************
+;
+;       R0 = ($7F), A = Byte Count. This is the active RAM->VDC Copying
+;       Code
+;
+;               $7F = Count of Bytes
+;               $7E = Address to Copy to.
+;               $7D = Data (Backwards !)
+;
+; ****************************************************************************
+0x0a3: aa     MOV R2,A                            ; save count in R2
+0x0a4: c8     DEC R0                              ; point at address
+0x0a5: 80     MOVX A,@R0                          ; R1 = Address.
+0x0a6: a9     MOV R1,A                            ; put in r1
+0x0a7: c8     DEC R0                              ; point to first data byte
+
+loc_00a8:
+0x0a8: 80     MOVX A,@R0                          ; copy from RAM to VDC
+0x0a9: 91     MOVX @R1,A
+0x0aa: c8     DEC R0                              ; previous copy from
+0x0ab: 19     INC R1                              ; next copy to
+0x0ac: ea a8  DJNZ R2,loc_00a8                    ; keep copyin' man
+0x0ae: 04 95  JMP loc_0095                        ; exit.
+
+keyboard_routine:
+; ****************************************************************************
+;
+;                             Keyboard Check Routine
+;
+; ****************************************************************************
+0x0b0: 15     DIS I
+0x0b1: c5     SEL RB0
+0x0b2: 09     IN A,P1                             ; read enable/switch status
+0x0b3: ae     MOV R6,A                            ; save it in R6
+0x0b4: 89 bc  ORL P1,##0xbc                       ; set : !kbscan !vdcen !ramen  lumen
+0x0b6: 99 bb  ANL P1,##0xbb                       ; clear : !kbscan copyen
+0x0b8: b8 f0  MOV R0,##0xf0                       ; R0 = Scan Row
+0x0ba: ba 06  MOV R2,##0x06                       ; R2 = Rows to Scan
+
+loc_00bc:
+0x0bc: f8     MOV A,R0                            ; set the row counter
+0x0bd: 3a     OUTL P2,A                           ; update keyboard scan row
+0x0be: 0a     IN A,P2                             ; read keyboard status
+0x0bf: 92 da  JB4 loc_00da                        ; no key pressed, try next
+0x0c1: ba 30  MOV R2,##0x30                       ; r2 = 110000
+0x0c3: a8     MOV R0,A                            ; r0 = scan value
+
+loc_00c4:
+0x0c4: 0a     IN A,P2                             ; read keyboard status
+0x0c5: d8     XRL A,R0                            ; check debouncing
+0x0c6: 96 df  JNZ loc_00df                        ; return none if a bounce
+0x0c8: ea c4  DJNZ R2,loc_00c4
+0x0ca: f8     MOV A,R0                            ; a = scan value
+0x0cb: 47     SWAP A                              ; nibl exchange of A
+                                                ; 4-6=row,0=press,1-3=col
+0x0cc: 77     RRC A                               ; 0-2=col,3-5=row
+0x0cd: d3 07  XRL A,##0x07                        ; and signed correctly ?
+0x0cf: 53 3f  ANL A,##0x3f                        ; drop upper 2 bits
+0x0d1: a9     MOV R1,A                            ; save in r1
+0x0d2: ff     MOV A,R7                            ; r7 = Column & 3F
+0x0d3: 53 3f  ANL A,##0x3f
+0x0d5: d9     XRL A,R1                            ; check different to last one
+0x0d6: 96 e5  JNZ loc_00e5                        ; if so, go to exit point
+0x0d8: 04 df  JMP loc_00df                        ; same, return no key.
+
+loc_00da:
+0x0da: 18     INC R0                              ; no key pressed-next row
+0x0db: ea bc  DJNZ R2,loc_00bc                    ; loop back
+0x0dd: bf ff  MOV R7,##0xff                       ; r7 = a = FF
+
+loc_00df:
+0x0df: ff     MOV A,R7                            ; no key pressed
+0x0e0: 43 c0  ORL A,##0xc0                        ; A = A or 1100 0000
+0x0e2: af     MOV R7,A                            ; put in return reg... Failed
+0x0e3: 64 78  JMP loc_0378                        ; key fail code
+
+loc_00e5:
+0x0e5: 64 76  JMP keyboard_in_routine_end         ; key succeed code
+
+set_up_vdc_access:
+; ****************************************************************************
+;
+;                             Set up the VDC access
+;
+; ****************************************************************************
+0x0e7: 89 bc  ORL P1,##0xbc                       ; set : !kbscan !vdcen !ramen  lumen
+0x0e9: 99 b7  ANL P1,##0xb7                       ; clear : !vdcen copyen (?)
+0x0eb: 83     RET
+
+set_up_ram_access:
+; ****************************************************************************
+;
+;                             Set up the RAM access
+;
+; ****************************************************************************
+0x0ec: 89 bc  ORL P1,##0xbc                       ; set : !kbscan !vdcen !ramen  lumen
+0x0ee: 99 af  ANL P1,##0xaf                       ; clear : !ramen copyen
+0x0f0: 83     RET
+
+reset:
+; ****************************************************************************
+;
+;                           Reset the Odyssey II
+;
+; ****************************************************************************
+0x0f1: 89 bc  ORL P1,##0xbc                       ; set : !kbscan !vdcen !ramen  lumen
+0x0f3: 99 b7  ANL P1,##0xb7                       ; clear : !vdcen copyen
+0x0f5: 23 20  MOV A,##0x20                        ; clear registers $20 - $40
+0x0f7: a8     MOV R0,A
+0x0f8: a9     MOV R1,A
+0x0f9: 27     CLR A
+
+loc_00fa:
+0x0fa: a0     MOV @R0,A
+0x0fb: 18     INC R0
+0x0fc: e9 fa  DJNZ R1,loc_00fa
+0x0fe: 14 ec  CALL set_up_ram_access              ; access RAM
+0x100: b9 ff  MOV R1,##0xff                       ; and clear that
+
+loc_0102:
+0x102: 91     MOVX @R1,A
+0x103: e9 02  DJNZ R1,loc_0102
+0x105: 91     MOVX @R1,A
+0x106: 14 e7  CALL set_up_vdc_access              ; access the VDC Chip
+0x108: 34 1c  CALL display_off                    ; turn off the display
+0x10a: b8 ff  MOV R0,##0xff                       ; fill 80-FF with Zero
+0x10c: b9 80  MOV R1,##0x80                       ; (clearing the grids)
+0x10e: 27     CLR A
+
+loc_010f:
+0x10f: 90     MOVX @R0,A
+0x110: c8     DEC R0
+0x111: e9 0f  DJNZ R1,loc_010f
+0x113: 23 f8  MOV A,##0xf8                        ; fill 00-7F with $F8
+
+loc_0115:
+0x115: 90     MOVX @R0,A                          ; move chars,sprites,quads
+0x116: e8 15  DJNZ R0,loc_0115                    ; off screen
+0x118: 90     MOVX @R0,A                          ; why not call the other one ?
+0x119: 34 27  CALL display_on                     ; turn the display back on
+0x11b: 83     RET
+
+display_off:
+; ****************************************************************************
+;
+;                         Turn off the Display
+;
+; ****************************************************************************
+0x11c: 15     DIS I                               ; no interrupts
+0x11d: c5     SEL RB0                             ; base register set
+0x11e: b8 a0  MOV R0,##0xa0
+0x120: 80     MOVX A,@R0                          ; read $A0 VDC Control Register
+
+loc_0121:
+0x121: 53 d6  ANL A,##0xd6                        ; Turn off foreground,grid
+0x123: 90     MOVX @R0,A                          ; update VDC Control
+0x124: d5     SEL RB1
+0x125: 05     EN I                                ; interrupts back on
+0x126: 83     RET
+
+display_on:
+; ****************************************************************************
+;
+;                           Turn the display back on
+;
+; ****************************************************************************
+0x127: 15     DIS I                               ; int off
+0x128: c5     SEL RB0                             ; base register set
+0x129: b8 a0  MOV R0,##0xa0
+0x12b: 80     MOVX A,@R0
+0x12c: 43 28  ORL A,##0x28                        ; set Foreground,Grid on
+0x12e: 90     MOVX @R0,A
+0x12f: d5     SEL RB1
+0x130: 05     EN I                                ; int back on
+0x131: 83     RET
+
+enable_data_copy_next_vsync:
+; ****************************************************************************
+;
+;                     Enable a Data Copy at the next VSYNC
+;
+; ****************************************************************************
+0x132: 27     CLR A                               ; Memory(R0) = 0
+0x133: 90     MOVX @R0,A
+0x134: b8 3f  MOV R0,##0x3f                       ; Set Bit 7 of r63.
+0x136: f0     MOV A,@R0
+0x137: 43 80  ORL A,##0x80
+0x139: a0     MOV @R0,A
+
+loc_013a:
+0x13a: 14 e7  CALL set_up_vdc_access              ; access the VDC Chip
+0x13c: 83     RET
+
+get_keystroke:
+; ****************************************************************************
+;
+;                               Get Keystroke into A
+;
+; ****************************************************************************
+0x13d: 34 76  CALL wait_for_interrupt             ; Wait for Interrupt
+0x13f: 14 b0  CALL keyboard_routine               ; Keyboard Check Routine
+0x141: f2 3d  JB7 get_keystroke                   ; go back if no key pressed
+0x143: 23 56  MOV A,##0x56                        ; R4 = 56,Set 3F bit 6
+0x145: 34 a2  CALL start_tune                     ; play tune at $0356
+0x147: c5     SEL RB0                             ; reselect page zero
+0x148: ff     MOV A,R7                            ; get the result
+0x149: d5     SEL RB1                             ; reselect page 1
+0x14a: 83     RET
+
+character_colour_translation:
+; ****************************************************************************
+;
+;             R4 = Vertical R5 = Character. R6 = Colour Byte * 2.
+;                 Convert for suitable use in VDC registers
+;
+; ****************************************************************************
+0x14b: fe     MOV A,R6                            ; Bit 0 is part of the char set
+0x14c: 53 fe  ANL A,##0xfe
+0x14e: ae     MOV R6,A
+0x14f: fd     MOV A,R5                            ; R5 = R5 * 8
+0x150: 97     CLR C
+0x151: f7     RLC A
+0x152: f7     RLC A
+0x153: f7     RLC A
+0x154: ad     MOV R5,A
+0x155: 27     CLR A                               ; A = 9th bit of character
+0x156: f7     RLC A                               ; there are 64 characters
+0x157: 4e     ORL A,R6                            ; or that bit into R6
+0x158: ae     MOV R6,A
+0x159: fc     MOV A,R4                            ; A = Vertical Position
+0x15a: 67     RR A                                ; A = -Vertical / 2
+0x15b: 37     CPL A                               ; presumably each pixel is two
+0x15c: 17     INC A                               ; scanlines high.
+0x15d: 6d     ADD A,R5                            ; Add it to the lower position
+0x15e: ad     MOV R5,A                            ; subtract y/2 from char set pointer
+0x15f: f6 6a  JC loc_016a                         ; if no borrow,exit
+                                                ; else toggle bit 0 of R6
+0x161: fe     MOV A,R6                            ; A = ~R6 & 1
+0x162: 37     CPL A
+0x163: 53 01  ANL A,##0x01
+0x165: 2e     XCH A,R6                            ; swap A and R6
+0x166: 53 fe  ANL A,##0xfe                        ; Mask off bits of R6
+0x168: 4e     ORL A,R6                            ; or the borrow in
+0x169: ae     MOV R6,A                            ; put it back - who wrote this ?
+
+loc_016a:
+0x16a: 83     RET
+
+clear_all_characters:
+; ****************************************************************************
+;
+;       Delete all characters by moving horizontal position to 248
+;       which is off the right hand side.
+;
+; ****************************************************************************
+0x16b: 23 f8  MOV A,##0xf8                        ; A = $F8
+0x16d: b8 10  MOV R0,##0x10                       ; Start at VDC $10
+0x16f: ba 30  MOV R2,##0x30                       ; Fill $30 characters
+
+loc_0171:
+0x171: 90     MOVX @R0,A
+0x172: 18     INC R0
+0x173: ea 71  DJNZ R2,loc_0171
+
+loc_0175:
+0x175: 83     RET
+
+wait_for_interrupt:
+; ****************************************************************************
+;
+;                             Wait for Interrupt
+;
+; ****************************************************************************
+0x176: a5     CLR F1                              ; F1 = 0
+0x177: 05     EN I                                ; Enable Interrupts
+
+loc_0178:
+0x178: 76 75  JF1 loc_0175                        ; Interrupt called ? Yes,exit
+0x17a: 24 78  JMP loc_0178                        ; wait for interrupt
+
+display_2_digit_bcd_characters:
+; ****************************************************************************
+;
+;                Display BCD 2 digit A at VDC address R1.
+;                R4 = Y R3 = X R6 = Colour
+;
+; ****************************************************************************
+0x17c: 14 ec  CALL set_up_ram_access              ; access RAM only
+0x17e: aa     MOV R2,A                            ; save A in R2
+0x17f: b8 7f  MOV R0,##0x7f
+0x181: 23 08  MOV A,##0x08                        ; Copy 8 bytes ($7F) = 9
+0x183: 90     MOVX @R0,A
+0x184: c8     DEC R0
+
+loc_0185:
+0x185: f9     MOV A,R1                            ; Address in R1
+0x186: 90     MOVX @R0,A                          ; To VDC Address R1 ($7E)
+0x187: c8     DEC R0                              ; R0 = $7D First Data Byte
+0x188: fa     MOV A,R2                            ; R2 = First Data Byte (low)
+0x189: 47     SWAP A                              ; A = First Data Byte (High)
+0x18a: 53 0f  ANL A,##0x0f                        ; R5 = High Nibble
+0x18c: ad     MOV R5,A                            ; put in R5
+0x18d: 34 97  CALL loc_0197                       ; write it
+0x18f: fa     MOV A,R2                            ; Write Low Nibble
+0x190: 53 0f  ANL A,##0x0f
+0x192: ad     MOV R5,A
+0x193: 34 97  CALL loc_0197
+0x195: 24 32  JMP enable_data_copy_next_vsync     ; data copy at next VSYNC
+
+loc_0197:
+0x197: fc     MOV A,R4                            ; Write Y
+0x198: 90     MOVX @R0,A
+0x199: c8     DEC R0
+0x19a: fb     MOV A,R3                            ; Write X
+0x19b: 90     MOVX @R0,A
+0x19c: c8     DEC R0
+0x19d: 03 08  ADD A,##0x08                        ; Offset X 8 right
+0x19f: ab     MOV R3,A
+0x1a0: 44 2c  JMP loc_022c                        ; Copy Data into Copy Space
+
+start_tune:
+; ****************************************************************************
+;
+;                     Start playing tune. Tune data at 03<Ac>
+;
+; ****************************************************************************
+0x1a2: 15     DIS I                               ; no interrupts
+0x1a3: c5     SEL RB0                             ; use the bank 0
+0x1a4: ac     MOV R4,A                            ; R4 = Entered Value
+0x1a5: bb 01  MOV R3,##0x01                       ; R3 = 1
+0x1a7: b8 3f  MOV R0,##0x3f                       ; R0 = 63
+0x1a9: f0     MOV A,@R0                           ; Read Register 3F
+0x1aa: 43 40  ORL A,##0x40                        ; Set Bit 6
+0x1ac: a0     MOV @R0,A                           ; write it back
+0x1ad: d5     SEL RB1                             ; reselect memory bank 1
+0x1ae: 05     EN I                                ; enable interrupts
+0x1af: 83     RET                                 ; and return
+
+up_down_counter:
+; ****************************************************************************
+;
+;       Handle and display counter. 1 (High) 2 (Low) are the counter
+;       values in BCD. ($3E). Bit 6 = 1 Increment, 0 Decrement.
+;       Bit 7 is set when times out. R6 = Colour.
+;
+; ****************************************************************************
+0x1b0: b8 3e  MOV R0,##0x3e                       ; data access in progress
+0x1b2: f0     MOV A,@R0                           ; if so enable VDC and exit
+0x1b3: f2 3a  JB7 loc_013a
+0x1b5: 53 3f  ANL A,##0x3f                        ; don't know what this is
+0x1b7: d3 3b  XRL A,##0x3b                        ; checking...
+0x1b9: 96 3a  JNZ loc_013a
+0x1bb: 14 ec  CALL set_up_ram_access              ; Access RAM
+0x1bd: f0     MOV A,@R0                           ; A = Character Pointer
+0x1be: b8 02  MOV R0,##0x02                       ; R0 = 2
+0x1c0: b9 01  MOV R1,##0x01                       ; R1 = 1
+0x1c2: d2 e2  JB6 loc_01e2                        ; A = RAM($3E) bit 6
+                                                ; zero = decrement timer
+0x1c4: ba 99  MOV R2,##0x99                       ; R2 = 99
+0x1c6: 80     MOVX A,@R0                          ; A = RAM($2)
+0x1c7: c6 ce  JZ loc_01ce                         ; if zero goto 1CE
+0x1c9: 6a     ADD A,R2                            ; decrement value
+0x1ca: 57     DA A                                ; decimal adjust
+0x1cb: 90     MOVX @R0,A                          ; save in RAM($2)
+0x1cc: 24 fc  JMP loc_01fc                        ; go to drawing code
+
+loc_01ce:
+0x1ce: 81     MOVX A,@R1                          ; if high byte timed out
+0x1cf: c6 da  JZ loc_01da                         ; goto $1DA
+0x1d1: 23 59  MOV A,##0x59                        ; RAM($2) = 59
+0x1d3: 90     MOVX @R0,A
+0x1d4: 81     MOVX A,@R1                          ; decrement RAM($1) by
+0x1d5: 6a     ADD A,R2                            ; adding 99 to it
+0x1d6: 57     DA A
+0x1d7: 91     MOVX @R1,A                          ; update RAM($1)
+0x1d8: 24 fc  JMP loc_01fc
+
+loc_01da:
+0x1da: b8 3e  MOV R0,##0x3e                       ; R0 = $3E
+0x1dc: f0     MOV A,@R0                           ; A = RAM($3E)
+0x1dd: 43 80  ORL A,##0x80                        ; set bit 7 (timed out)
+0x1df: a0     MOV @R0,A
+0x1e0: 24 3a  JMP loc_013a                        ; re-enable VDC & exit
+
+loc_01e2:
+0x1e2: ba 01  MOV R2,##0x01                       ; R2 = 1
+0x1e4: 80     MOVX A,@R0                          ; if RAM(2) is 59
+0x1e5: d3 59  XRL A,##0x59
+0x1e7: c6 ef  JZ loc_01ef                         ; go to tick over
+0x1e9: 80     MOVX A,@R0                          ; inc RAM(2) BCD
+0x1ea: 6a     ADD A,R2
+0x1eb: 57     DA A
+0x1ec: 90     MOVX @R0,A
+0x1ed: 24 fc  JMP loc_01fc                        ; and display
+
+loc_01ef:
+0x1ef: 90     MOVX @R0,A                          ; zero RAM (2)
+0x1f0: 81     MOVX A,@R1                          ; check RAM(1) is 59
+0x1f1: d3 59  XRL A,##0x59
+0x1f3: 96 f8  JNZ loc_01f8                        ; if not, increment
+0x1f5: 91     MOVX @R1,A                          ; zero RAM(1), no timeout
+0x1f6: 24 fc  JMP loc_01fc                        ; display
+
+loc_01f8:
+0x1f8: 81     MOVX A,@R1                          ; increment RAM(1) BCD
+0x1f9: 6a     ADD A,R2
+0x1fa: 57     DA A
+0x1fb: 91     MOVX @R1,A
+
+loc_01fc:
+                                                ; display RAM(1) RAM(2)
+0x1fc: b8 7f  MOV R0,##0x7f                       ; start write at 007F
+0x1fe: 54 35  CALL loc_0235                       ; copy 2 bytes ?
+0x200: 23 42  MOV A,##0x42                        ; to VDC $42 (Quads).
+0x202: 90     MOVX @R0,A
+0x203: c8     DEC R0                              ; R0 = 007D now.
+0x204: b9 01  MOV R1,##0x01                       ; A = RAM(1)
+0x206: 81     MOVX A,@R1
+0x207: 47     SWAP A                              ; high nibble first
+0x208: 54 29  CALL loc_0229                       ; write character data
+0x20a: 54 35  CALL loc_0235                       ; X = 2
+0x20c: 23 52  MOV A,##0x52                        ; Y = $52
+
+loc_020e:
+0x20e: 90     MOVX @R0,A
+0x20f: c8     DEC R0
+0x210: 81     MOVX A,@R1                          ; low nibble
+0x211: 54 29  CALL loc_0229
+0x213: 54 35  CALL loc_0235
+
+loc_0215:
+0x215: 23 56  MOV A,##0x56                        ; X = 2
+0x217: 90     MOVX @R0,A                          ; Y = $56
+0x218: c8     DEC R0
+0x219: 19     INC R1                              ; Get next 2 nibbles from RAM(2)
+0x21a: 81     MOVX A,@R1                          ; high nibble at
+0x21b: 47     SWAP A
+0x21c: 54 29  CALL loc_0229                       ; X = 2
+0x21e: 54 35  CALL loc_0235
+0x220: 23 4a  MOV A,##0x4a                        ; Y = $4A
+0x222: 90     MOVX @R0,A
+0x223: c8     DEC R0
+0x224: 81     MOVX A,@R1                          ; last one now....
+0x225: 54 29  CALL loc_0229
+0x227: 24 32  JMP enable_data_copy_next_vsync     ; Data copy at next VSYNC
+
+loc_0229:
+; ****************************************************************************
+;
+;       R0 points to RAM (for copying), A is character, R6 is colour
+;
+; ****************************************************************************
+0x229: 53 0f  ANL A,##0x0f                        ; char in range 0-15
+0x22b: ad     MOV R5,A
+
+loc_022c:
+; ****************************************************************************
+;       the BCD Version routine jumps in here. R5 contians the character
+;       (from $01A0)
+; ****************************************************************************
+0x22c: 34 4b  CALL character_colour_translation   ; translate character for writing
+0x22e: fd     MOV A,R5                            ; write the character
+0x22f: 90     MOVX @R0,A
+0x230: c8     DEC R0
+0x231: fe     MOV A,R6                            ; write the colour et al.
+0x232: 90     MOVX @R0,A
+0x233: c8     DEC R0
+0x234: 83     RET
+
+loc_0235:
+0x235: 23 02  MOV A,##0x02                        ; write 2 into the to-copy
+0x237: 90     MOVX @R0,A
+0x238: c8     DEC R0
+0x239: 83     RET
+
+set_up_quad_score_characters:
+; ****************************************************************************
+;
+;                    Set up Quad Characters. R3,R4 = X,Y Position
+;
+;                         sets up as XY:s AAss (s = space) ?
+;
+; ****************************************************************************
+0x23a: b8 40  MOV R0,##0x40                       ; R0 = $40
+0x23c: b9 50  MOV R1,##0x50                       ; R1 = $50
+0x23e: fc     MOV A,R4                            ; A = R4
+0x23f: 90     MOVX @R0,A                          ; $(40) = R4 (Y Quad 1)
+0x240: 91     MOVX @R1,A                          ; $(50) = R4 (Y Quad 2)
+0x241: 18     INC R0
+0x242: 19     INC R1
+0x243: fb     MOV A,R3                            ; $(41) = R4
+0x244: 90     MOVX @R0,A
+0x245: 03 08  ADD A,##0x08                        ; $(51) = R4+8
+0x247: 91     MOVX @R1,A                          ; is the QUAD X size different ?
+0x248: bd 0a  MOV R5,##0x0a                       ; colon
+0x24a: b8 46  MOV R0,##0x46
+0x24c: 54 61  CALL translate_copy_character_colour ; write char (chr R5,col R6 @ R0)
+0x24e: bd 0c  MOV R5,##0x0c                       ; space
+0x250: b8 4e  MOV R0,##0x4e
+0x252: 54 61  CALL translate_copy_character_colour ; write char (chr R5,col R6 @ R0)
+0x254: bd 0c  MOV R5,##0x0c                       ; space
+0x256: b8 5a  MOV R0,##0x5a
+0x258: 54 61  CALL translate_copy_character_colour ; write char (chr R5,col R6 @ R0)
+0x25a: bd 0c  MOV R5,##0x0c                       ; space
+0x25c: b8 5e  MOV R0,##0x5e
+0x25e: 54 61  CALL translate_copy_character_colour ; write char (chr R5,col R6 @ R0)
+0x260: 83     RET
+
+translate_copy_character_colour:
+; ****************************************************************************
+;
+;       R0 points to Foreground Character, R5 Character, R6 Colour
+;
+; ****************************************************************************
+0x261: 34 4b  CALL character_colour_translation   ; translate R5 & R6 to suitable data
+0x263: fd     MOV A,R5                            ; for use as single characters
+0x264: 90     MOVX @R0,A                          ; copy them into single character
+0x265: 18     INC R0                              ; memory
+0x266: fe     MOV A,R6
+0x267: 90     MOVX @R0,A
+0x268: 18     INC R0
+0x269: 83     RET                                 ; and exit
+
+bit_test:
+; ****************************************************************************
+;
+;       Bit test routine. R1 points to first byte after data. R2 is
+;       the bit number as byte * 8 + bit (0 = LSB). Returns A <> 0
+;       if bit clear
+;
+; ****************************************************************************
+0x26a: 07     DEC A                               ; A = A - 1
+0x26b: ba f8  MOV R2,##0xf8                       ; dividing A by 8. R1 is
+
+loc_026d:
+0x26d: 6a     ADD A,R2                            ; decremented each time.
+0x26e: c9     DEC R1                              ; decrement count of times
+0x26f: f6 6d  JC loc_026d                         ; loop back if r2 < 8
+0x271: 6a     ADD A,R2
+0x272: 53 07  ANL A,##0x07
+0x274: 17     INC A                               ; so it shifts at least once
+0x275: aa     MOV R2,A                            ; r2 = remainder ?
+0x276: 27     CLR A                               ; A = C = 0
+0x277: 97     CLR C
+0x278: a7     CPL C                               ; C = 1
+
+loc_0279:
+0x279: f7     RLC A
+0x27a: ea 79  DJNZ R2,loc_0279                    ; A = 1 shifted by remainder.
+0x27c: aa     MOV R2,A
+0x27d: 81     MOVX A,@R1
+0x27e: 5a     ANL A,R2
+0x27f: 83     RET
+
+bit_clear:
+; ****************************************************************************
+;
+;       Clear bit (as above). Returns A <> 0 if was previously set
+;
+; ****************************************************************************
+0x280: 54 6a  CALL bit_test                       ; call bit test
+0x282: c6 89  JZ loc_0289                         ; exit if zero (not set)
+0x284: 81     MOVX A,@R1                          ; toggle bit
+0x285: da     XRL A,R2
+0x286: 91     MOVX @R1,A
+0x287: 27     CLR A                               ; A = 1, collision (?)
+0x288: 17     INC A
+
+loc_0289:
+0x289: 83     RET
+
+bit_set:
+; ****************************************************************************
+;
+;         Set bit (as above). Returns A <> 0 if was previously set
+;
+; ****************************************************************************
+0x28a: 54 6a  CALL bit_test                       ; call bit test
+0x28c: 96 92  JNZ loc_0292                        ; if already set exit
+0x28e: 81     MOVX A,@R1                          ; toggle it
+0x28f: da     XRL A,R2
+0x290: 91     MOVX @R1,A
+0x291: 27     CLR A
+
+loc_0292:
+0x292: 83     RET
+
+unknown_0293:
+; ****************************************************************************
+;
+;     A completely mystifying routine - something to do with colour bars ?
+;     Help !!!!
+;
+; ****************************************************************************
+0x293: 42     DB0x42                              ; A = Scan Line ?
+0x294: ac     MOV R4,A                            ; R4 = ScanLine
+0x295: 53 0f  ANL A,##0x0f
+0x297: ad     MOV R5,A                            ; R5 = ScanLine & 00001111
+0x298: 54 a4  CALL loc_02a4
+0x29a: 2a     XCH A,R2                            ; A <--> R2
+0x29b: af     MOV R7,A
+0x29c: fc     MOV A,R4
+0x29d: 53 f0  ANL A,##0xf0
+0x29f: 47     SWAP A
+0x2a0: ad     MOV R5,A
+0x2a1: 54 a4  CALL loc_02a4
+0x2a3: 83     RET
+
+loc_02a4:
+0x2a4: fd     MOV A,R5                            ; A = R5 + B3
+0x2a5: 03 b3  ADD A,##0xb3
+0x2a7: a3     MOVP A,@A                           ; A = [02B3 + R5]
+0x2a8: 96 ac  JNZ loc_02ac                        ; if Non Zero, Inc R5
+0x2aa: ad     MOV R5,A                            ; else R5 = 0
+0x2ab: cd     DEC R5
+
+loc_02ac:
+0x2ac: 1d     INC R5
+0x2ad: ab     MOV R3,A                            ; R3 = Value
+0x2ae: 6f     ADD A,R7                            ; loop back if < R7
+0x2af: f6 a4  JC loc_02a4
+0x2b1: fb     MOV A,R3                            ; A = value read from table
+0x2b2: 83     RET
+0x2b3: 0f     DB0x0f
+0x2b4: 0e     DB0x0e
+0x2b5: 0d     DB0x0d
+0x2b6: 02     OUTL BUS,A
+0x2b7: 0a     IN A,P2
+0x2b8: 05     EN I
+0x2b9: 0b     DB0x0b
+0x2ba: 03 06  ADD A,##0x06
+0x2bc: 0c     DB0x0c
+0x2bd: 09     IN A,P1
+0x2be: 01     DB0x01
+0x2bf: 04 08  JMP loc_0008
+0x2c1: 07     DEC A
+0x2c2: 00     NOP
+
+select_game:
+; ****************************************************************************
+;
+;                               Select Game Routine
+;
+; ****************************************************************************
+0x2c3: bf ff  MOV R7,##0xff                       ; R7 = FF
+0x2c5: d5     SEL RB1                             ; Select High Registers
+0x2c6: 14 f1  CALL reset                          ; reset the machine
+0x2c8: b9 f2  MOV R1,##0xf2                       ; R1 points to the text
+0x2ca: b8 10  MOV R0,##0x10                       ; R0 points to FGR Character
+0x2cc: ba 0b  MOV R2,##0x0b                       ; R2 is the character counter
+0x2ce: bb 28  MOV R3,##0x28                       ; R3 is X Position
+0x2d0: bc 70  MOV R4,##0x70                       ; R4 is Y Position
+0x2d2: be 06  MOV R6,##0x06                       ; R6 is Colour
+0x2d4: 34 1c  CALL display_off                    ; turn off the display
+
+loc_02d6:
+0x2d6: f9     MOV A,R1                            ; A = F2.
+0x2d7: a3     MOVP A,@A                           ; R5 = @02F2, text
+0x2d8: ad     MOV R5,A
+0x2d9: 74 ea  CALL character_write
+0x2db: 19     INC R1                              ; Next Character
+0x2dc: 1e     INC R6                              ; Next Horizontal Position
+0x2dd: 1e     INC R6
+0x2de: ea d6  DJNZ R2,loc_02d6                    ; Do it R2 times.
+0x2e0: 34 27  CALL display_on                     ; turn the display back on
+0x2e2: 23 4a  MOV A,##0x4a                        ; R4 = $4A. Set 3F bit 6
+0x2e4: 34 a2  CALL start_tune
+0x2e6: 34 3d  CALL get_keystroke                  ; Get keystroke
+0x2e8: a9     MOV R1,A                            ; Save the keystroke
+0x2e9: 34 1c  CALL display_off                    ; turn off the display
+0x2eb: 34 6b  CALL clear_all_characters           ; clear the characters
+0x2ed: 34 27  CALL display_on                     ; turn the display back on
+0x2ef: f9     MOV A,R1                            ; get the result
+0x2f0: 84 08  JMP end_of_select_game              ; jump to the ROM vector.
+0x2f2: 0c     DB0x0c                              ; S
+0x2f3: 18     INC R0                              ; E L
+0x2f4: 15     DIS I
+0x2f5: 12 0e  JB0 loc_020e                        ; E C
+0x2f7: 0c     DB0x0c                              ; T <space>
+0x2f8: 1e     INC R6
+0x2f9: 12 15  JB0 loc_0215                        ; G
+0x2fb: 0d     DB0x0d                              ; M E
+0x2fc: 0c     DB0x0c
+0x2fd: 20     XCH A,@R0                           ; padding.....
+0x2fe: 20     XCH A,@R0
+
+loc_02ff:
+0x2ff: 20     XCH A,@R0
+
+frequency_data:
+; ****************************************************************************
+;
+;                       Data for the O2's little tune
+;
+; ****************************************************************************
+; frequency data
+0x300: 00     NOP
+0x301: 0f     DB0x0f
+0x302: ff     MOV A,R7
+0x303: cf     DEC R7
+0x304: 03 f0  ADD A,##0xf0
+0x306: 3f     DB0x3f
+0x307: cf     DEC R7
+0x308: 0f     DB0x0f
+0x309: 0f     DB0x0f
+0x30a: 0f     DB0x0f
+0x30b: cf     DEC R7
+0x30c: 1c     INC R4
+0x30d: 71     ADDC A,@R1
+0x30e: c7     DB0xc7
+
+loc_030f:
+0x30f: cf     DEC R7
+0x310: 33     DB0x33
+0x311: 33     DB0x33
+0x312: 33     DB0x33
+0x313: cf     DEC R7
+0x314: 03 f0  ADD A,##0xf0
+0x316: 3f     DB0x3f
+0x317: ef 0f  DJNZ R7,loc_030f
+0x319: 0f     DB0x0f
+0x31a: 0f     DB0x0f
+0x31b: ef 1c  DJNZ R7,loc_031c
+0x31d: 71     ADDC A,@R1
+0x31e: c7     DB0xc7
+0x31f: ef 33  DJNZ R7,loc_0333
+
+loc_0321:
+0x321: 33     DB0x33
+0x322: 33     DB0x33
+0x323: ef 55  DJNZ R7,loc_0355
+0x325: 55     STRT T
+0x326: 55     STRT T
+0x327: ef 90  DJNZ R7,loc_0390
+0x329: 10     INC @R0
+0x32a: 94 00  CALL restart
+0x32c: 21     XCH A,@R1
+0x32d: 00     NOP
+0x32e: 56 df  JT1 loc_03df
+0x330: 53 dd  ANL A,##0xdd
+0x332: 50     ANL A,@R0
+
+loc_0333:
+0x333: da     XRL A,R2
+0x334: 4d     ORL A,R5
+0x335: d8     XRL A,R0
+0x336: 4a     ORL A,R2
+0x337: d5     SEL RB1
+0x338: 47     SWAP A
+0x339: d2 21  JB6 loc_0321
+0x33b: 00     NOP
+0x33c: 92 20  JB4 loc_0320
+0x33e: 4a     ORL A,R2
+0x33f: cd     DEC R5
+0x340: 52 eb  JB2 loc_03eb
+0x342: 4a     ORL A,R2
+0x343: c9     DEC R1
+0x344: 52 e7  JB2 loc_03e7
+0x346: 4a     ORL A,R2
+0x347: c5     SEL RB0
+0x348: 21     XCH A,@R1
+0x349: 00     NOP
+
+tune_data:
+; tune data
+0x34a: 85     CLR F0
+0x34b: 04 85  JMP loc_0085
+0x34d: 0c     DB0x0c
+0x34e: 85     CLR F0
+0x34f: 14 85  CALL loc_0085
+0x351: 1c     INC R4
+0x352: 85     CLR F0
+0x353: 24 21  JMP loc_0121
+
+loc_0355:
+0x355: 00     NOP
+0x356: 82     DB0x82
+0x357: 1c     INC R4
+0x358: 21     XCH A,@R1
+0x359: 00     NOP
+0x35a: 8a 00  ORL P2,##0x00
+0x35c: 21     XCH A,@R1
+0x35d: 00     NOP
+0x35e: 85     CLR F0
+0x35f: 24 85  JMP loc_0185
+0x361: 1c     INC R4
+0x362: 85     CLR F0
+0x363: 14 85  CALL loc_0085
+0x365: 0c     DB0x0c
+0x366: 85     CLR F0
+0x367: 04 21  JMP loc_0021
+0x369: 00     NOP
+0x36a: 44 ff  JMP loc_02ff
+0x36c: 4d     ORL A,R5
+0x36d: dd     XRL A,R5
+0x36e: 48     ORL A,R0
+0x36f: da     XRL A,R2
+0x370: 44 d5  JMP loc_02d5
+0x372: 42     DB0x42
+0x373: d3 21  XRL A,##0x21
+0x375: 00     NOP
+
+keyboard_in_routine_end:
+; ****************************************************************************
+;
+;                       the tail of the keyboard code
+;
+; ****************************************************************************
+0x376: f9     MOV A,R1                            ; key ok comes here
+0x377: af     MOV R7,A                            ; r7 = result
+
+loc_0378:
+0x378: fe     MOV A,R6                            ; restore old switch status
+0x379: 39     OUTL P1,A                           ; set the enable/switch status
+0x37a: ff     MOV A,R7
+0x37b: d5     SEL RB1                             ; select correct bank
+0x37c: 05     EN I                                ; enable interrupts
+0x37d: 83     RET                                 ; and exit
+
+misc_interrupt_handlers_banked_roms:
+; ****************************************************************************
+;
+;                       Exit interrupt routines ?
+;
+; ****************************************************************************
+0x37e: 20     XCH A,@R0
+0x37f: 99 fe  ANL P1,##0xfe                       ; clear : bank0
+0x381: 84 08  JMP end_of_select_game
+0x383: 99 fd  ANL P1,##0xfd                       ; clear : bank1
+0x385: 84 08  JMP end_of_select_game
+0x387: 99 fc  ANL P1,##0xfc                       ; clear : bank0 bank1
+0x389: 84 08  JMP end_of_select_game
+0x38b: 89 03  ORL P1,##0x03                       ; set : bank0 bank1
+0x38d: 84 08  JMP end_of_select_game
+
+read_joystick:
+; ****************************************************************************
+;
+;       Read the Joystick. R1 = 0 (Stick 1) 4 (Stick2)
+;
+;       On exit R1 = Bit Pattern,R2 = HOffset,R3 = VOffset,F0 = Fire
+;
+; ****************************************************************************
+0x38f: 09     IN A,P1                             ; read enable/switch status
+
+loc_0390:
+0x390: a8     MOV R0,A                            ; save current status in R0
+0x391: 89 bc  ORL P1,##0xbc                       ; set : !kbscan !vdcen !ramen  lumen
+0x393: 99 9b  ANL P1,##0x9b                       ; clear : !kbscan  copyen
+0x395: f9     MOV A,R1
+0x396: 43 f0  ORL A,##0xf0                        ; A = F0 or F4
+0x398: 3a     OUTL P2,A                           ; update keyboard scan row
+0x399: 85     CLR F0                              ; F0,A,R2,R3 = 0
+0x39a: 27     CLR A
+0x39b: aa     MOV R2,A
+0x39c: ab     MOV R3,A
+0x39d: 08     INS A,BUS                           ; read joypad
+0x39e: a9     MOV R1,A                            ; save in r0
+0x39f: 12 a2  JB0 loc_03a2                        ; r2 (horiz) r3 (vert)
+0x3a1: cb     DEC R3
+
+loc_03a2:
+0x3a2: 32 a5  JB1 loc_03a5
+0x3a4: 1a     INC R2
+
+loc_03a5:
+0x3a5: 52 a8  JB2 loc_03a8
+0x3a7: 1b     INC R3
+
+loc_03a8:
+0x3a8: 72 ab  JB3 loc_03ab
+0x3aa: ca     DEC R2
+
+loc_03ab:
+0x3ab: 92 ae  JB4 loc_03ae                        ; set the fire button
+0x3ad: 95     CPL F0
+
+loc_03ae:
+0x3ae: f8     MOV A,R0                            ; reset the enable flags
+0x3af: 39     OUTL P1,A                           ; set the enable/switch status
+0x3b0: 83     RET
+
+unknown_03b1:
+0x3b1: fb     MOV A,R3
+0x3b2: 53 0f  ANL A,##0x0f
+0x3b4: a8     MOV R0,A
+0x3b5: fa     MOV A,R2
+0x3b6: 53 0f  ANL A,##0x0f
+0x3b8: 47     SWAP A
+0x3b9: 48     ORL A,R0
+0x3ba: a8     MOV R0,A
+0x3bb: b9 07  MOV R1,##0x07
+
+loc_03bd:
+0x3bd: 23 c7  MOV A,##0xc7
+0x3bf: 69     ADD A,R1
+0x3c0: a3     MOVP A,@A
+0x3c1: d8     XRL A,R0
+0x3c2: c6 c6  JZ loc_03c6
+0x3c4: e9 bd  DJNZ R1,loc_03bd
+
+loc_03c6:
+0x3c6: 83     RET
+0x3c7: 10     INC @R0
+0x3c8: 1f     INC R7
+0x3c9: 0f     DB0x0f
+0x3ca: ff     MOV A,R7
+0x3cb: f0     MOV A,@R0
+0x3cc: f1     MOV A,@R1
+0x3cd: 01     DB0x01
+0x3ce: 11     INC @R1
+
+unknown_03cf:
+0x3cf: bc ff  MOV R4,##0xff
+0x3d1: fb     MOV A,R3
+0x3d2: 37     CPL A
+0x3d3: 17     INC A
+0x3d4: ae     MOV R6,A
+0x3d5: fa     MOV A,R2
+
+loc_03d6:
+0x3d6: 6e     ADD A,R6
+0x3d7: 1c     INC R4
+0x3d8: f6 d6  JC loc_03d6
+0x3da: 6b     ADD A,R3
+0x3db: ad     MOV R5,A
+0x3dc: 83     RET
+0x3dd: fa     MOV A,R2
+0x3de: 96 e1  JNZ loc_03e1
+0x3e0: 83     RET
+
+loc_03e1:
+0x3e1: fb     MOV A,R3
+0x3e2: 96 e5  JNZ loc_03e5
+0x3e4: 83     RET
+
+loc_03e5:
+0x3e5: 27     CLR A
+
+loc_03e6:
+0x3e6: 6b     ADD A,R3
+
+loc_03e7:
+0x3e7: ea e6  DJNZ R2,loc_03e6
+0x3e9: 83     RET
+
+character_write:
+; ****************************************************************************
+;
+;       R3 = X , R4 = Y, R0 = Char Pointer in VDC,R5 = Char,R6 = Colour
+;       Draw it. Part of "Select Game" code.
+;
+; ****************************************************************************
+0x3ea: fc     MOV A,R4                            ; VDC Memory (R0) = R4
+
+loc_03eb:
+0x3eb: 90     MOVX @R0,A
+0x3ec: 18     INC R0
+0x3ed: f8     MOV A,R0                            ; reached end of available
+0x3ee: d2 f9  JB6 loc_03f9                        ; characters
+
+loc_03f0:
+0x3f0: fb     MOV A,R3                            ; VDC Memory (R0+1) = R3
+0x3f1: 90     MOVX @R0,A
+0x3f2: 03 08  ADD A,##0x08                        ; advance text pointer
+0x3f4: ab     MOV R3,A
+
+loc_03f5:
+0x3f5: 18     INC R0                              ; R0 points to character set
+0x3f6: 54 61  CALL translate_copy_character_colour
+0x3f8: 83     RET
+
+loc_03f9:
+0x3f9: 53 0f  ANL A,##0x0f                        ; A likely to be $41,now $01
+0x3fb: 07     DEC A                               ; if it can go to zero
+0x3fc: c6 f0  JZ loc_03f0                         ; use sprite memory instead ?
+0x3fe: 64 f5  JMP loc_03f5                        ; write the char anyway ????

@@ -5,4 +5,4 @@ export DISPLAY=:0
 export SDL_RENDER_DRIVER=software
 export SDL_AUDIODRIVER=dummy  # Disable audio to avoid ALSA errors
 
-./build/videopac --bios "roms/Philips C52 BIOS (19xx)(Philips)(FR).bin" "$@"
+./build/videopac --bios "roms/Philips C52 BIOS (19xx)(Philips)(FR).bin" "$@" --debug

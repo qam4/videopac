@@ -1,6 +1,7 @@
 #include "emulator.h"
 #include "debugger.h"
 #include "savestate.h"
+#include <iostream>
 
 namespace videopac {
 
@@ -10,6 +11,7 @@ EmulatorCore::EmulatorCore(const Configuration& config)
     
     // Connect components
     cpu_.set_memory_system(&memory_);
+    cpu_.set_input_handler(&input_);
     memory_.set_vdc(&vdc_);
     
     calculate_timing();
@@ -186,6 +188,7 @@ void EmulatorCore::handle_interrupts() {
     // - External interrupt vector is at 0x003 in BIOS
     // - BIOS jumps to 0x402 in cartridge
     // - Cartridge should jump to 0x009 in BIOS (VBlank handler)
+    
     if (vdc_.is_vblank() && !vblank_interrupt_triggered_) {
         // Trigger external interrupt (VBlank) to BIOS vector 0x003
         cpu_.trigger_interrupt(0x003);
@@ -210,6 +213,10 @@ void EmulatorCore::check_debugger_breakpoint() {
     if (debugger_->check_breakpoint(pc)) {
         paused_ = true;
         debugger_->pause();
+        std::cout << "\n*** BREAKPOINT HIT at 0x" << std::hex << pc << std::dec << " ***" << std::endl;
+        std::cout << "CPU State:" << std::endl;
+        std::cout << debugger_->dump_cpu_state() << std::endl;
+        std::cout << "Press F9 to step, F5 to continue" << std::endl;
     }
 }
 

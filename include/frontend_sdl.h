@@ -3,6 +3,8 @@
 
 #include "frontend.h"
 #include "emulator.h"
+#include "debugger.h"
+#include "debugger_ui.h"
 #include <SDL2/SDL.h>
 #include <memory>
 #include <vector>
@@ -41,6 +43,10 @@ private:
     
     // Emulator
     std::unique_ptr<EmulatorCore> emulator_;
+    
+    // Debugger
+    std::unique_ptr<Debugger> debugger_;
+    std::unique_ptr<DebuggerUI> debugger_ui_;
     
     // Configuration
     FrontendConfig config_;

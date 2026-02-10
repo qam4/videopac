@@ -74,6 +74,22 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     // Reset emulator
     emulator_->reset();
     
+    // Initialize debugger if enabled
+    if (config_.enable_debugger) {
+        debugger_ = std::make_unique<Debugger>(emulator_.get());
+        debugger_ui_ = std::make_unique<DebuggerUI>(debugger_.get());
+        emulator_->set_debugger(debugger_.get());
+        debugger_->enable_trace(true);
+        
+        // Set breakpoints from config
+        for (uint16 addr : config_.breakpoints) {
+            debugger_->add_breakpoint(addr);
+            std::cout << "Breakpoint set at 0x" << std::hex << addr << std::dec << std::endl;
+        }
+        
+        std::cout << "Debugger enabled - Press F9 to step, F5 to continue, F1 for help" << std::endl;
+    }
+    
     running_ = true;
     last_fps_time_ = SDL_GetTicks();
     
@@ -82,6 +98,37 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
 }
 
 void SDLFrontend::shutdown() {
+    std::cout << "SDLFrontend::shutdown() called" << std::endl;
+    
+    // Write trace log if debugger is active
+    if (debugger_) {
+        std::cout << "Debugger exists" << std::endl;
+        if (debugger_->is_trace_enabled()) {
+            std::cout << "Trace is enabled" << std::endl;
+            const auto& trace_log = debugger_->get_trace_log();
+            std::cout << "Trace log size: " << trace_log.size() << " instructions" << std::endl;
+            if (!trace_log.empty()) {
+                std::cout << "Writing trace log to trace.log..." << std::endl;
+                std::ofstream trace_file("trace.log");
+                if (!trace_file) {
+                    std::cerr << "ERROR: Failed to open trace.log for writing!" << std::endl;
+                } else {
+                    for (const auto& line : trace_log) {
+                        trace_file << line << "\n";
+                    }
+                    trace_file.close();
+                    std::cout << "Trace log written successfully (" << trace_log.size() << " instructions)" << std::endl;
+                }
+            } else {
+                std::cout << "Trace log is empty, not writing file" << std::endl;
+            }
+        } else {
+            std::cout << "Trace is NOT enabled" << std::endl;
+        }
+    } else {
+        std::cout << "No debugger instance" << std::endl;
+    }
+    
     cleanup_audio();
     cleanup_video();
     
@@ -201,11 +248,14 @@ void SDLFrontend::cleanup_audio() {
 
 void SDLFrontend::run() {
     while (running_) {
+        uint32 frame_start = SDL_GetTicks();
+        
         // Process input
         process_input();
         
         // Run emulator frame if not paused
-        if (!paused_) {
+        bool emulator_paused = debugger_ && debugger_->is_paused();
+        if (!paused_ && !emulator_paused) {
             emulator_->run_frame();
             frame_count_++;
         }
@@ -229,6 +279,13 @@ void SDLFrontend::run() {
             if (config_.show_fps) {
                 std::cout << "FPS: " << current_fps_ << std::endl;
             }
+        }
+        
+        // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
+        uint32 target_frame_time = (config_.video_standard == VideoStandard::NTSC) ? 17 : 20;  // ms
+        uint32 elapsed = SDL_GetTicks() - frame_start;
+        if (elapsed < target_frame_time) {
+            SDL_Delay(target_frame_time - elapsed);
         }
     }
 }
@@ -322,7 +379,26 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
                 return;
                 
             case SDLK_F5:
-                emulator_->reset();
+                if (debugger_ && debugger_->is_paused()) {
+                    debugger_->continue_execution();
+                    std::cout << "Continuing execution..." << std::endl;
+                } else {
+                    emulator_->reset();
+                }
+                return;
+                
+            case SDLK_F9:
+                if (debugger_) {
+                    debugger_->step();
+                    debugger_ui_->display_cpu_state();
+                    debugger_ui_->display_disassembly(2, 5);
+                }
+                return;
+                
+            case SDLK_F1:
+                if (debugger_) {
+                    debugger_ui_->print_help();
+                }
                 return;
                 
             case SDLK_PAUSE:
@@ -339,6 +415,8 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
     // Map to Videopac key
     VidKey vid_key = map_sdl_key(event.keysym.sym);
     if (static_cast<uint8>(vid_key) != 0xFF) {
+        std::cout << "Key " << (key_down ? "pressed" : "released") << ": " 
+                  << std::hex << "0x" << static_cast<int>(vid_key) << std::dec << std::endl;
         emulator_->get_input_handler().set_key_state(vid_key, key_down);
     }
 }

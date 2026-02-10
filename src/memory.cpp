@@ -74,17 +74,20 @@ uint8 MemorySystem::read_program(uint16 address) {
     
     // Cartridge ROM: 0x400-0xFFF (with banking)
     if (address >= 0x400 && !state_.cart_rom.empty()) {
-        // Skip address line A10 (address 0x400 in ROM space)
-        uint16 rom_offset = (address - 0x400) & 0xBFF;  // Mask out A10
+        // Calculate ROM offset (address - 0x400)
+        uint16 rom_offset = address - 0x400;
         
         // Apply banking
         if (state_.num_banks > 1) {
             rom_offset += state_.current_bank * 1024;  // 1KB per bank
         }
         
-        if (rom_offset < state_.cart_rom.size()) {
-            return state_.cart_rom[rom_offset];
+        // Check if accessing beyond ROM size - return 0xFF for unpopulated addresses
+        if (rom_offset >= state_.cart_rom.size()) {
+            return 0xFF;
         }
+        
+        return state_.cart_rom[rom_offset];
     }
     
     return 0xFF;

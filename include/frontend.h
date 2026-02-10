@@ -29,6 +29,7 @@ struct FrontendConfig {
     // Debug settings
     bool show_fps;
     bool enable_debugger;
+    std::vector<uint16> breakpoints;
     
     // File paths
     std::string bios_path;
@@ -46,7 +47,7 @@ struct FrontendConfig {
         , audio_buffer_size(512)
         , master_volume(0.7f)
         , audio_enabled(true)
-        , show_fps(false)
+        , show_fps(true)
         , enable_debugger(false)
         , screenshot_path("screenshots")
     {}

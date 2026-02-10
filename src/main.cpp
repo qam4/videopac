@@ -17,6 +17,7 @@ void print_usage(const char* program_name) {
     std::cout << "  --frames <n>        Run for N frames then exit (headless mode)" << std::endl;
     std::cout << "  --screenshot <n>    Save screenshot every N frames (headless mode)" << std::endl;
     std::cout << "  --debug             Enable debugger" << std::endl;
+    std::cout << "  --break <addr>      Set breakpoint at address (hex, e.g. 0x00B0)" << std::endl;
     std::cout << "  --help              Show this help message" << std::endl;
 }
 
@@ -32,6 +33,7 @@ int main(int argc, char* argv[]) {
     bool force_headless = false;
     int frame_limit = 0;
     int screenshot_interval = 0;
+    std::vector<uint16> breakpoints;
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0) {
@@ -50,6 +52,10 @@ int main(int argc, char* argv[]) {
             screenshot_interval = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--debug") == 0) {
             config.enable_debugger = true;
+        } else if (strcmp(argv[i], "--break") == 0 && i + 1 < argc) {
+            uint16 addr = static_cast<uint16>(std::strtol(argv[++i], nullptr, 16));
+            breakpoints.push_back(addr);
+            config.enable_debugger = true;  // Auto-enable debugger if breakpoints are set
         } else if (argv[i][0] != '-') {
             rom_path = argv[i];
         } else {
@@ -66,6 +72,7 @@ int main(int argc, char* argv[]) {
     }
     
     config.rom_path = rom_path;
+    config.breakpoints = breakpoints;
     
     // Determine which frontend to use
 #ifdef ENABLE_SDL

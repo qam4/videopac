@@ -78,6 +78,15 @@ if(BUILD_STANDALONE)
     endif()
 endif()
 
+# Tools
+option(BUILD_TOOLS "Build development tools" ON)
+if(BUILD_TOOLS)
+    add_executable(disasm_tool
+        tools/disasm_tool.cpp
+    )
+    target_link_libraries(disasm_tool videopac_core)
+endif()
+
 # Libretro core
 if(BUILD_LIBRETRO)
     add_library(videopac_libretro SHARED

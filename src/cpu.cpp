@@ -1,10 +1,11 @@
 #include "cpu.h"
 #include "memory.h"
+#include "input.h"
 #include <cstring>
 
 namespace videopac {
 
-CPU::CPU() : memory_(nullptr) {
+CPU::CPU() : memory_(nullptr), input_(nullptr) {
     reset();
 }
 
@@ -16,6 +17,10 @@ void CPU::reset() {
 
 void CPU::set_memory_system(MemorySystem* mem) {
     memory_ = mem;
+}
+
+void CPU::set_input_handler(InputHandler* input) {
+    input_ = input;
 }
 
 uint8 CPU::read_memory(uint16 address) {
@@ -35,6 +40,15 @@ uint8 CPU::read_port(uint8 port) {
     if (port == 1) {
         return state_.port1;
     } else if (port == 2) {
+        // Port 2 reads keyboard input
+        // P12 (bit 2 of Port 1) must be 0 to enable keyboard
+        // P20-P22 (bits 0-2 of Port 2) select the row
+        if (input_ && !(state_.port1 & 0x04)) {  // P12 == 0
+            uint8 selected_row = state_.port2 & 0x07;  // P20-P22
+            uint8 result = input_->read_keyboard(selected_row);
+            return result;
+        }
+        // Keyboard disabled or no input handler - return last written value
         return state_.port2;
     }
     return 0xFF;
@@ -328,6 +342,7 @@ uint8 CPU::execute_instruction() {
         // Cycles: 1
         case 0xA5:
             state_.psw &= 0xEF;  // Clear bit 4 (F1 flag)
+            state_.current_bank = 0;  // F1=0 means Bank 0
             break;
             
         // CPL A - Complement accumulator (0x37)
@@ -361,6 +376,7 @@ uint8 CPU::execute_instruction() {
         // Cycles: 1
         case 0xB5:
             state_.psw ^= 0x10;  // Toggle bit 4 (F1 flag)
+            state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update bank
             break;
             
         // DA A - Decimal Adjust Accumulator (0x57)
@@ -602,7 +618,7 @@ uint8 CPU::execute_instruction() {
         // Jumps to the address within the current page if flag F1 is set.
         case 0x76: {
             uint8 addr = fetch_byte();
-            if (state_.psw & 0x10) {
+            if (state_.psw & 0x10) {  // Test bit 4 (F1 flag)
                 state_.pc = (state_.pc & 0xF00) | addr;
             }
             cycles = 2;
@@ -847,7 +863,8 @@ uint8 CPU::execute_instruction() {
         // The full 8-bit value in Rr is used as the external address.
         case 0x80: case 0x81: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            state_.a = read_memory(0x100 | state_.r[reg_idx]);
+            uint8 addr = state_.r[reg_idx];
+            state_.a = (memory_) ? memory_->read_external(addr) : 0xFF;
             cycles = 2;
             break;
         }
@@ -859,7 +876,10 @@ uint8 CPU::execute_instruction() {
         // Writes the accumulator to external data memory addressed by R0 or R1.
         case 0x90: case 0x91: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            write_memory(0x100 | state_.r[reg_idx], state_.a);
+            uint8 addr = state_.r[reg_idx];
+            if (memory_) {
+                memory_->write_external(addr, state_.a);
+            }
             cycles = 2;
             break;
         }
@@ -958,17 +978,20 @@ uint8 CPU::execute_instruction() {
             break;
         }
             
-        // RETR - Return from subroutine and restore PSW (0x93)
-        // Operation: (PC) <- ((SP)) & 0x0FFF, (PSW4-7) <- ((SP)) >> 12, (SP) <- (SP) - 1
-        // Flags affected: All (PSW bits 4-7 restored)
+        // RETR - Return from interrupt and restore PSW (0x93)
+        // Restores PC and PSW bits 5-7 (F0, AC, C) from stack.
+        // Bit 4 (F1/BS) is NOT restored - keeps current value.
         // Cycles: 2
-        // Restores both the program counter (12 bits) and PSW bits 4-7 (4 bits) from the stack.
-        // Used when returning from interrupt service routines or when PSW needs to be preserved.
+        // Used when returning from interrupt service routines.
+        // Reference: doc/mcs-48-assembly-language-manual.md: "F1 is not restored by RETR"
         case 0x93: {
             uint16 stack_value = pop_stack();
             state_.pc = stack_value & 0x0FFF;  // Extract PC (12 bits)
-            state_.psw = (state_.psw & 0x0F) | ((stack_value >> 8) & 0xF0);  // Extract and restore PSW bits 4-7
-            state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update bank from PSW bit 4
+            // Restore PSW bits 5-7 (F0, AC, C) but NOT bit 4 (F1/BS)
+            // Per Intel: "F1 is not restored by RETR" - bit 4 keeps its current value
+            // This allows ISR to signal to main program via F1, and preserves bank selection
+            state_.psw = (state_.psw & 0x1F) | ((stack_value >> 8) & 0xE0);  // Preserve bits 0-4, restore 5-7
+            state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update bank from current bit 4
             cycles = 2;
             break;
         }
@@ -1049,21 +1072,23 @@ uint8 CPU::execute_instruction() {
             
         // SEL RB0 - Select register bank 0 (0xC5)
         // Operation: (BS) <- 0
-        // Flags affected: BS (in PSW)
+        // Flags affected: BS (in PSW bit 4)
         // Cycles: 1
         // Selects register bank 0 (RAM locations 0-7 as R0-R7).
         case 0xC5:
             state_.current_bank = 0;
+            state_.psw &= 0xEF;  // Clear PSW bit 4 (BS)
             break;
             
         // SEL RB1 - Select register bank 1 (0xD5)
         // Operation: (BS) <- 1
-        // Flags affected: BS (in PSW)
+        // Flags affected: BS (in PSW bit 4)
         // Cycles: 1
         // Selects register bank 1 (RAM locations 24-31 as R0-R7).
         // Useful for preserving registers during interrupt service routines.
         case 0xD5:
             state_.current_bank = 1;
+            state_.psw |= 0x10;  // Set PSW bit 4 (BS)
             break;
             
         // ========== DATA EXCHANGE INSTRUCTIONS ==========

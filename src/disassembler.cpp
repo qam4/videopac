@@ -258,13 +258,16 @@ Instruction Disassembler::disassemble_instruction(uint16 address, const uint8* m
             std::stringstream ss;
             
             // Check if it's a jump/call instruction (needs address calculation)
-            if (instr.mnemonic.find("JMP") == 0 || instr.mnemonic.find("CALL") == 0 ||
-                instr.mnemonic.find("JB") == 0 || instr.mnemonic.find("JC") == 0 ||
-                instr.mnemonic.find("JNC") == 0 || instr.mnemonic.find("JZ") == 0 ||
-                instr.mnemonic.find("JNZ") == 0 || instr.mnemonic.find("JT") == 0 ||
-                instr.mnemonic.find("JNT") == 0 || instr.mnemonic.find("JF") == 0 ||
-                instr.mnemonic.find("JNI") == 0 || instr.mnemonic.find("DJNZ") == 0) {
-                // Calculate target address
+            if (instr.mnemonic.find("JMP") == 0 || instr.mnemonic.find("CALL") == 0) {
+                // JMP and CALL use bits 5-7 of opcode for address bits 8-10
+                uint16 target = ((instr.opcode & 0xE0) << 3) | instr.operand;
+                ss << "0x" << std::hex << std::setw(3) << std::setfill('0') << target;
+            } else if (instr.mnemonic.find("JB") == 0 || instr.mnemonic.find("JC") == 0 ||
+                       instr.mnemonic.find("JNC") == 0 || instr.mnemonic.find("JZ") == 0 ||
+                       instr.mnemonic.find("JNZ") == 0 || instr.mnemonic.find("JT") == 0 ||
+                       instr.mnemonic.find("JNT") == 0 || instr.mnemonic.find("JF") == 0 ||
+                       instr.mnemonic.find("JNI") == 0 || instr.mnemonic.find("DJNZ") == 0) {
+                // Conditional jumps use current page (bits 8-11 of PC after increment)
                 uint16 target = ((address + 2) & 0xF00) | instr.operand;
                 ss << "0x" << std::hex << std::setw(3) << std::setfill('0') << target;
             } else {
@@ -338,25 +341,58 @@ std::string Disassembler::format_instruction(const Instruction& instr) {
     return ss.str();
 }
 
-std::string Disassembler::identify_bios_call(uint16 address) {
-    // Known BIOS routine addresses from doc/o2doc.md
-    static const std::map<uint16, std::string> bios_routines = {
-        {0x0E7, "Enable VDC"},
-        {0x0EC, "Enable external RAM"},
-        {0x11C, "Turn display off"},
-        {0x127, "Turn display on"},
-        {0x2C3, "Select Game routine"},
-        {0x38F, "Read Joystick"},
-        {0x400, "Cartridge entry point"},
-        {0x402, "External IRQ handler"},
-        {0x404, "Timer IRQ handler"},
-        {0x406, "VBLANK service routine"},
-        {0x408, "Post-Select Game"},
-        {0x40A, "VBLANK continuation"},
+std::string Disassembler::get_label_name(uint16 address) {
+    // Known BIOS and cartridge routine addresses with meaningful label names
+    static const std::map<uint16, std::string> known_labels = {
+        // BIOS ROM Routine Addresses
+        {0x000, "cold_boot"},
+        {0x003, "external_t0_interrupt"},
+        {0x007, "timer_clock_interrupt"},
+        {0x009, "vblank_interrupt_routine_1"},
+        {0x01A, "vblank_interrupt_routine_2"},
+        {0x044, "vblank_interrupt_routine_3"},
+        {0x089, "ram_to_vdc_vblank_copying_check"},
+        {0x0A3, "copying_code"},
+        {0x0B0, "keyboard_routine"},
+        {0x0E7, "set_up_vdc_access"},
+        {0x0EC, "set_up_ram_access"},
+        {0x0F1, "reset"},
+        {0x11C, "display_off"},
+        {0x127, "display_on"},
+        {0x132, "enable_data_copy_next_vsync"},
+        {0x13D, "get_keystroke"},
+        {0x14B, "character_colour_translation"},
+        {0x16B, "clear_all_characters"},
+        {0x176, "wait_for_interrupt"},
+        {0x17C, "display_2_digit_bcd_characters"},
+        {0x1A2, "start_tune"},
+        {0x1B0, "up_down_counter"},
+        {0x23A, "set_up_quad_score_characters"},
+        {0x261, "translate_copy_character_colour"},
+        {0x26A, "bit_test"},
+        {0x280, "bit_clear"},
+        {0x28A, "bit_set"},
+        {0x293, "unknown_0293"},
+        {0x2C3, "select_game"},
+        {0x300, "frequency_data"},
+        {0x34A, "tune_data"},
+        {0x376, "keyboard_in_routine_end"},
+        {0x37E, "misc_interrupt_handlers_banked_roms"},
+        {0x38F, "read_joystick"},
+        {0x3B1, "unknown_03b1"},
+        {0x3CF, "unknown_03cf"},
+        {0x3EA, "character_write"},
+        // Vectors in Odyssey II ROM Cartridges
+        {0x400, "restart"},
+        {0x402, "vblank_external_interrupt"},
+        {0x404, "timer_clock_interrupt_cart"},
+        {0x406, "vblank_routine_vector"},
+        {0x408, "end_of_select_game"},
+        {0x40A, "continuation_of_vblank"}
     };
     
-    auto it = bios_routines.find(address);
-    if (it != bios_routines.end()) {
+    auto it = known_labels.find(address);
+    if (it != known_labels.end()) {
         return it->second;
     }
     

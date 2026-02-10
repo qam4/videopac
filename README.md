@@ -30,8 +30,6 @@ A cycle-accurate emulator for the Philips Videopac / Magnavox Odyssey2 home vide
 
 ```bash
 mkdir build
-cd build
-cmake ..
 cmake --build .
 ```
 

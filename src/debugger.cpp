@@ -222,10 +222,10 @@ void Debugger::log_instruction() {
     
     trace_log_.push_back(ss.str());
     
-    // Limit trace log size to prevent memory issues
-    if (trace_log_.size() > 10000) {
-        trace_log_.erase(trace_log_.begin());
-    }
+    // Limit trace log size to prevent memory issues (disabled for debugging)
+    // if (trace_log_.size() > 10000) {
+    //     trace_log_.erase(trace_log_.begin());
+    // }
 }
 
 void Debugger::clear_trace_log() {

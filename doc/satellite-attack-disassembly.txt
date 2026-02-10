@@ -1,0 +1,1963 @@
+exram_pos_04	.equ  004h 	; highscore pos 4 x1000
+exram_pos_05	.equ  005h	; highscore pos 3 x100
+exram_pos_06	.equ  006h	; highscore pos 2 x10
+exram_pos_07	.equ  007h	; highscore pos 1  
+
+exram_pos_08	.equ  004h 	; '[rightarrow]' 
+exram_pos_09	.equ  005h	; '?' - player name char 1
+exram_pos_0a	.equ  006h	; '?' - player name char 2
+exram_pos_0b	.equ  007h	; '?' - player name char 3
+exram_pos_0c	.equ  004h 	; '?' - player name char 4
+exram_pos_0d	.equ  005h	; '?' - player name char 5
+exram_pos_0e	.equ  006h	; '?' - player name char 6
+exram_pos_0f	.equ  007h	; '[space]'
+
+exram_pos_10	.equ  010h 	; score pos 4 x1000
+exram_pos_11	.equ  011h	; score pos 3 x100
+exram_pos_12	.equ  012h	; score pos	2 x10
+exram_pos_13	.equ  013h	; score pos	1  
+
+
+exram_pos_22	.equ	022h	; Countdown timer for changing fire direction (starts at 
+				; either 0x04 or 0x10)
+
+exram_pos_23	.equ	023h	; Fire direction (white dot in shield). See figure:
+				; 	    12
+				; 	   11|13 
+				; 	 10  |  14
+				; 	9    |    15
+				;   8	---- X ---- 0
+				; 	7    |     1
+				; 	 6   |   2
+				;        5 | 3
+				; 	     4
+
+
+iram_pos_22		.equ	022h
+
+iram_pos_24		.equ  024h	; length of player name
+				; bit 7 set ??
+
+iram_pos_25		.equ	025h	; counter (??). Used for choosing new position of satellites
+
+iram_pos_26		.equ	026h	; used as counter for number of player name flashes.
+
+iram_pos_27		.equ  027h	; is set to 0xc4 when R3(RB0) = zero in SetNewFireDirection
+				; set to 56 after keypress for name, 
+				; set to AC after hitting satellite, 
+				; set to A4 after player fire.
+				; set to F5 after 2b increment (and smaller then 10)
+				; set to 0 after bit 1 is zero in 3rd byte sprite 0.
+				; set to 4a during flashing of player name after end game
+
+iram_pos_2d		.equ  02dh  ; used in CheckPlayerHit as counter for flashing speed of player name
+				; used in UpdateStatusbar
+
+iram_pos_3c		.equ	03ch	; direction of movement for satellite 0
+iram_pos_3b		.equ	03bh	; direction of movement for satellite 1
+iram_pos_3a		.equ	03ah	; direction of movement for satellite 2
+iram_pos_39		.equ	039h	; direction of movement for satellite 3
+iram_pos_38		.equ	038h	; direction of movement for satellite 4
+iram_pos_37		.equ	037h	; direction of movement for satellite 5
+iram_pos_36		.equ	036h	; direction of movement for satellite 6
+iram_pos_35		.equ	035h	; direction of movement for satellite 7
+iram_pos_34		.equ	034h	; direction of movement for satellite 8
+iram_pos_33		.equ	033h	; direction of movement for satellite 9
+
+				
+-------
+
+
+iram_collision	.equ	03Dh
+
+
+vdc_table_01	.equ  07Ch
+vdc_table_03	.equ  07Ah	; bit 0 set? player hit
+				; bit 1 set? new highscore animation is busy
+				; bit 4 in CollisionDetected
+
+vdc_table_06	.equ  077h
+vdc_table_0A	.equ  073h
+vdc_table_0E	.equ  06Fh
+vdc_table_10	.equ  06Dh
+
+
+
+
+
+
+0400: [ 44 C3 ] JMP selectgame		; Selectgame
+0402: [ 04 09 ] JMP irq				; irq
+0404: [ 93    ] RETR				; time
+0405: [ 00    ] NOP	
+0406: [ C4 00 ] JMP vsync			; vsync
+0408: [ A4 00 ] JMP 500				; start
+040A: [ FC    ] MOV A, R4			; soundirq. r4 = current tune position
+040B: [ F2 0F ] JB7 0F				; bit 7 set?
+040D: [ 04 44 ] JMP soundirq			; no, do sound irq
+040F: [ E4 00 ] JMP play_custom_sound		
+
+main_loop1:
+0411: [ B8 25 ] MOV R0, iram_pos_25		; 
+0413: [ 10    ] INC @R0				; increment 0x25 in intram
+0414: [ F5    ] SEL MB1
+0415: [ 34 76 ] CALL move_player			
+0417: [ 14 2B ] CALL show_particles
+0419: [ 54 00 ] CALL 200
+041B: [ E5    ] SEL MB0
+041C: [ 94 B0 ] CALL ChangeFireDirection
+041E: [ 94 24 ] CALL test_for_collision
+0420: [ A4 00 ] JMP main_loop2
+
+player_dead:
+0422: [ A4 7E ] JMP PlayerDiesAnimation
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; TestForCollision
+;
+; For each sprite the collision register is read. If a collision is detected,
+; all characters are scanned to find out which character it collided with. 
+; Apriopriate action is taken (see subroutines for more info).
+; 
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+0424: [ BF 01 ] MOV R7, 01
+0426: [ B9 7A ] MOV R1, vdc_table_03
+0428: [ 81    ] MOVX A, @R1			; move VDC adres 03 to A.
+0429: [ 12 22 ] JB0, player_dead		; bit 0 set? (player hit)
+042B: [ 19    ] INC R1				; r1 = 7b (sprite attribute byte)
+042C: [ 94 3E ] CALL 43E			
+042E: [ BF 02 ] MOV R7, 02
+0430: [ B9 77 ] MOV R1, vdc_table_06
+0432: [ 94 3E ] CALL 43E			; do next sprite
+0434: [ BF 03 ] MOV R7, 03
+0436: [ B9 73 ] MOV R1, vdc_table_0A
+0438: [ 94 3E ] CALL 43E			; do next sprite
+043A: [ BF 04 ] MOV R7, 04
+043C: [ B9 6F ] MOV R1, vdc_table_0E
+043E: [ 81    ] MOVX A, @R1			; move sprite attribute byte to A
+043F: [ C6 70 ] JZ 70				; zero? jmp 70 (RET)
+0441: [ D3 18 ] XRL A, 18			; XRL with 0x18
+0443: [ 53 38 ] ANL A, 38			; take only the color bytes
+0445: [ C6 70 ] JZ 70				; if color is orange (explosion), jmp 470 (ret)
+0447: [ 19    ] INC R1				;
+0448: [ 19    ] INC R1				; R1 sprite y-pos
+0449: [ B8 3D ] MOV R0, iram_collision	
+044B: [ F0    ] MOV A, @R0			; get collision register
+044C: [ 67    ] RRC A				; right with carry
+044D: [ EF 4C ] DJNZ R7 4C			; get right bit
+044F: [ E6 70 ] JNC 70				; no collision? jmp 70 (RET)
+0451: [ BE 0C ] MOV R6, 0C			; R6 = 12 (number of chars = satellites)
+0453: [ B8 6D ] MOV R0, vdc_table_10	; start of char data in VDC mirror
+0455: [ 94 5D ] CALL CheckCollision		; check for each char 
+0457: [ C8    ] DEC R0
+0458: [ C8    ] DEC R0
+0459: [ C8    ] DEC R0
+045A: [ EE 55 ] DJNZ R6 55			; next character
+045C: [ 83    ] RET
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; CheckCollision
+;
+; Checks for a collision between a sprite and a character. Both are said
+; to have collided when the difference in vertical position is smaller than
+; 12 and the horizontal difference is smaller than 7.
+; 
+; IN:	
+;	r0		holds pointer to character y-position
+;	r1 		holds pointer to sprite y-position 
+; 
+; SIDE-EFFECTS:
+;
+;	r0		is lowered by one.
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+045D: [ F5    ] SEL MB1
+045E: [ 74 00 ] CALL GetDistanceBetweenObjects	; calc y-distance between sprite and char
+0460: [ E5    ] SEL MB0
+0461: [ 03 F3 ] ADD A, F3				; A holds distance. 0xF3 = -13
+0463: [ C8    ] DEC R0					; move to character x-position
+0464: [ F6 70 ] JC 70					; y-distance bigger then 0x0C? jmp RET
+0466: [ C9    ] DEC R1					; move to sprite x-position
+0467: [ F5    ] SEL MB1
+0468: [ 74 00 ] CALL GetDistanceBetweenObjects  ; calc x-distance between sprite and char
+046A: [ E5    ] SEL MB0
+046B: [ 03 F8 ] ADD A, F8				; 0xF8 = -7 
+046D: [ E6 71 ] JNC CollisionDetected		; x-distance not bigger then 0x07?
+046F: [ 19    ] INC R1					; yes it was. move to character y-position
+0470: [ 83    ] RET
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; CollisionDetected
+;
+; Takes action based on what objects collided. If player is hit then bit 0 of
+; byte 3 of sprite 0 is set. Otherwise, hit object is removed and points are
+; added to the score.
+; 
+; IN:	
+;	r0		holds pointer to character x-position
+;	r1 		holds pointer to sprite x-position 
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+0471: [ F9    ] MOV A, R1			; move sprite x-position to A
+0472: [ D3 7C ] XRL A, 7C			;
+0474: [ 96 80 ] JNZ, 80				; is it 7C? (sprite 0 x-position)? no jmp 480
+0476: [ B9 2B ] MOV R1, 2B			; player sprite has been hit
+0478: [ F1    ] MOV A, @R1			; move intram 2B to A
+0479: [ 92 80 ] JB4, 80				; bit 4 set? yes jmp 480
+047B: [ B9 7A ] MOV R1, 7A
+047D: [ 23 01 ] MOV A, 01
+047F: [ 91    ] MOVX @R1, A			; move 0x01 to exram 7A -> player hit
+0480: [ BC 38 ] MOV R4, 38			; color is 0x07 (white) for explosion sprite
+0482: [ B4 9D ] CALL InitExplosion		; set sprites to correct position for animation
+0484: [ 23 F8 ] MOV A, F8			; move f8 to char x,y-pos (char invisible)
+0486: [ 90    ] MOVX @R0, A			; y-pos
+0487: [ C8    ] DEC R0
+0488: [ 90    ] MOVX @R0, A			; x-pos
+0489: [ C8    ] DEC R0
+048A: [ C8    ] DEC R0
+048B: [ 80    ] MOVX A, @R0			; get char attribute byte to find out what was hit
+048C: [ BC 00 ] MOV R4, 00			; 0 points
+048E: [ D2 9A ] JB6 9A				; bit 6 set. Laser from UFO
+0490: [ BC 0A ] MOV R4, 0A			; 10 points
+0492: [ B2 9A ] JB5 9A				; bit 5 set. UFO
+0494: [ BC 03 ] MOV R4, 03			; 3 points
+0496: [ 92 9A ] JB4, 9A				; bit 4 set. Homing satellite
+0498: [ BC 01 ] MOV R4, 01			; 1 point. Normal satellite.
+049A: [ F5    ] SEL MB1
+049B: [ 14 10 ] CALL StartFlyingShrapnel	; start explosion animation
+049D: [ E5    ] SEL MB0
+049E: [ BE 01 ] MOV R6, 01
+04A0: [ 00    ] NOP				; add R4 to score starts here
+04A1: [ B8 13 ] MOV R0, 13			; move exram 13 to r0
+04A3: [ 80    ] MOVX A, @R0			
+04A4: [ 6C    ] ADD A, R4			; add r4 (=1)
+04A5: [ 90    ] MOVX @R0, A			; save in exram 13
+04A6: [ 03 F6 ] ADD A, F6			
+04A8: [ E6 70 ] JNC 70				; is not 10? jmp 470 (RET)
+04AA: [ 90    ] MOVX @R0, A			; replace with 0
+04AB: [ BC 01 ] MOV R4, 01			; add one to next digit
+04AD: [ C8    ] DEC R0				; next digit
+04AE: [ 84 A3 ] JMP 4A3
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; ChangeFireDirection
+;
+; If intram_pos_22 has reached zero, a new fire direction is calculated.
+; 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+04B0: [ B8 22 ] MOV R0, intram_pos_22	; get timer
+04B2: [ 80    ] MOVX A, @R0			;
+04B3: [ C6 B8 ] JZ SetNewFireDirection	; reached zero?
+04B5: [ 07    ] DEC A				; nope, decrease with 1
+04B6: [ 90    ] MOVX @R0, A			; store	
+04B7: [ 83    ] RET				
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; SetNewFireDirection
+;
+; Calculates the new fire direction after movement. First part of the routine
+; calculates how many steps (clock-wise direction) there are between the current
+; fire direction and the movement direction (value in R7). Second part 
+; caculates the new delay stored in exram_pos_22. If the distance between old
+; and new position >= 5 delay is 0x04. Otherwise new delay is 0x10
+; 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+04B8: [ B9 00 ] MOV R1, 00			
+04BA: [ 74 8F ] CALL getjoystick		; test joystick 0 (r1 = 0)
+04BC: [ FA    ] MOV A, R2			; x-axis to R2
+04BD: [ 4B    ] ORL A, R3			; OR with y-axis (r3)
+04BE: [ C6 FD ] JZ FD				; no direction? go 4FD (ret)
+04C0: [ 74 B1 ] CALL decodejoystick
+04C2: [ F9    ] MOV A, R1			; move direction to R1
+04C3: [ C6 CA ] JZ CA				; if direction is to right jump CA
+04C5: [ 37    ] CPL A				; 
+04C6: [ 17    ] INC A				; A = (-A+ * 2
+04C7: [ 03 08 ] ADD A, 08			;
+04C9: [ E7    ] RL A				;
+04CA: [ AC    ] MOV R4, A			; move direction to R4
+04CB: [ B8 23 ] MOV R0, exram_pos_23	; exram 23 is fire_direction
+04CD: [ BF 00 ] MOV R7, 00			; r7 = 0
+04CF: [ 80    ] MOVX A, @R0			; move fire_direction to A
+04D0: [ DC    ] XRL A, R4			; compare with direction
+04D1: [ C6 DE ] JZ DE				; the same? Continue at 4DE
+04D3: [ CC    ] DEC R4				; change new fire direction
+04D4: [ 1F    ] INC R7				; inc r7 (contains steps from old to new position)
+04D5: [ FC    ] MOV A, R4			; move fire_direction to A
+04D6: [ 17    ] INC A				; increment A 
+04D7: [ 96 DC ] JNZ, DC				; not zero?
+04D9: [ 23 0F ] MOV A, 0F			; set A and R4 to 0x0F (mod 0x0f)
+04DB: [ AC    ] MOV R4, A
+04DC: [ 84 CF ] JMP 4CF
+
+04DE: [ FF    ] MOV A, R7			; r7 contains steps from old to new position
+04DF: [ C6 FB ] JZ FB				; zero? set exram_pos_22 to zero.
+04E1: [ 03 FB ] ADD A, FB			; 
+04E3: [ BC 04 ] MOV R4, 04			; r4 (holds new delay) = 0x04
+04E5: [ F6 E9 ] JC E9				; jmp if A (r7) => 5.
+04E7: [ BC 10 ] MOV R4, 10			; r4 = 0x10 (big delay if almost there)
+04E9: [ 80    ] MOVX A, @R0			; r0 holds exram_23.
+04EA: [ 17    ] INC A				; rotate fire_direction anti-clockwise
+04EB: [ 90    ] MOVX @R0, A			; store it
+04EC: [ D3 10 ] XRL A, 10			; is it 0x10?
+04EE: [ 96 F1 ] JNZ, F1				; nope, skip to 4f1
+04F0: [ 90    ] MOVX @R0, A			; store it again (a is now zero)
+04F1: [ C5    ] SEL RB0				; huh?
+04F2: [ FB    ] MOV A, R3			; huh?
+04F3: [ D5    ] SEL RB1				; huh?
+04F4: [ 96 FA ] JNZ, FA
+04F6: [ B9 27 ] MOV R1, iram_pos_27
+04F8: [ B1 C4 ] MOV @R1, C4			; move 0xc4 to intram_pos_27
+04FA: [ FC    ] MOV A, R4			; r4 holds delay.
+04FB: [ C8    ] DEC R0				; r0 now points to exram_pos_22
+04FC: [ 90    ] MOVX @R0, A			; move new delay to exram_pos_22
+04FD: [ 83    ] RET
+
+04FE: [ 00    ] NOP				; just some NOPs to allign the code
+04FF: [ 00    ] NOP
+
+main_loop2:
+0500: [ 14 EC ] CALL extramenable
+0502: [ F4 92 ] CALL increment_2a_2b_counters
+0504: [ B4 3E ] CALL CheckPlayerHit
+0506: [ D4 63 ] CALL 663
+0508: [ B9 2E ] MOV R1, 2E				;0x2e to R1
+050A: [ F1    ] MOV A, @R1				;exram (2e) to A
+050B: [ 96 12 ] JNZ, 12					;not zero? jmp 12
+050D: [ 11    ] INC @R1					;inc exram (2e)
+050E: [ F4 5D ] CALL init_graphics_and_exram_to_vcd_table:
+0510: [ F4 4D ] CALL InitPlayerName
+0512: [ B8 27 ] MOV R0, 27
+0514: [ F0    ] MOV A, @R0
+0515: [ C6 1B ] JZ 1B
+0517: [ B0 00 ] MOV @R0, 00
+0519: [ 34 A2 ] CALL playsound
+051B: [ BA 27 ] MOV R2, 27
+051D: [ BB AA ] MOV R3, AA
+051F: [ 15    ] DIS I
+0520: [ F4 16 ] CALL wait_until_scanline
+0522: [ F4 08 ] CALL set_VDC_control_register_to_0x80
+0524: [ D4 AB ] CALL update_status_bar
+0526: [ 34 76 ] CALL waitvsync
+0528: [ 34 34 ] CALL 134
+052A: [ B8 A3 ] MOV R0, A3
+052C: [ 23 00 ] MOV A, 00
+052E: [ 90    ] MOVX @R0, A
+052F: [ C8    ] DEC R0
+0530: [ 23 8F ] MOV A, 8F
+0532: [ 90    ] MOVX @R0, A
+0533: [ 14 EC ] CALL extramenable
+0535: [ D4 03 ] CALL check_for_keypress
+0537: [ B8 08 ] MOV R0, 08			; place right-arrow symbol
+0539: [ 23 36 ] MOV A, 36			; in first place
+053B: [ 90    ] MOVX @R0, A			; of name
+053C: [ 84 11 ] JMP main_loop1
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; CheckPlayerHit
+;
+; if bit 0 of 3rd byte of sprite 0 is cleared then return. Also return if
+; bit 0 is set and the x-position of sprite 0 is 0xf8. If bit 1 is not set 
+; then check (and update) the highscore. If bit 1 is set then the player
+; name is flashed. 
+;
+; intram_02d controls the flashing speed
+; intram_026 controls the number of flashes
+; 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+053E: [ B8 7A ] MOV R0, vdc_table_03	; 3rd byte sprite zero address in VDC mirror
+0540: [ 80    ] MOVX A, @R0			; to A
+0541: [ 12 44 ] JB0, 44				; bit zero set? Jump 44 (player has been hit)
+0543: [ 83    ] RET				; ret
+
+0544: [ B9 7C ] MOV R1, vdc_table_01	; 
+0546: [ 81    ] MOVX A, @R1			; get player x-pos
+0547: [ D3 F8 ] XRL A, F8			;
+0549: [ 96 43 ] JNZ, 43				; is it 0xF8? (sprite invisible) nope RET
+054B: [ 80    ] MOVX A, @R0			; get 3rd byte sprite 0
+054C: [ 32 50 ] JB1, 50				; bit 1 set? jmp 50 (means player dead)
+054E: [ C4 30 ] JMP CheckNewHighScore
+
+0550: [ B9 27 ] MOV R1, iram_pos_27
+0552: [ B1 00 ] MOV @R1, 00			; move zero to intram 027
+0554: [ C9    ] DEC R1				; r1 = 0x26
+0555: [ BC 80 ] MOV R4, 80
+0557: [ B8 2D ] MOV R0, iram_pos_2d		; move 2D to R0
+0559: [ 10    ] INC @R0				; increment intram 0x2D
+055A: [ F0    ] MOV A, @R0			; move intram 0x2D to A
+055B: [ 53 03 ] ANL A, 03			; 
+055D: [ 96 43 ] JNZ, 43				; bit 1 or 2 set? jmp 543 (RET)
+055F: [ A0    ] MOV @R0, A			; move 0 to intram 0x2D (reset counter)
+0560: [ 11    ] INC @R1				; increment intram 026
+0561: [ BF 06 ] MOV R7, 06			; loop 6 times
+0563: [ B8 09 ] MOV R0, exram_pos_09	; r0 = 0x09
+0565: [ 80    ] MOVX A, @R0			; get exram 0x09 (start of player name)
+0566: [ F2 70 ] JB7 70				; bit 7 set. Jmp 570
+0568: [ 18    ] INC R0				; next character
+0569: [ EF 65 ] DJNZ R7 65			; search all 6 chars of name
+056B: [ C8    ] DEC R0				; take last char 
+056C: [ 80    ] MOVX A, @R0			; move it to A
+056D: [ 4C    ] ORL A, R4			; ORL it with R4 (=0x80) (flashing effect)
+056E: [ 90    ] MOVX @R0, A			; store it.
+056F: [ 83    ] RET
+
+0570: [ DC    ] XRL A, R4			; reset bit 7 of character 
+0571: [ 90    ] MOVX @R0, A			; store character in player name
+0572: [ F1    ] MOV A, @R1			; get intram 026
+0573: [ D2 7A ] JB6 7A				; bit 6 set? (enough flashes) -> jmp 57a
+0575: [ 19    ] INC R1				; r1 is now inram 027
+0576: [ B1 4A ] MOV @R1, 4A			; set intram 027 to 0x4a
+0578: [ A4 6B ] JMP 56B				; continue flashing player name
+057A: [ 27    ] CLR A				; A = 0x00
+057B: [ A1    ] MOV @R1, A			; move 0x00 to intram 026
+057C: [ E4 5D ] JMP init_graphics_and_exram_to_vcd_table:
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; PlayerDiesAnimation
+;
+; IN:
+;	r1		value is vdc_table_03 
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+057E: [ 03 04 ] ADD A, 04			; add 4 to 3rd sprite byte (
+0580: [ 91    ] MOVX @R1, A			; store in sprite 
+0581: [ 53 38 ] ANL A, 38			; only take bit 3,4,5
+0583: [ 96 9C ] JNZ, 9C				; jmp to 9C (RET)
+0585: [ 19    ] INC R1				; inc R1 (vdc_table_02) = sprite attribute
+0586: [ 81    ] MOVX A, @R1			; get it
+0587: [ 03 08 ] ADD A, 08			; Add 8 (to get color changes during animation)
+0589: [ 91    ] MOVX @R1, A			; store
+058A: [ AC    ] MOV R4, A			; move to r4
+058B: [ F2 96 ] JB7 HidePlayerSprite	; Bit 7 set? jmp (enough color changes)
+058D: [ B8 7C ] MOV R0, 7C			; x-pos of player sprite
+058F: [ B4 9D ] CALL InitExplosion
+0591: [ F5    ] SEL MB1
+0592: [ 14 10 ] CALL StartFlyingShrapnel
+0594: [ E5    ] SEL MB0
+0595: [ 83    ] RET
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; HidePlayerSprite
+;
+; Sets sprite 0 x and y position to 0xf8 effectively placing it outside the 
+; visible screen area.
+; 
+; IN:	
+;	r1		value is 0x7b. (points to attribute byte for sprite 0)
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+0596: [ 19    ] INC R1			; increment r1 so it points to sprite 0 x-pos
+0597: [ 23 F8 ] MOV A, F8
+0599: [ 91    ] MOVX @R1, A		; set sprite 0 x-pos to 0xf8
+059A: [ 19    ] INC R1			; increment r1 so it points to sprite 0 y-pos
+059B: [ 91    ] MOVX @R1, A		; set sprite 0 y-pos to 0xf8
+059C: [ 83    ] RET
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; InitExplosion
+;
+; copies x and y position of the source to the sprites 1-3 (which are
+; used for the explosion) to start the beginning of the explosion animation.
+; note that the source can either be the player sprite (in case the player dies)
+; or a character (in case the player missile or explosion shrapnel hits
+; another satellite).
+; 
+; IN:	
+;	r0		holds pointer to source (char or sprite 0)
+;	r4 		sprite attributes (byte 2 of sprite data)
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+059D: [ B9 79 ] MOV R1, 79		; moves 0x79 to r1 (y-pos of sprite 1)
+059F: [ 18    ] INC R0			; r0 is y-pos
+05A0: [ BF 03 ] MOV R7, 03		; r7 (counter) = 3
+05A2: [ 80    ] MOVX A, @R0		; copy y-pos of player to sprite
+05A3: [ 91    ] MOVX @R1, A	
+05A4: [ C8    ] DEC R0			; r0 is x-pos 
+05A5: [ C9    ] DEC R1			; r1 is x-pos of particle sprite
+05A6: [ 80    ] MOVX A, @R0		; copy x-pos of player to sprite
+05A7: [ 91    ] MOVX @R1, A
+05A8: [ 18    ] INC R0			; r0 is y-pos 
+05A9: [ C9    ] DEC R1			; r1 is sprite attribute of sprite
+05AA: [ FC    ] MOV A, R4
+05AB: [ 91    ] MOVX @R1, A		; copy to sprite attributes
+05AC: [ C9    ] DEC R1			; skip next to byte (unused byte)
+05AD: [ C9    ] DEC R1			; skip to sprite y-pos
+05AE: [ EF A2 ] DJNZ R7 A2		; finished copying? no. copy again.
+05B0: [ 83    ] RET
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Check_satellite_vertical_pos
+;
+; For each satellite is checked if it is in the visible screen. If not, a
+; new position is chosen.
+;
+; IN
+;	r1		0x6d (vdc_table_10)
+;	r7		0x0a (number of satellites)
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+05B1: [ BE 3C ] MOV R6, iram_pos_3c		; checks if y_pos of foreground chars
+05B3: [ 81    ] MOVX A, @R1			; 1 - 10 are either zero or F8
+05B4: [ C6 C2 ] JZ SetNewSatellitePos	; zero? -> jmp
+05B6: [ D3 F8 ] XRL A, F8
+05B8: [ C6 C2 ] JZ SetNewSatellitePos	; 0xf8? -> jmp 
+05BA: [ CE    ] DEC R6				; check next char
+05BB: [ C9    ] DEC R1				; r6 = position in intram for each
+05BC: [ C9    ] DEC R1				; satellite
+05BD: [ C9    ] DEC R1
+05BE: [ C9    ] DEC R1
+05BF: [ EF B3 ] DJNZ R7 B3
+05C1: [ 83    ] RET
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; SetNewSatellitePos
+; 
+; Calculates the new starting position of a satellite. byte 25 (000000xx) in
+; intram decides new location as follows
+;
+; xx = 
+; 00: y-pos = [27,154], x-pos = a0		r5= 0x04 + [0,7]
+; 01: y-pos = 0x0b    , x-pos = [16, 144]	r5= 0x00 + [0,7]
+; 10: y-pos = [27,154], x-pos = 01		r5= 0x0C + [0,7]
+; 11: y-pos = 0xb8,     x-pos = [16, 144]	r5= 0x08 + [0,7]
+;
+; r5 controls the initial movement direction of satellite
+;
+; IN:
+;	r1		y_pos of satellite character
+;	r6		storage area for satellite
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+05C2: [ B8 25 ] MOV R0, iram_pos_25		; take pos.25 in intram
+05C4: [ F0    ] MOV A, @R0
+05C5: [ 12 DC ] JB0, DC				; bit 0 set? if so jmp 05DC
+05C7: [ BA 01 ] MOV R2, 01			; nope. move 01 to R2
+05C9: [ BD 0C ] MOV R5, 0C			; move 0c to R5
+05CB: [ 32 D1 ] JB1, D1				; bit 1 set? if so jmp 05D1
+05CD: [ BD 04 ] MOV R5, 04			; nope. move 04 to R5
+05CF: [ BA A0 ] MOV R2, A0			; move a0 to R2
+05D1: [ 42    ] MOV A, T			; move timer to A (take random number between 27 and 154)
+05D2: [ 53 7F ] ANL A, 7F			; strip high bit.
+05D4: [ 03 1B ] ADD A, 1B			; add 1B (27 dec)
+05D6: [ 91    ] MOVX @R1, A			; move this to r1 (y-pos of current satellite)
+05D7: [ C9    ] DEC R1				; switch to x-pos
+05D8: [ FA    ] MOV A, R2			; r2 to A (either 01 or A0)
+05D9: [ 91    ] MOVX @R1, A			; move to x-pos of current satellite
+05DA: [ A4 EF ] JMP 5EF				;	
+05DC: [ BA 0B ] MOV R2, 0B			; move 0B to R2
+05DE: [ BD 00 ] MOV R5, 00			; move 00 to R5
+05E0: [ 32 E6 ] JB1, E6				; bit 1 set? jmp to e6
+05E2: [ BD 08 ] MOV R5, 08			; move 08 to R5
+05E4: [ BA B8 ] MOV R2, B8			; move b8 to R2
+05E6: [ FA    ] MOV A, R2
+05E7: [ 91    ] MOVX @R1, A			; move R2 to y-pos
+05E8: [ C9    ] DEC R1
+05E9: [ 42    ] MOV A, T			; random
+05EA: [ 53 7F ] ANL A, 7F			; strip high bit
+05EC: [ 03 10 ] ADD A, 10			; add 10 (a between 0x10 and 0x8f)
+05EE: [ 91    ] MOVX @R1, A			; move to x-pos
+05EF: [ C9    ] DEC R1
+05F0: [ C9    ] DEC R1
+05F1: [ 42    ] MOV A, T			; a = random
+05F2: [ 53 0F ] ANL A, 0F			; a =  [0,0x0f]
+05F4: [ 91    ] MOVX @R1, A			; move to byte 3 of char. (new color)
+05F5: [ FE    ] MOV A, R6			; take R6 (starts at 3C. decreases for each char)
+05F6: [ A8    ] MOV R0, A			; moves A to R0
+05F7: [ 42    ] MOV A, T			; a = random
+05F8: [ 47    ] SWAP A				; swap nibbles (randomize maybe?)
+05F9: [ 62    ] MOV T, A			; save to timer
+05FA: [ 53 07 ] ANL A, 07			; a = [0,7]
+05FC: [ 6D    ] ADD A, R5			; add r5 (00,04,08,0C)
+05FD: [ A0    ] MOV @R0, A			; move to R0 (0x33-0x3C)
+05FE: [ 83    ] RET
+
+05FF: [ 00    ] NOP				; just a NOP to align the code
+
+
+
+
+vsync:
+0600: [ 55    ] STRT T			; start Timer
+0601: [ 04 1A ] JMP vsyncirq		; jmp to vsyncirq
+
+
+check_for_keypress:
+;
+; check for keypress. if key is pressed. bit 7 of length register is checked.
+; if set -> exit. if not, length is incremented, and bit 7 is set.
+; next call to this function keypress OR 80 OR 40 is returned.
+;
+; kinda strange routine. Why isn't the keypress processed immediately??
+; could be to wait until key isn't pressed anymore.
+
+0603: [ 14 B0 ] CALL 0B0		; get key
+0605: [ 15    ] DIS I			; no interrupts
+0606: [ AA    ] MOV R2, A		; a = key pressed
+0607: [ B9 24 ] MOV R1, 24		; r1 = length of name
+0609: [ F2 19 ] JB7 process_key_press	; no keypress? jmp 0619
+060B: [ F1    ] MOV A, @R1		; move length to a
+060C: [ F2 18 ] JB7 18			; now what's this???
+060E: [ 17    ] INC A			; increment length
+060F: [ 43 80 ] ORL A, 80		; set bit 7
+0611: [ A1    ] MOV @R1, A		; move back
+0612: [ D3 87 ] XRL A, 87		; EXCL or with 87. (length = 7)
+0614: [ 96 18 ] JNZ, 18			; nope ready
+0616: [ B1 86 ] MOV @R1, 86		; set length = 6 (max length)
+0618: [ 83    ] RET
+
+process_key_press:
+0619: [ B8 08 ] MOV R0, 08		; start of name in exram
+061B: [ F1    ] MOV A, @R1		; r1 = 24 intram (length of player name)
+061C: [ 53 07 ] ANL A, 07		; max 7.
+061E: [ A1    ] MOV @R1, A		; back in 24
+061F: [ 68    ] ADD A, R0		; add 8.
+0620: [ A8    ] MOV R0, A		; move to r0 (current position of cursor)
+0621: [ FA    ] MOV A, R2		; move keypress to A
+0622: [ 53 3F ] ANL A, 3F		; and with 3f (63) (strip 2 high bits)
+0624: [ AA    ] MOV R2, A		; back to r2
+0625: [ 03 D2 ] ADD A, D2		; 
+0627: [ F6 18 ] JC 18			; bigger than 2D? jmp 18 (no funny chars)
+0629: [ FA    ] MOV A, R2		; keypress in a
+062A: [ 90    ] MOVX @R0, A		; move to
+062B: [ B8 27 ] MOV R0, 27
+062D: [ B0 56 ] MOV @R0, 56		; 56 to place 27 in intram (why??)
+062F: [ 83    ] RET
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; CheckNewHighScore
+; 
+; Checks if the current score is higher than the highscore. If so, the score
+; is copied and the player name is erased to make room for the new one.
+;
+; IN
+;	r0		vdc_table_03
+;
+; OUT
+;	f0		0 (new highscore) 1 (no new highscore)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+0630: [ 23 03 ] MOV A, 03
+0632: [ 90    ] MOVX @R0, A		; move 03 (set bit 0 and 1) to 3rd byte sprite 0
+0633: [ B8 04 ] MOV R0, exram_pos_04; first digit of highscore in exram
+0635: [ B9 10 ] MOV R1, exram_pos_10; first digit of score in exram
+0637: [ BF 04 ] MOV R7, 04
+0639: [ 81    ] MOVX A, @R1		; move digit to score
+063A: [ 17    ] INC A
+063B: [ 37    ] CPL A			; A = - A + 1
+063C: [ 17    ] INC A
+063D: [ AA    ] MOV R2, A		; move to r2
+063E: [ 80    ] MOVX A, @R0		; get first digit of highscore from exram
+063F: [ 17    ] INC A			; increment
+0640: [ 6A    ] ADD A, R2		; add r2
+0641: [ C6 4A ] JZ 4A			; zero? (both digits are the same) -> jmp 64a
+0643: [ 85    ] CLR F0			; clear f0
+0644: [ 95    ] CPL F0			; set f0
+0645: [ F6 54 ] JC 54			; score digit smaller then highscore digit -> jmp 65a
+0647: [ 85    ] CLR F0			; clear f0
+0648: [ E6 4E ] JNC 4E			; score digit bigger then highscore digit -> jmp 64e
+064A: [ 18    ] INC R0			; increment r0 (next highscore digit)
+064B: [ 19    ] INC R1			; increment r1 (next score digit)
+064C: [ EF 39 ] DJNZ R7 39		; loop until all digits checked
+
+064E: [ B8 24 ] MOV R0, iram_pos_24	;
+0650: [ B0 80 ] MOV @R0, 80		; set length of playername to zero (bit 7 doesn't count)
+0652: [ F4 4D ] CALL InitPlayerName ; set player name to default
+0654: [ B8 13 ] MOV R0, exram_pos_13; score
+0656: [ B9 07 ] MOV R1, exram_pos_07; highscore
+0658: [ BF 04 ] MOV R7, 04		; length of score
+065A: [ 80    ] MOVX A, @R0		; move score digit to A
+065B: [ B6 5E ] JF0 5E			; F0 set (score < highscore) -> jmp 65e
+065D: [ 91    ] MOVX @R1, A		; move score to highscore
+065E: [ C9    ] DEC R1			; next digit highscore
+065F: [ C8    ] DEC R0			; next digit score
+0660: [ EF 5A ] DJNZ R7 5A		; loop for all digits
+0662: [ 83    ] RET	
+
+
+0663: [ BA 0C ] MOV R2, 0C			; 0x0C to R2 (counter register)
+0665: [ B8 6D ] MOV R0, 6D			; 
+0667: [ 80    ] MOVX A, @R0			; move y-pos of 1st foreground char to A
+0668: [ AC    ] MOV R4, A			; move to R4
+0669: [ C8    ] DEC R0				; take byte 3 of character
+066A: [ C8    ] DEC R0
+066B: [ C8    ] DEC R0
+066C: [ 80    ] MOVX A, @R0			; move to A
+066D: [ BD 3C ] MOV R5, 3C			; move 0x3C to R5 = 'char ship1'
+066F: [ B2 83 ] JB5 83				; bit 5 of A set? Jmp 83 (char is UFO)
+0671: [ D2 96 ] JB6 96				; bit 6 of A set? Jmp 96 (char is fire from UFO)
+0673: [ B9 25 ] MOV R1, int_25			; 
+0675: [ F1    ] MOV A, @R1			; counter register to R1 to A
+0676: [ BD 31 ] MOV R5, 31			; 0x31 to R5
+0678: [ 12 81 ] JB0, 81				; Bit 0 of int_25 set? Jmp 81
+067A: [ 80    ] MOVX A, @R0			; move byte 3 of character to A
+067B: [ CC    ] DEC R4				; sub 2 from y-pos
+067C: [ CC    ] DEC R4
+067D: [ 92 83 ] JB4, 83				; bit 4 of A set? JMP 83
+067F: [ 1C    ] INC R4				; add 2 to R4
+0680: [ 1C    ] INC R4
+0681: [ F4 26 ] CALL mutate_enemy_shape
+0683: [ 80    ] MOVX A, @R0			; move exram r0 to A
+0684: [ AE    ] MOV R6, A			; move A to R6
+0685: [ 34 4B ] CALL calcchar23		; r4 = y, r5 = char r6= color (-> r5/r6 byte 2/3)
+0687: [ 18    ] INC R0				; inc r0
+0688: [ FD    ] MOV A, R5			; r5 to A
+0689: [ 90    ] MOVX @R0, A			; A to R0 (exram)
+068A: [ C8    ] DEC R0				; dec r0
+068B: [ 80    ] MOVX A, @R0			; mov R0 (exram) to A
+068C: [ 53 F0 ] ANL A, F0			; and with f0 (right 4 bytes, left)
+068E: [ 4E    ] ORL A, R6			; OR with R6
+068F: [ 90    ] MOVX @R0, A			; move to exram (r0)
+0690: [ B2 A3 ] JB5 A3				; bit 5 of A set? JMP a3
+0692: [ C8    ] DEC R0				; dec r0
+0693: [ EA 67 ] DJNZ R2 67			; r2 niet 0, jmp 67
+0695: [ 83    ] RET				; return
+
+0696: [ B9 2F ] MOV R1, 2F			;
+0698: [ F1    ] MOV A, @R1			; move 2F (intram) TO A
+0699: [ 19    ] INC R1				; 
+069A: [ D1    ] XRL A, @R1			; 2F (intram) XOR 30 (intram)
+069B: [ BD 2E ] MOV R5, 2E			; 0x2e = '/'
+069D: [ 72 A1 ] JB3, A1
+069F: [ BD 3B ] MOV R5, 3B			; 0x3b = '\'
+06A1: [ C4 83 ] JMP 683
+
+06A3: [ 18    ] INC R0
+06A4: [ 80    ] MOVX A, @R0
+06A5: [ 03 05 ] ADD A, 05
+06A7: [ 90    ] MOVX @R0, A
+06A8: [ C8    ] DEC R0
+06A9: [ C4 92 ] JMP 692
+
+update_status_bar:
+06AB: [ B8 2C ] MOV R0, 2C			;
+06AD: [ F0    ] MOV A, @R0			; move 2C (intram) to A
+06AE: [ 10    ] INC @R0				; INC 2D (intram)
+06AF: [ A5    ] CLR F1				; F1 = 0
+06B0: [ 12 B3 ] JB0, B3				; bit 0 set of 2c (intram)?
+06B2: [ B5    ] CPL F1				; F1 = 1
+06B3: [ 15    ] DIS I				; no interrupt
+06B4: [ 89 7C ] ORL P1, 7C			; copy mode enable on VDC
+06B6: [ 99 E7 ] ANL P1, E7
+06B8: [ F4 30 ] CALL set_location_of_quads
+06BA: [ BC C7 ] MOV R4, C7
+06BC: [ B8 0C ] MOV R0, 0C
+06BE: [ B9 62 ] MOV R1, 62
+06C0: [ 76 C6 ] JF1, C6
+06C2: [ B8 04 ] MOV R0, 04
+06C4: [ B9 42 ] MOV R1, 42
+06C6: [ BB 04 ] MOV R3, 04
+06C8: [ D4 DC ] CALL put_score_in_quads
+06CA: [ B9 72 ] MOV R1, 72
+06CC: [ B8 0D ] MOV R0, 0D
+06CE: [ 76 D4 ] JF1, D4
+06D0: [ B9 52 ] MOV R1, 52
+06D2: [ B8 05 ] MOV R0, 05
+06D4: [ BB 04 ] MOV R3, 04
+06D6: [ D4 DC ] CALL put_score_in_quads
+06D8: [ 14 E7 ] CALL vcdenable
+06DA: [ E4 12 ] JMP set_VDC_control_register_to_0xA8
+
+put_score_in_quads:
+; on entry r4 = c7, r3 = 04
+; r0 = 04, 05, 0C, 0D
+; r1 = 42, 52, 62, 72
+;
+06DC: [ 80    ] MOVX A, @R0		; move first char of string to A
+06DD: [ BD 0C ] MOV R5, 0C		; 0x0c = '[sPACE]' char
+06DF: [ F2 E2 ] JB7 E2			; bit 7 of char set? (because of bit 7 usage for
+					; keypressed routine...
+06E1: [ AD    ] MOV R5, A		; copy char to R5
+06E2: [ F8    ] MOV A, R0		; location to R0
+06E3: [ BE 02 ] MOV R6, 02		; color = 01 (red)
+06E5: [ 92 EF ] JB4, EF			; bit 4 set? jmp EF (>16)
+06E7: [ BE 04 ] MOV R6, 04		; color = 02 (green)
+06E9: [ D3 08 ] XRL A, 08		; location == 8 (right arrow)
+06EB: [ 96 EF ] JNZ, EF			; nope, jmp ef
+06ED: [ BE 0E ] MOV R6, 0E		; color = 07 (white)
+06EF: [ 18    ] INC R0			; skip 2 chars (space between quads)
+06F0: [ 18    ] INC R0
+06F1: [ 34 4B ] CALL calcchar23		; r4 = y-pos, r5 = char, r6 = color.Output r5/r6
+06F3: [ FD    ] MOV A, R5		; store to quad byte 2/3
+06F4: [ 91    ] MOVX @R1, A
+06F5: [ 19    ] INC R1
+06F6: [ FE    ] MOV A, R6
+06F7: [ 91    ] MOVX @R1, A
+06F8: [ 19    ] INC R1
+06F9: [ 19    ] INC R1
+06FA: [ 19    ] INC R1
+06FB: [ EB DC ] DJNZ R3 DC		; done all 4 chars in quad?
+06FD: [ 83    ] RET
+
+06FE: [ 00    ] NOP
+06FF: [ 00    ] NOP
+
+;
+; on entry r4 = current tune position
+;
+play_custom_sound:
+0700: [ A3    ] MOVP A, @A			; custom sound routine??
+0701: [ A9    ] MOV R1, A			; R1 = command byte
+0702: [ 1C    ] INC R4
+0703: [ FC    ] MOV A, R4
+0704: [ A3    ] MOVP A, @A
+0705: [ AA    ] MOV R2, A			; R2 = parameter byte
+0706: [ 04 4B ] JMP parsesnd
+
+set_VDC_control_register_to_0x80:
+0708: [ 14 E7 ] CALL vcdenable
+070A: [ 23 80 ] MOV A, 80
+
+move_to_VDC_control_register:
+070C: [ C5    ] SEL RB0			; not sure why RB0 is selected.
+070D: [ B8 A0 ] MOV R0, A0
+070F: [ 90    ] MOVX @R0, A		; move A to VDC control register
+0710: [ D5    ] SEL RB1			; select RB1
+0711: [ 83    ] RET
+
+set_VDC_control_register_to_0xA8:
+0712: [ 23 A8 ] MOV A, A8		; A8 = 1010010
+0714: [ E4 0C ] JMP move_to_VDC_control_register
+
+wait_until_scanline:
+;
+; on entry r2=27, r3=aa (10101010)
+;
+0716: [ 14 E7 ] CALL vcdenable
+0718: [ B8 A0 ] MOV R0, A0
+071A: [ B9 A5 ] MOV R1, A5
+071C: [ FB    ] MOV A, R3
+071D: [ 90    ] MOVX @R0, A		; move 0xAA to VDC Control Register
+071E: [ 81    ] MOVX A, @R1		; move Y beam location to A
+071F: [ C9    ] DEC R1			; 
+0720: [ 81    ] MOVX A, @R1		; move X beam location to A
+0721: [ 97    ] CLR C			; clear carry (why?)
+0722: [ 6A    ] ADD A, R2		; 
+0723: [ E6 1A ] JNC 1A			; if not bigger than D8 then do again.
+0725: [ 83    ] RET
+
+mutate_enemy_shape:
+;return r5 = new shape
+0726: [ B9 25 ] MOV R1, int_25			; 0x25 to R1
+0728: [ F1    ] MOV A, @R1			; move intram 25 to A
+0729: [ BD 29 ] MOV R5, 29			; 0x29 (char 'x') to R5
+072B: [ 52 2F ] JB2, 2F				; bit 2 of A set? jmp ret
+072D: [ BD 10 ] MOV R5, 10			; 0x10 (char '+') to R5
+072F: [ 83    ] RET
+
+
+
+set_location_of_quads:
+0730: [ B8 41 ] MOV R0, 41
+0732: [ BB C7 ] MOV R3, C7		; move c7 to 40 in VDC (y-pos first quad)
+0734: [ 23 11 ] MOV A, 11		; move 11 to 41 in VDC (x-pos first quad)
+0736: [ F4 48 ] CALL copy_word_to_VDC
+0738: [ B8 51 ] MOV R0, 51		; move c7 to 50 in VDC (y-pos 2nd quad)
+073A: [ 23 19 ] MOV A, 19		; move 19 to 51 in VDC (x-pos 2nd quad)
+073C: [ F4 48 ] CALL copy_word_to_VDC
+073E: [ B8 61 ] MOV R0, 61		; move c7 to 60 in VDC (y-pos 3rd quad)
+0740: [ 23 52 ] MOV A, 52		; move 52 to 61 in VDC (x-pos 3rd quad)
+0742: [ F4 48 ] CALL copy_word_to_VDC
+0744: [ B8 71 ] MOV R0, 71		; move c7 to 70 in VDC (y-pos 4th quad)
+0746: [ 23 5A ] MOV A, 5A		; move 5a to 71 in VDC (x-pos 4th quad)
+
+copy_word_to_VDC:
+0748: [ 90    ] MOVX @R0, A
+0749: [ C8    ] DEC R0
+074A: [ FB    ] MOV A, R3
+074B: [ 90    ] MOVX @R0, A
+074C: [ 83    ] RET
+
+InitPlayerName:
+074D: [ BF 08 ] MOV R7, 08
+074F: [ B8 55 ] MOV R0, high_score_string
+0751: [ B9 0F ] MOV R1, 0F
+0753: [ E4 65 ] JMP copy_to_exram
+
+
+high_score_string:
+0755: [ 0C    ] .db 0x0C		; [sPACE]
+0756: [ 0D    ] .db 0x0D		; ?
+0757: [ 0D    ] .db 0x0D		; ?	
+0758: [ 0D    ] .db 0x0D		; ?
+0759: [ 0D    ] .db 0x0D		; ?
+075A: [ 0D    ] .db 0x0D		; ?
+075B: [ 0D    ] .db 0x0D		; ?
+075C: [ 36    ] .db 0x36		; [right arrow]
+
+init_graphics_and_exram_to_vcd_table:
+075D: [ F4 6D ] CALL clear_sprites_and_chars
+075F: [ BF 06 ] MOV R7, 06
+0761: [ B8 8C ] MOV R0, start_data
+0763: [ B9 7F ] MOV R1, 7F
+
+copy_to_exram:
+0765: [ F8    ] MOV A, R0
+0766: [ A3    ] MOVP A, @A
+0767: [ 91    ] MOVX @R1, A
+0768: [ 18    ] INC R0
+0769: [ C9    ] DEC R1
+076A: [ EF 65 ] DJNZ R7 65
+076C: [ 83    ] RET
+
+clear_sprites_and_chars
+076D: [ BF 0F ] MOV R7, 0F
+076F: [ B9 79 ] MOV R1, 79	; (0x04 in VDC, y-pos sprite #1)
+0771: [ 23 F8 ] MOV A, F8		
+0773: [ 91    ] MOVX @R1, A	; move f8 to 0x04 in VDC
+0774: [ C9    ] DEC R1
+0775: [ 91    ] MOVX @R1, A	; move f8 to 0x05 in VDC (x-pos sprite #1)
+0776: [ C9    ] DEC R1
+0777: [ 27    ] CLR A		; a = 0
+0778: [ 91    ] MOVX @R1, A	; move 0 to 0x06 in VDC
+0779: [ C9    ] DEC R1			
+077A: [ 91    ] MOVX @R1, A	; move 0 to 0x07 in VDC
+077B: [ C9    ] DEC R1
+077C: [ EF 71 ] DJNZ R7 71	; do this for sprite (1-3) and all foreground chars
+077E: [ BF 04 ] MOV R7, 04	; fill 4 bytes at 0x10-0x13 with 00 in exram
+0780: [ B9 10 ] MOV R1, 10	; (this is current score)
+0782: [ 91    ] MOVX @R1, A
+0783: [ 19    ] INC R1
+0784: [ EF 82 ] DJNZ R7 82
+0786: [ B9 28 ] MOV R1, 28	; set bytes 28 & 29 to zero.
+0788: [ A1    ] MOV @R1, A
+0789: [ 19    ] INC R1
+078A: [ A1    ] MOV @R1, A
+078B: [ 83    ] RET
+
+start_data:
+078C: [ 40    ] .db 0x40		; number of bytes to copy from exram to VDC
+078D: [ 00    ] .db 0x00		; destination address in VDC
+078E: [ 60    ] .db 0x60		; Y-pos of sprite 0 (starting position)
+078F: [ 51    ] .db 0x51		; X-pos of sprite 0 (starting position)
+0790: [ 08    ] .db 0x08		; color of sprite 0 (RED)
+0791: [ 00    ] .db 0x00		; byte 3 sprite 0
+
+increment_2a_2b_counters:
+0792: [ B9 2A ] MOV R1, 2A			; position 2a
+0794: [ 11    ] INC @R1				; increment position 2a in intram
+0795: [ F1    ] MOV A, @R1			; move position 2a (intram) to A
+0796: [ 53 03 ] ANL A, 03			; and with 3
+0798: [ 96 A3 ] JNZ, A3				; bit 1 or 2 set? Jump to A3 (return)
+079A: [ 19    ] INC R1				; if not, increment R1
+079B: [ 11    ] INC @R1				; increment 0x2b in intram
+079C: [ F1    ] MOV A, @R1			; move position R1 (intram) to A
+079D: [ 03 F0 ] ADD A, F0 			; IF a is smaller then #0f
+079F: [ E6 F0 ] JNC F0				; then jump to F0
+07A1: [ B1 10 ] MOV @R1, 10			; else, move 10 to position R1
+07A3: [ 83    ] RET				; ret
+
+custom_sound_data:
+07A4: [ 42    ] MOV A, T
+07A5: [ FF    ] MOV A, R7
+07A6: [ 81    ] MOVX A, @R1
+07A7: [ 20    ] XCHA, @R0
+07A8: [ 81    ] MOVX A, @R1
+07A9: [ 1C    ] INC R4
+07AA: [ 21    ] XCHA, @R1
+07AB: [ 00    ] NOP
+07AC: [ 41    ] ORL A, @R1
+07AD: [ FF    ] MOV A, R7
+07AE: [ 82    ] ???
+07AF: [ 1C    ] INC R4
+07B0: [ 42    ] MOV A, T
+07B1: [ FF    ] MOV A, R7
+07B2: [ 82    ] ???
+07B3: [ 08    ] INS A, BUS
+07B4: [ 10    ] INC @R0
+07B5: [ 2E    ] XCH A, R6
+07B6: [ 42    ] MOV A, T
+07B7: [ DF    ] XRL A, R7
+07B8: [ 82    ] ???
+07B9: [ 04 10 ] JMP 010
+07BB: [ 32 84 ] JB1, 84
+07BD: [ 10    ] INC @R0
+07BE: [ 21    ] XCHA, @R1
+07BF: [ 00    ] NOP
+07C0: [ 44 FF ] JMP 2FF
+07C2: [ 21    ] XCHA, @R1
+07C3: [ 00    ] NOP
+07C4: [ 81    ] MOVX A, @R1
+07C5: [ 24 81 ] JMP 181
+07C7: [ 14 21 ] CALL 021
+
+07C9: [ 00    ] NOP
+07CA: [ 00    ] NOP
+07CB: [ 00    ] NOP
+07CC: [ 00    ] NOP
+07CD: [ 00    ] NOP
+07CE: [ 00    ] NOP
+07CF: [ 00    ] NOP
+07D0: [ 00    ] NOP
+07D1: [ 00    ] NOP
+07D2: [ 00    ] NOP
+07D3: [ 00    ] NOP
+07D4: [ 00    ] NOP
+07D5: [ 00    ] NOP
+07D6: [ 00    ] NOP
+07D7: [ 00    ] NOP
+07D8: [ 00    ] NOP
+07D9: [ 00    ] NOP
+07DA: [ 00    ] NOP
+07DB: [ 00    ] NOP
+07DC: [ 00    ] NOP
+07DD: [ 00    ] NOP
+07DE: [ 00    ] NOP
+07DF: [ 00    ] NOP
+07E0: [ 00    ] NOP
+07E1: [ 00    ] NOP
+07E2: [ 00    ] NOP
+07E3: [ 00    ] NOP
+07E4: [ 00    ] NOP
+07E5: [ 00    ] NOP
+07E6: [ 00    ] NOP
+07E7: [ 00    ] NOP
+07E8: [ 00    ] NOP
+07E9: [ 00    ] NOP
+07EA: [ 00    ] NOP
+07EB: [ 00    ] NOP
+07EC: [ 00    ] NOP
+07ED: [ 00    ] NOP
+07EE: [ 00    ] NOP
+07EF: [ 00    ] NOP
+07F0: [ B9 27 ] MOV R1, 27
+07F2: [ B1 F5 ] MOV @R1, F5
+07F4: [ 83    ] RET
+07F5: [ 81    ] MOVX A, @R1
+07F6: [ 1C    ] INC R4
+07F7: [ 44 C2 ] JMP 2C2
+07F9: [ 21    ] XCHA, @R1
+07FA: [ 00    ] NOP
+07FB: [ 00    ] NOP
+07FC: [ 00    ] NOP
+07FD: [ 00    ] NOP
+07FE: [ 00    ] NOP
+07FF: [ 00    ] NOP
+
+
+;
+; on entry A = direction of fire
+; return R3/R2 delta YX
+; huh? why not start at D3 and remove INC R7??
+;
+get_deltaxy_for_firing:
+0000: [ BC D1 ] MOV R4, fire_direction_table-2	; D1 is start of table
+0002: [ AF    ] MOV R7, A			; direction of fire to R7
+0003: [ 1F    ] INC R7			; increment 1
+0004: [ 1C    ] INC R4			; increment index to table (2 bytes per entry)
+0005: [ 1C    ] INC R4
+0006: [ EF 04 ] DJNZ R7 04		; continue looking
+0008: [ FC    ] MOV A, R4		; get two bytes from table and put them in R3/R2
+0009: [ A3    ] MOVP A, @A
+000A: [ AB    ] MOV R3, A
+000B: [ 1C    ] INC R4
+000C: [ FC    ] MOV A, R4
+000D: [ A3    ] MOVP A, @A
+000E: [ AA    ] MOV R2, A
+000F: [ 83    ] RET
+
+
+StartFlyingShrapnel:
+0010: [ B8 15 ] MOV R0, 15			; 
+0012: [ BF 09 ] MOV R7, 09			; counter 9 bytes
+0014: [ BA 22 ] MOV R2, init_schrapnel_table	; start at address 22
+0016: [ FA    ] MOV A, R2			; 22 to A
+0017: [ A3    ] MOVP A, @A			; get data
+0018: [ 90    ] MOVX @R0, A			; move data to exram (15)
+0019: [ 1A    ] INC R2				; 
+001A: [ 18    ] INC R0
+001B: [ EF 16 ] DJNZ R7 16			; loop 9 times
+001D: [ B8 27 ] MOV R0, 27
+001F: [ B0 AC ] MOV @R0, AC			; move 0xAC to intram 27
+0021: [ 83    ] RET
+
+init_schrapnel_table:
+0022: [ A8    ] .db 0xA8		; data for 010 routine
+0023: [ FF    ] .db 0xFF
+0024: [ 01    ] .db 0x01
+0025: [ A8    ] .db 0xA8
+0026: [ FF    ] .db 0xFF
+0027: [ FF    ] .db 0xFF
+0028: [ A8    ] .db 0xA8
+0029: [ 01    ] .db 0x01
+002A: [ 00    ] .db 0x00
+
+show_particles:
+002B: [ B8 25 ] MOV R0, int_25		
+002D: [ F0    ] MOV A, @R0	
+002E: [ A5    ] CLR F1			; clear flag
+002F: [ 12 32 ] JB0, 32			; bit 0 set of int_25
+0031: [ B5    ] CPL F1		; complement f1 bit0 = 0 -> f1 = 0. bit0 = 1 -> f1=1
+0032: [ B8 14 ] MOV R0, 14		; move exram 0x14 to A
+0034: [ 80    ] MOVX A, @R0
+0035: [ 17    ] INC A			; increment it
+0036: [ 90    ] MOVX @R0, A		; store it
+0037: [ B9 79 ] MOV R1, 79		; start of sprite 1 in VDC mirror
+0039: [ B8 15 ] MOV R0, 15		; shrapnel_table in intram (particle 2)
+003B: [ BA 00 ] MOV R2, 00		; distance from other particles
+003D: [ 14 78 ] CALL do_new_particle_position
+003F: [ B9 75 ] MOV R1, 75		; start of sprite 2 in VDC mirror
+0041: [ B8 18 ] MOV R0, 18		; shrapnel table in intram (particle 2)
+0043: [ BA 05 ] MOV R2, 05		; distance from other particles
+0045: [ 14 78 ] CALL do_new_particle_position
+0047: [ B9 71 ] MOV R1, 71		; start of sprite 3 in VDC mirror
+0049: [ B8 1B ] MOV R0, 1B		; shrapnel table in intram (particle 3)
+004B: [ BA 0A ] MOV R2, 0A		; distance from other particles
+004D: [ 14 78 ] CALL do_new_particle_position
+004F: [ B8 3D ] MOV R0, 3D
+0051: [ 23 10 ] MOV A, 10
+0053: [ 90    ] MOVX @R0, A		; move 0x10 to 3D (exram)
+0054: [ C8    ] DEC R0			; r0 = 0x3C
+0055: [ 23 80 ] MOV A, 80		; A = 0x80
+0057: [ B9 15 ] MOV R1, 15		; r1 = 0x15 (particle 0)
+0059: [ 76 5F ] JF1, 5F			; F1 = 1, jmp 5F
+005B: [ B9 1B ] MOV R1, 1B		; r1 = 0x1B (particle 2)
+005D: [ 23 90 ] MOV A, 90		; A = 0x90
+005F: [ 90    ] MOVX @R0, A		; move A to 0x3C
+0060: [ 81    ] MOVX A, @R1		; get particle status byte
+0061: [ B9 33 ] MOV R1, 33	      ; r1 = 0x33 (3B-33) + 90 = 98 is sprite 3 in VDC mirror
+0063: [ 14 6C ] CALL 06C		; show sprite
+0065: [ 76 A0 ] JF1, A0			' F1=1, jmp RET
+0067: [ B9 18 ] MOV R1, 18
+0069: [ 81    ] MOVX A, @R1		; get status byte particle 2
+006A: [ B9 3B ] MOV R1, 3B
+006C: [ BC E8 ] MOV R4, E8		; explosion sprite
+006E: [ D2 76 ] JB6 76
+0070: [ BC EF ] MOV R4, EF		; explosion2 sprite
+0072: [ B2 76 ] JB5 76
+0074: [ BC 6E ] MOV R4, 6E		; particle sprite
+0076: [ 24 D6 ] JMP 1D6			; copy routine; r4 = source, r1 = destinations
+
+;
+; on entry r0 = 15, 18, 1b. All values point to memory location holding 0xA8 (10101000)
+;
+do_new_particle_position:
+0078: [ 80    ] MOVX A, @R0		; move exram to A
+0079: [ B2 A1 ] JB5 A1			; bit 5 set, to A1
+007B: [ D2 A1 ] JB6 A1			; bit 6 set, to A1
+007D: [ F2 85 ] JB7 move_shrapnel	; bit 7 set, to 85
+007F: [ 96 83 ] JNZ, 83			; not zero to 83
+0081: [ B6 B7 ] JF0 player_fire		; F0=1, to B7
+0083: [ 24 00 ] JMP do_particle_shield			
+
+move_shrapnel:
+0085: [ 53 7F ] ANL A, 7F		; and particle status with 7f. (strip high bit)
+0087: [ C6 AB ] JZ start_particle_shield; zero? jmp AB
+0089: [ 80    ] MOVX A, @R0		; take particle status byte
+008A: [ 07    ] DEC A			; decrement
+008B: [ 90    ] MOVX @R0, A		; store
+008C: [ 18    ] INC R0			; take particle delta y.
+008D: [ 80    ] MOVX A, @R0		; move delta y to A
+008E: [ AB    ] MOV R3, A		; move to R3
+008F: [ 18    ] INC R0			; take particle delta x
+0090: [ 80    ] MOVX A, @R0		
+0091: [ AA    ] MOV R2, A		; move to r2
+0092: [ 81    ] MOVX A, @R1		; take y-pos particle.
+0093: [ 6B    ] ADD A, R3		; add delta y
+0094: [ 91    ] MOVX @R1, A		; store
+0095: [ C9    ] DEC R1	
+0096: [ 81    ] MOVX A, @R1		; take x-pos particle
+0097: [ 6A    ] ADD A, R2		; add delta x
+0098: [ 91    ] MOVX @R1, A		; store
+0099: [ B9 2B ] MOV R1, 2B		; reset counter (intram 2B)
+009B: [ B1 00 ] MOV @R1, 00		
+009D: [ C9    ] DEC R1			; reset counter (intram 2A?)
+009E: [ B1 00 ] MOV @R1, 00
+00A0: [ 83    ] RET
+
+00A1: [ 07    ] DEC A			; decrement A
+00A2: [ 90    ] MOVX @R0, A		; move back to exram
+00A3: [ 53 1F ] ANL A, 1F		; and with 1F
+00A5: [ C6 AB ] JZ start_particle_shield; first 5 bytes are not set. Jmp AB
+00A7: [ 80    ] MOVX A, @R0		; get original value again.
+00A8: [ B2 8A ] JB5 8A			; bit 5 set?
+00AA: [ 83    ] RET
+
+start_particle_shield:
+00AB: [ 90    ] MOVX @R0, A		; move zero to R0
+00AC: [ C9    ] DEC R1
+00AD: [ C9    ] DEC R1			; go to attribute byte
+00AE: [ 91    ] MOVX @R1, A		; set it to zero (color is dark grey)
+00AF: [ B9 23 ] MOV R1, 23		
+00B1: [ 81    ] MOVX A, @R1		; get position 23 in exram (fire direction)
+00B2: [ 17    ] INC A			; increment it (moves anti-clockwise)
+00B3: [ B9 14 ] MOV R1, 14		;
+00B5: [ 91    ] MOVX @R1, A		; store it in exram 14
+00B6: [ 83    ] RET
+
+player_fire:
+00B7: [ C9    ] DEC R1
+00B8: [ C9    ] DEC R1
+00B9: [ 81    ] MOVX A, @R1		; get 3rd sprite byte. Store in A
+00BA: [ 19    ] INC R1			
+00BB: [ 19    ] INC R1
+00BC: [ D3 38 ] XRL A, 38		; 3rd sprite byte = 0x38??
+00BE: [ 96 83 ] JNZ, 83			; nope to 083 (jmp do_particle_shield)
+00C0: [ 23 90 ] MOV A, 90		
+00C2: [ 90    ] MOVX @R0, A		; move 0x90 to particle status byte
+00C3: [ 18    ] INC R0			; delta-y
+00C4: [ B9 23 ] MOV R1, 23		;
+00C6: [ 81    ] MOVX A, @R1		; get exram 23 (direction of fire)
+00C7: [ 14 00 ] CALL get_deltaxy_for_firing		
+00C9: [ FB    ] MOV A, R3		;
+00CA: [ 90    ] MOVX @R0, A		; move delta y to particle delta y
+00CB: [ 18    ] INC R0
+00CC: [ FA    ] MOV A, R2
+00CD: [ 90    ] MOVX @R0, A		; move delta x to particle delta x
+00CE: [ B9 27 ] MOV R1, 27
+00D0: [ B1 A4 ] MOV @R1, A4		; move A4 to 27
+00D2: [ 83    ] RET
+
+fire_direction_table:
+00D3: [ 00    ] .db 0x00
+00D4: [ 03    ] .db 0x03
+00D5: [ 01    ] .db 0x01
+00D6: [ 03    ] .db 0x03
+00D7: [ 02    ] .db 0x02
+00D8: [ 02    ] .db 0x02
+00D9: [ 03    ] .db 0x03
+00DA: [ 01    ] .db 0x01
+00DB: [ 04    ] .db 0x04
+00DC: [ 00    ] .db 0x00
+00DD: [ 03    ] .db 0x03
+00DD: [ FF    ] .db 0xFF
+00DF: [ 02    ] .db 0x02
+00E0: [ FE    ] .db 0xFE
+00E1: [ 01    ] .db 0x01
+00E2: [ FD    ] .db 0xFD
+00E3: [ 00    ] .db 0x00
+00E4: [ FD    ] .db 0xFD
+00E5: [ FF    ] .db 0xFF
+00E6: [ FD    ] .db 0xFD
+00E7: [ FE    ] .db 0xFE
+00E8: [ FE    ] .db 0xFE
+00E9: [ FD    ] .db 0xFD
+00EA: [ FF    ] .db 0xFF
+00EB: [ FC    ] .db 0xFC
+00EC: [ 00    ] .db 0x00
+00ED: [ FD    ] .db 0xFD
+00EE: [ 01    ] .db 0x01
+00EF: [ FE    ] .db 0xFE
+00F0: [ 02    ] .db 0x02
+00F1: [ FF    ] .db 0xFF
+00F2: [ 03    ] .db 0x03
+
+satellite_movement:
+00F3: [ B8 28 ] MOV R0, #28			; 28 counter reg
+00F5: [ F0    ] MOV A, @R0
+00F6: [ C6 FA ] JZ FA				; if zero do stuff
+00F8: [ 10    ] INC @R0				; if not, increment counter
+00F9: [ 83    ] RET
+00FA: [ BD 1C ] MOV R5, 1C
+00FC: [ 54 09 ] CALL set_new_intram28_delay
+00FE: [ 24 F7 ] JMP move_satellite_y_pos
+
+
+;
+; on entry r2 = 0, 05, 0A
+;
+do_particle_shield:
+0100: [ B8 14 ] MOV R0, 14		
+0102: [ 80    ] MOVX A, @R0		; get exram 0x14
+0103: [ 03 F0 ] ADD A, F0		
+0105: [ E6 09 ] JNC 09			; smaller then 0x0f, jmp 09
+0107: [ 27    ] CLR A			; A = 0
+0108: [ 90    ] MOVX @R0, A		; move 0 to 0x14
+0109: [ 80    ] MOVX A, @R0		; get 0x14
+010A: [ 6A    ] ADD A, R2		; Add R2 (distance from particle 0)
+010B: [ AF    ] MOV R7, A		; move to R7
+010C: [ 03 F0 ] ADD A, F0		;
+010E: [ E6 11 ] JNC 11			; smaller then 0x0f, jmp 11
+0110: [ AF    ] MOV R7, A		; get original from r7
+0111: [ 1F    ] INC R7			; increment
+0112: [ BC 4C ] MOV R4, circling_shield_particles_positions-2	; start of table
+0114: [ B8 2B ] MOV R0, 2B		;
+0116: [ F0    ] MOV A, @R0		; get 2b from intram
+0117: [ 17    ] INC A			; increment by one
+0118: [ 37    ] CPL A			; complement (A = -A)
+0119: [ 17    ] INC A			; increment by 1 (A = -A +1)
+011A: [ 6F    ] ADD A, R7		; add index to table
+011B: [ BE 00 ] MOV R6, 00		; R6 = 0x00 (color is dark grey)
+011D: [ F6 21 ] JC 21			; A was zero
+011F: [ BE 20 ] MOV R6, 20		; r6 = 0x20 (color is blue)
+0121: [ B8 23 ] MOV R0, 23		
+0123: [ 80    ] MOVX A, @R0		; get exram 23 (direction of fire)
+0124: [ 17    ] INC A			; inc
+0125: [ 37    ] CPL A			; complement
+0126: [ 17    ] INC A			; inc
+0127: [ 6F    ] ADD A, R7		; add index to table (distance 2 other particles)
+0128: [ F6 2C ] JC 2C			; jmp is A was 0
+012A: [ 37    ] CPL A			; original + 1
+012B: [ 17    ] INC A			; inc
+012C: [ 03 FE ] ADD A, FE		; Add 0xFE
+012E: [ F6 35 ] JC 35			; smaller then 2, jmp 35
+0130: [ 80    ] MOVX A, @R0		; get direction of fire
+0131: [ AF    ] MOV R7, A		; move to R7
+0132: [ 1F    ] INC R7			; next position (anti clockwise)
+0133: [ BE 38 ] MOV R6, 38		; R6 = 0x38 (color is white)
+0135: [ 1C    ] INC R4			; increment table-index by 2
+0136: [ 1C    ] INC R4
+0137: [ EF 35 ] DJNZ R7 35		; keep doing that for R7 times
+0139: [ FC    ] MOV A, R4		; move table data to r3 and r4
+013A: [ A3    ] MOVP A, @A
+013B: [ AB    ] MOV R3, A
+013C: [ 1C    ] INC R4
+013D: [ FC    ] MOV A, R4
+013E: [ A3    ] MOVP A, @A
+013F: [ AA    ] MOV R2, A		; table index to R2
+0140: [ B8 7D ] MOV R0, 7D		;
+0142: [ 80    ] MOVX A, @R0		; get player y-pos
+0143: [ 6B    ] ADD A, R3		; add y-offset
+0144: [ 91    ] MOVX @R1, A		; move to particle y-pos
+0145: [ C8    ] DEC R0
+0146: [ C9    ] DEC R1
+0147: [ 80    ] MOVX A, @R0		; get player x-pos
+0148: [ 6A    ] ADD A, R2		; add x-offset
+0149: [ 91    ] MOVX @R1, A		; move to particle x-pos
+014A: [ C9    ] DEC R1		
+014B: [ FE    ] MOV A, R6
+014C: [ 91    ] MOVX @R1, A		; move color to sprite
+014D: [ 83    ] RET
+
+circling_shield_particles_positions:
+014E: [ 00    ] .db 0x00
+014F: [ 09    ] .db 0x00
+0150: [ 03    ] .db 0x03
+0151: [ 08    ] .db 0x08
+0152: [ 05    ] .db 0x05
+0153: [ 06    ] .db 0x06
+0154: [ 07    ] .db 0x07
+0155: [ 04    ] .db 0x04
+0155: [ 08    ] .db 0x08
+0157: [ 01    ] .db 0x01
+0158: [ 07    ] .db 0x07
+0159: [ FE    ] .db 0xFE
+015A: [ 05    ] .db 0x05
+015B: [ FB    ] .db 0xFB
+015C: [ 03    ] .db 0x03
+015D: [ F9    ] .db 0xF9
+015E: [ 00    ] .db 0x00
+015F: [ F8    ] .db 0xF8
+0160: [ FD    ] .db 0xFD
+0161: [ F9    ] .db 0xF9
+0162: [ FA    ] .db 0xFA
+0163: [ FB    ] .db 0xFB
+0164: [ F8    ] .db 0xF8
+0165: [ FE    ] .db 0xFE
+0166: [ F7    ] .db 0xF7
+0167: [ 01    ] .db 0x01
+0168: [ F8    ] .db 0xF8
+0169: [ 04    ] .db 0x04
+016A: [ FA    ] .db 0xFA
+016B: [ 06    ] .db 0x06
+016C: [ FC    ] .db 0xFC
+016D: [ 08    ] .db 0x08
+
+016E: [ 00    ] .db 00000000		; start particle sprite
+016F: [ 00    ] .db 00000000
+0170: [ 00    ] .db 00000000
+0171: [ 10    ] .db 00010000
+0172: [ 00    ] .db 00000000
+0173: [ 00    ] .db 00000000
+0174: [ 00    ] .db 00000000
+0175: [ 00    ] .db 00000000		; end particle sprite
+
+move_player:
+0176: [ B9 00 ] MOV R1, 00		; get joystick 0
+0178: [ E5    ] SEL MB0
+0179: [ 74 8F ] CALL getjoystick
+017B: [ F5    ] SEL MB1
+017C: [ B8 2B ] MOV R0, 2B
+017E: [ F0    ] MOV A, @R0		; intram 2B to A
+017F: [ 92 86 ] JB4, 86			; bit 4 set? jmp to 86
+0181: [ B8 25 ] MOV R0, int_25		
+0183: [ F0    ] MOV A, @R0		; get counter?? to A
+0184: [ 12 BB ] JB0, BB			; bit 0 set? jmp BB
+0186: [ B8 7D ] MOV R0, 7D		; get y-pos of player sprite in A
+0188: [ 80    ] MOVX A, @R0
+0189: [ D3 F8 ] XRL A, F8		; is it f8?
+018B: [ C6 DF ] JZ DF			; yep jmp df (RET)
+018D: [ 80    ] MOVX A, @R0		; get y-pos of player again.
+018E: [ 6B    ] ADD A, R3		; add r3 (r3 holds delta-Y from getjoystick)
+018F: [ 90    ] MOVX @R0, A		; put in y-pos of player.
+0190: [ BC F0 ] MOV R4, F0		
+0192: [ 6C    ] ADD A, R4		; i a > 0f then jmp 97
+0193: [ F6 97 ] JC 97
+0195: [ 34 CF ] CALL set_player_xy_pos	
+0197: [ BC 48 ] MOV R4, 48		; move 48 to r4
+0199: [ 80    ] MOVX A, @R0		; get player y-pos in A
+019A: [ 6C    ] ADD A, R4		; player pos <= b7
+019B: [ E6 9F ] JNC 9F			; jmp 9f.
+019D: [ 34 CF ] CALL set_player_xy_pos
+019F: [ C8    ] DEC R0			; dec. r0. Now holds x-pos of player
+01A0: [ 80    ] MOVX A, @R0		; move x-pos player to A
+01A1: [ 6A    ] ADD A, R2		; Add r2 (delta x from get joystick)
+01A2: [ 90    ] MOVX @R0, A		; move back to x-pos player (VDC mirror in Exram)
+01A3: [ BC F8 ] MOV R4, F8		; is smaller <= 08 then rest position at 08
+01A5: [ 6C    ] ADD A, R4
+01A6: [ F6 AA ] JC AA			; no? keep current position
+01A8: [ 34 CF ] CALL set_player_xy_pos
+01AA: [ 80    ] MOVX A, @R0		; get player x-pos
+01AB: [ BC 70 ] MOV R4, 70		; bigger then 8f?
+01AD: [ 6C    ] ADD A, R4
+01AE: [ E6 B2 ] JNC B2			; no? keep value
+01B0: [ 34 CF ] CALL set_player_xy_pos	
+01B2: [ C8    ] DEC R0			;r0 = r0 - 2 
+01B3: [ C8    ] DEC R0
+01B4: [ 80    ] MOVX A, @R0		; get value from this (what is this?)
+01B5: [ 18    ] INC R0			; increases to byte 2 from player sprite
+01B6: [ 12 BB ] JB0, BB			; if bit0=1 (from byte 4)
+01B8: [ 23 09 ] MOV A, 09		; color = red. full-shift = 1
+01BA: [ 90    ] MOVX @R0, A		; move to byte 2 player sprite
+01BB: [ BC E0 ] MOV R4, E0		; e0 = UFO sprite
+01BD: [ 34 D4 ] CALL sprite_copy_routine; copy sprite
+01BF: [ B8 25 ] MOV R0, int_25		; 
+01C1: [ F0    ] MOV A, @R0		; get intram 25 to A
+01C2: [ 77    ] RR A			;
+01C3: [ 77    ] RR A			; divide by 4
+01C4: [ 53 07 ] ANL A, 07		; and 07
+01C6: [ AF    ] MOV R7, A		; move to R7 (counter)
+01C7: [ B9 37 ] MOV R1, 37		; get bottom part of player sprite
+01C9: [ 81    ] MOVX A, @R1		; move it to A
+01CA: [ E7    ] RL A			; Rotate left
+01CB: [ EF CA ] DJNZ R7 CA		; R7 times.
+01CD: [ 91    ] MOVX @R1, A		; store in sprite
+01CE: [ 83    ] RET
+
+
+set_player_xy_pos:
+01CF: [ FC    ] MOV A, R4		; (r4 holds complement of max position)
+01D0: [ 37    ] CPL A			; complement (now 0f)
+01D1: [ 17    ] INC A			; increment
+01D2: [ 90    ] MOVX @R0, A		; move to player y-pos
+01D3: [ 83    ] RET
+
+sprite_copy_routine:
+01D4: [ B9 3B ] MOV R1, 3B		; 3b = 90 in VDC mirror in exram
+01D6: [ BF 08 ] MOV R7, 08
+01D8: [ FC    ] MOV A, R4
+01D9: [ A3    ] MOVP A, @A
+01DA: [ 91    ] MOVX @R1, A
+01DB: [ 1C    ] INC R4
+01DC: [ C9    ] DEC R1
+01DD: [ EF D8 ] DJNZ R7 D8
+01DF: [ 83    ] RET
+
+01E0: [ 00    ] .db 00000000			; start of UFO sprite
+01E1: [ 00    ] .db 00000000
+01E2: [ 18    ] .db 00011000
+01E3: [ 3C    ] .db 00111100
+01E4: [ EF    ] .db 11101111
+01E5: [ 3C    ] .db 00111100
+01E6: [ 00    ] .db 00000000
+01E7: [ 00    ] .db 00000000			; end UFO sprite
+
+01E8: [ 09    ] .db 00001001			; start of explostion sprite
+01E9: [ D2    ] .db 11010010
+01EA: [ 26    ] .db 00100110
+01EB: [ 7C    ] .db 01111100
+01EC: [ 3F    ] .db 00111111
+01ED: [ 24    ] .db 00100100
+01EE: [ 54    ] .db 01010100
+01EF: [ 82    ] .db 11101111			; end, start ?? sprite
+01F0: [ 11    ] .db 00010001
+01F1: [ 44    ] .db 01000100
+01F2: [ 20    ] .db 00100000
+01F3: [ 88    ] .db 10001000
+01F4: [ 02    ] .db 00000010
+01F5: [ 20    ] .db 00100000
+01F6: [ 89    ] .db 10001001			; end ?? sprite
+
+move_satellite_y_pos:
+01F7: [ BF 0A ] MOV R7, 0A		; 10 satellites max
+01F9: [ B9 6D ] MOV R1, 6D		; y-pos of first char (satellite) in exram mirror
+01FB: [ E5    ] SEL MB0
+01FC: [ B4 B1 ] CALL Check_satellite_vertical_pos
+01FE: [ F5    ] SEL MB1
+01FF: [ 83    ] RET
+
+0200: [ 14 F3 ] CALL satellite_movement
+0202: [ 74 A4 ] CALL 3A4
+0204: [ 54 20 ] CALL 220
+0206: [ 54 5F ] CALL 25F
+0208: [ 83    ] RET
+
+set_new_intram28_delay:
+;
+; on entry r5 = 1c, r0 = 28
+;
+0209: [ B9 10 ] MOV R1, 10		; memory 0x10 in extram
+020B: [ BF 03 ] MOV R7, 03		; counter = 3
+020D: [ 81    ] MOVX A, @R1		; move to A
+020E: [ 96 13 ] JNZ, 13			; non-zero? jmp to 13
+0210: [ 19    ] INC R1			; increment pointer to memory
+0211: [ EF 0D ] DJNZ R7 0D		; test next one
+0213: [ FD    ] MOV A, R5		; move 1c to A
+0214: [ 6F    ] ADD A, R7		; Add counter to 1C
+0215: [ A3    ] MOVP A, @A		; move from memory to A ([1C,1F])
+0216: [ A0    ] MOV @R0, A		; move memory value to intram 28.
+0217: [ 83    ] RET
+
+0218: [ FF    ] MOV A, R7
+0219: [ 7F    ] ADC A, R7
+021A: [ 3F    ] MOVD P7, A
+021B: [ 1F    ] INC R7
+
+021C: [ C0    ] .db 0xC0		
+021D: [ E0    ] .db 0xE0
+021E: [ F0    ] .db 0xF0
+021F: [ 00    ] .db 0x00
+
+0220: [ B9 25 ] MOV R1, int_25
+0222: [ F1    ] MOV A, @R1
+0223: [ 03 03 ] ADD A, 03
+0225: [ 53 0F ] ANL A, 0F
+0227: [ AF    ] MOV R7, A
+0228: [ 03 F5 ] ADD A, F5
+022A: [ E6 2F ] JNC 2F
+022C: [ 03 04 ] ADD A, 04
+022E: [ AF    ] MOV R7, A
+022F: [ 1F    ] INC R7
+0230: [ B9 6E ] MOV R1, 6E
+0232: [ C9    ] DEC R1
+0233: [ C9    ] DEC R1
+0234: [ C9    ] DEC R1
+0235: [ C9    ] DEC R1
+0236: [ EF 32 ] DJNZ R7 32
+0238: [ 81    ] MOVX A, @R1
+0239: [ 92 5B ] JB4, 5B
+023B: [ 83    ] RET
+
+023C: [ B8 7C ] MOV R0, 7C
+023E: [ 19    ] INC R1
+023F: [ 19    ] INC R1
+0240: [ 27    ] CLR A
+0241: [ AB    ] MOV R3, A
+0242: [ AA    ] MOV R2, A
+0243: [ 74 00 ] CALL GetDistanceBetweenObjects
+0245: [ AD    ] MOV R5, A
+0246: [ C6 4E ] JZ 4E
+0248: [ BA FE ] MOV R2, FE
+024A: [ F6 4E ] JC 4E
+024C: [ BA 02 ] MOV R2, 02
+024E: [ 19    ] INC R1
+024F: [ 18    ] INC R0
+0250: [ 74 00 ] CALL GetDistanceBetweenObjects
+0252: [ C6 5A ] JZ 5A
+0254: [ BB FE ] MOV R3, FE
+0256: [ F6 5A ] JC 5A
+0258: [ BB 02 ] MOV R3, 02
+025A: [ 83    ] RET
+
+025B: [ 54 3C ] CALL 23C
+025D: [ 64 E0 ] JMP 3E0
+025F: [ B8 25 ] MOV R0, 25
+0261: [ F0    ] MOV A, @R0
+0262: [ 53 03 ] ANL A, 03
+0264: [ 96 A1 ] JNZ, A1
+0266: [ B9 45 ] MOV R1, 45
+0268: [ BE 32 ] MOV R6, 32
+026A: [ 81    ] MOVX A, @R1
+026B: [ C6 71 ] JZ 71
+026D: [ D3 F8 ] XRL A, F8
+026F: [ 96 97 ] JNZ, 97
+0271: [ B8 29 ] MOV R0, 29
+0273: [ 10    ] INC @R0
+0274: [ F0    ] MOV A, @R0
+0275: [ 96 08 ] JNZ, 08
+0277: [ BD 18 ] MOV R5, 18
+0279: [ 54 09 ] CALL set_new_intram28_delay
+027B: [ B9 45 ] MOV R1, 45
+027D: [ AC    ] MOV R4, A
+027E: [ 42    ] MOV A, T
+027F: [ 5C    ] ANL A, R4
+0280: [ A0    ] MOV @R0, A
+0281: [ E5    ] SEL MB0
+0282: [ B4 C5 ] CALL 5C5
+0284: [ F5    ] SEL MB1
+0285: [ B9 42 ] MOV R1, 42
+0287: [ 81    ] MOVX A, @R1
+0288: [ 43 20 ] ORL A, 20
+028A: [ 91    ] MOVX @R1, A
+028B: [ 54 3C ] CALL 23C
+028D: [ B8 22 ] MOV R0, 22
+028F: [ FB    ] MOV A, R3
+0290: [ C6 93 ] JZ 93
+0292: [ 67    ] RRC A
+0293: [ A0    ] MOV @R0, A
+0294: [ 18    ] INC R0
+0295: [ FA    ] MOV A, R2
+0296: [ A0    ] MOV @R0, A
+0297: [ B9 45 ] MOV R1, 45
+0299: [ B8 27 ] MOV R0, 27
+029B: [ B0 BC ] MOV @R0, BC
+029D: [ B8 23 ] MOV R0, 23
+029F: [ 44 EA ] JMP 2EA
+02A1: [ B9 41 ] MOV R1, 41
+02A3: [ 81    ] MOVX A, @R1
+02A4: [ D3 F8 ] XRL A, F8
+02A6: [ 96 E6 ] JNZ, E6
+02A8: [ 42    ] MOV A, T
+02A9: [ 12 FD ] JB0, FD
+02AB: [ B9 45 ] MOV R1, 45
+02AD: [ 81    ] MOVX A, @R1
+02AE: [ D3 F8 ] XRL A, F8
+02B0: [ C6 FD ] JZ FD
+02B2: [ B9 42 ] MOV R1, 42
+02B4: [ 54 3C ] CALL 23C
+02B6: [ C6 FD ] JZ FD
+02B8: [ 97    ] CLR C
+02B9: [ 67    ] RRC A
+02BA: [ AC    ] MOV R4, A
+02BB: [ FD    ] MOV A, R5
+02BC: [ C6 FD ] JZ FD
+02BE: [ 74 03 ] CALL 303
+02C0: [ 03 F0 ] ADD A, F0
+02C2: [ F6 FD ] JC FD
+02C4: [ B8 30 ] MOV R0, 30
+02C6: [ FA    ] MOV A, R2
+02C7: [ A0    ] MOV @R0, A
+02C8: [ C8    ] DEC R0
+02C9: [ FB    ] MOV A, R3
+02CA: [ A0    ] MOV @R0, A
+02CB: [ B8 41 ] MOV R0, 41
+02CD: [ 81    ] MOVX A, @R1
+02CE: [ BF 04 ] MOV R7, 04
+02D0: [ 6B    ] ADD A, R3
+02D1: [ EF D0 ] DJNZ R7 D0
+02D3: [ 90    ] MOVX @R0, A
+02D4: [ C8    ] DEC R0
+02D5: [ C9    ] DEC R1
+02D6: [ BF 04 ] MOV R7, 04
+02D8: [ 81    ] MOVX A, @R1
+02D9: [ 6A    ] ADD A, R2
+02DA: [ EF D9 ] DJNZ R7 D9
+02DC: [ 90    ] MOVX @R0, A
+02DD: [ C8    ] DEC R0
+02DE: [ C8    ] DEC R0
+02DF: [ 23 4E ] MOV A, 4E
+02E1: [ 90    ] MOVX @R0, A
+02E2: [ B9 27 ] MOV R1, 27
+02E4: [ B1 C0 ] MOV @R1, C0
+02E6: [ B9 41 ] MOV R1, 41
+02E8: [ B8 30 ] MOV R0, 30
+02EA: [ 81    ] MOVX A, @R1
+02EB: [ D3 F8 ] XRL A, F8
+02ED: [ C6 FA ] JZ FA
+02EF: [ F0    ] MOV A, @R0
+02F0: [ AA    ] MOV R2, A
+02F1: [ C8    ] DEC R0
+02F2: [ F0    ] MOV A, @R0
+02F3: [ 97    ] CLR C
+02F4: [ F7    ] RLC A
+02F5: [ AB    ] MOV R3, A
+02F6: [ B8 32 ] MOV R0, 32
+02F8: [ 64 E0 ] JMP 3E0
+02FA: [ A0    ] MOV @R0, A
+02FB: [ C8    ] DEC R0
+02FC: [ A0    ] MOV @R0, A
+02FD: [ 83    ] RET
+
+02FE: [ 00    ] NOP			; just some NOPs to align the code
+02FF: [ 00    ] NOP
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; GetDistanceBetweenObjects
+;
+; Returns the distance between 2 objects. Only one axis is compared
+; 
+; IN:	
+;	r0		holds pointer to foreground character data
+;	r1 		holds pointer to sprite coordinate data
+;
+; OUT:
+;	a, r4		ABS (position sprite - position foreground character)
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+0300: [ 81    ] MOVX A, @R1		
+0301: [ AC    ] MOV R4, A		; move sprite coordinate to R4
+0302: [ 80    ] MOVX A, @R0		; move foreground character coordinate to A
+0303: [ 37    ] CPL A			; 
+0304: [ 17    ] INC A			; A = - A 
+0305: [ 6C    ] ADD A, R4		; add sprite position
+0306: [ F6 0A ] JC 0A			; if result is positive, move to 0x30a
+0308: [ 37    ] CPL A			; outcome is negative, so complement and
+0309: [ 17    ] INC A			; add one to get corresponding positive number
+030A: [ AC    ] MOV R4, A		; move result to R4
+030B: [ 83    ] RET
+
+030C: [ F8    ] MOV A, R0		; move satellite databyte to A
+030D: [ AF    ] MOV R7, A		; move to R7
+030E: [ B8 6D ] MOV R0, 6D		
+0310: [ BE 0C ] MOV R6, 0C
+0312: [ F8    ] MOV A, R0
+0313: [ D9    ] XRL A, R1		
+0314: [ C6 1D ] JZ 1D
+0316: [ 80    ] MOVX A, @R0
+0317: [ D3 F8 ] XRL A, F8
+0319: [ C6 1D ] JZ 1D
+031B: [ 74 24 ] CALL 324
+031D: [ C8    ] DEC R0
+031E: [ C8    ] DEC R0
+031F: [ C8    ] DEC R0
+0320: [ C8    ] DEC R0
+0321: [ EE 12 ] DJNZ R6 12
+0323: [ 83    ] RET
+
+0324: [ 81    ] MOVX A, @R1
+0325: [ 6B    ] ADD A, R3
+0326: [ 74 01 ] CALL 301
+0328: [ AD    ] MOV R5, A
+0329: [ 03 EC ] ADD A, EC
+032B: [ 85    ] CLR F0
+032C: [ F6 68 ] JC 68
+032E: [ 95    ] CPL F0
+032F: [ C8    ] DEC R0
+0330: [ C9    ] DEC R1
+0331: [ 81    ] MOVX A, @R1
+0332: [ 6A    ] ADD A, R2
+0333: [ 74 01 ] CALL 301
+0335: [ 03 F3 ] ADD A, F3
+0337: [ C6 45 ] JZ 45
+0339: [ F6 66 ] JC 66
+033B: [ 23 FA ] MOV A, FA
+033D: [ 6C    ] ADD A, R4
+033E: [ F6 45 ] JC 45
+0340: [ 23 F3 ] MOV A, F3
+0342: [ 6D    ] ADD A, R5
+0343: [ E6 69 ] JNC 69
+0345: [ C9    ] DEC R1
+0346: [ C9    ] DEC R1
+0347: [ 81    ] MOVX A, @R1
+0348: [ 53 70 ] ANL A, 70
+034A: [ 96 5F ] JNZ, 5F
+034C: [ 95    ] CPL F0
+034D: [ B6 57 ] JF057
+034F: [ 97    ] CLR C
+0350: [ A7    ] CPL C
+0351: [ FA    ] MOV A, R2
+0352: [ F2 55 ] JB7 55
+0354: [ 97    ] CLR C
+0355: [ 67    ] RRC A
+0356: [ AA    ] MOV R2, A
+0357: [ 97    ] CLR C
+0358: [ A7    ] CPL C
+0359: [ FB    ] MOV A, R3
+035A: [ F2 5D ] JB7 5D
+035C: [ 97    ] CLR C
+035D: [ 67    ] RRC A
+035E: [ AB    ] MOV R3, A
+035F: [ 19    ] INC R1
+0360: [ 19    ] INC R1
+0361: [ FF    ] MOV A, R7
+0362: [ 28    ] XCH A, R0
+0363: [ 10    ] INC @R0
+0364: [ 28    ] XCH A, R0
+0365: [ AF    ] MOV R7, A
+0366: [ 18    ] INC R0
+0367: [ 19    ] INC R1
+0368: [ 83    ] RET
+
+0369: [ C8    ] DEC R0
+036A: [ C8    ] DEC R0
+036B: [ 80    ] MOVX A, @R0
+036C: [ 43 10 ] ORL A, 10
+036E: [ 90    ] MOVX @R0, A
+036F: [ B8 15 ] MOV R0, 15
+0371: [ BC 78 ] MOV R4, 78
+0373: [ BE 02 ] MOV R6, 02
+0375: [ 80    ] MOVX A, @R0
+0376: [ 53 C0 ] ANL A, C0
+0378: [ C6 83 ] JZ 83
+037A: [ CC    ] DEC R4
+037B: [ CC    ] DEC R4
+037C: [ CC    ] DEC R4
+037D: [ CC    ] DEC R4
+037E: [ 18    ] INC R0
+037F: [ 18    ] INC R0
+0380: [ 18    ] INC R0
+0381: [ EE 75 ] DJNZ R6 75
+0383: [ 23 CF ] MOV A, CF
+0385: [ 90    ] MOVX @R0, A
+0386: [ FC    ] MOV A, R4
+0387: [ A8    ] MOV R0, A
+0388: [ 81    ] MOVX A, @R1
+0389: [ 90    ] MOVX @R0, A
+038A: [ 18    ] INC R0
+038B: [ 19    ] INC R1
+038C: [ 81    ] MOVX A, @R1
+038D: [ 90    ] MOVX @R0, A
+038E: [ C8    ] DEC R0
+038F: [ C8    ] DEC R0
+0390: [ 23 18 ] MOV A, 18
+0392: [ 90    ] MOVX @R0, A
+0393: [ 23 F8 ] MOV A, F8
+0395: [ 91    ] MOVX @R1, A
+0396: [ C9    ] DEC R1
+0397: [ 91    ] MOVX @R1, A
+0398: [ BE 01 ] MOV R6, 01
+039A: [ C5    ] SEL RB0
+039B: [ FB    ] MOV A, R3
+039C: [ D5    ] SEL RB1
+039D: [ 96 A3 ] JNZ, A3
+039F: [ B9 27 ] MOV R1, 27
+03A1: [ B1 B6 ] MOV @R1, B6
+03A3: [ 83    ] RET
+
+;
+;
+;
+03A4: [ B8 25 ] MOV R0, 25		
+03A6: [ F0    ] MOV A, @R0		; get intram 0x25
+03A7: [ 53 0F ] ANL A, 0F		; [0, 0x0f]
+03A9: [ AF    ] MOV R7, A		; move to r7
+03AA: [ 03 F5 ] ADD A, F5		
+03AC: [ E6 B1 ] JNC B1			; a smaller than 0b? jmp b1
+03AE: [ 03 04 ] ADD A, 04		; add 04 
+03B0: [ AF    ] MOV R7, A		; move to r7
+03B1: [ 1F    ] INC R7			; inc r7
+03B2: [ B8 3D ] MOV R0, 3D
+03B4: [ B9 6E ] MOV R1, 6E		; basically select a random foreground character
+03B6: [ C8    ] DEC R0
+03B7: [ C9    ] DEC R1
+03B8: [ C9    ] DEC R1
+03B9: [ C9    ] DEC R1
+03BA: [ C9    ] DEC R1
+03BB: [ EF B6 ] DJNZ R7 B6
+03BD: [ 81    ] MOVX A, @R1		; r1 = 3rd byte of foreground char
+03BE: [ 92 FE ] JB4, FE			; bit 4 set? (homing satellite) (ret)
+03C0: [ 19    ] INC R1			
+03C1: [ 19    ] INC R1
+03C2: [ 19    ] INC R1			; move to y-pos of satellite
+03C3: [ 81    ] MOVX A, @R1		; get in A
+03C4: [ D3 F8 ] XRL A, F8		; is F8? (invisible)
+03C6: [ C6 FE ] JZ FE			; yes. jmp FE (ret)
+03C8: [ F0    ] MOV A, @R0		; get satellite data from intram.
+03C9: [ 03 10 ] ADD A, 10		; add 0x10
+03CB: [ A0    ] MOV @R0, A		; store
+03CC: [ 53 F0 ] ANL A, F0		; take 4 high bits
+03CE: [ 96 DB ] JNZ, DB			; one of them set? jmp DB
+03D0: [ 10    ] INC @R0			; increment with 1
+03D1: [ F0    ] MOV A, @R0		; get satellite data to A
+03D2: [ D3 10 ] XRL A, 10		; XRL with 10.
+03D4: [ 96 D7 ] JNZ, D7			; bit 4 not set? jmp D7
+03D6: [ A0    ] MOV @R0, A		; store in satellite data
+03D7: [ F0    ] MOV A, @R0		; get it again.
+03D8: [ 43 10 ] ORL A, 10		; put bit 4 on.
+03DA: [ A0    ] MOV @R0, A		; store it.
+03DB: [ F0    ] MOV A, @R0
+03DC: [ 53 0F ] ANL A, 0F		; get 4 lower bits
+03DE: [ 14 00 ] CALL Get_deltaxy_for_firing ; A is direction for Fire
+03E0: [ 74 0C ] CALL 30C
+03E2: [ 81    ] MOVX A, @R1
+03E3: [ 6B    ] ADD A, R3
+03E4: [ 91    ] MOVX @R1, A
+03E5: [ 03 F8 ] ADD A, F8
+03E7: [ E6 F9 ] JNC F9
+03E9: [ 81    ] MOVX A, @R1
+03EA: [ 03 47 ] ADD A, 47
+03EC: [ F6 F9 ] JC F9
+03EE: [ C9    ] DEC R1
+03EF: [ 81    ] MOVX A, @R1
+03F0: [ 6A    ] ADD A, R2
+03F1: [ 91    ] MOVX @R1, A
+03F2: [ 19    ] INC R1
+03F3: [ C6 F9 ] JZ F9
+03F5: [ 03 50 ] ADD A, 50
+03F7: [ E6 FE ] JNC FE
+03F9: [ 23 F8 ] MOV A, F8
+03FB: [ 91    ] MOVX @R1, A
+03FC: [ C9    ] DEC R1
+03FD: [ 91    ] MOVX @R1, A
+03FE: [ 83    ] RET
+
+03FF: [ 00    ] NOP
+
+
+intram
+10 - 12		countdown timers?? some how linked to satellite movement.
+24		length of player name
+25		general counter. Used for many subroutines. (int_25)
+27		set to 56 after keypress for name, set to AC after hitting satellite, 
+	set to A4 after player fire. set to F5 after 2b increment (and smaller then 10)
+	set to 0 after player hit.
+
+28		counter linked to satellite movement
+
+2A		counter linked to particle movement
+	reset to zero when particle is moved. every 4th increment, 2B is alo incremented
+
+2B		counter linked to particle movement
+	reset to zero when particle is moved. Probably index to particle place in shield
+	also used to find leading dot.
+	bit 4?? player does not die if bit 4 is set
+
+2C		used in update_status_bar
+2D		used in update_status_bar (bit 1,2)
+2F		??
+30		??
+32-3C		foreground character satellite movement??
+	3C = char0, 3B is char1, 32 is char11
+
+EXRAM
+004 - 007	highscore
+008 - 00F   '[rightarrow]??????[space]'
+010 - 013	score 
+014		?? loops from 0x00 - 0x0f.
+15 - 1D		Controls location and direction of shield particles. 3 bytes per particle
+	1st byte status, 2nd byte y-offset, 3rd byte x-offset. Used for explosions
+
+	1st byte: bit 7 set -> explosion shrapnel
+		  bit 6 set -> explosion
+		  bit 5 set -> explosion2
+
+
+03D		has something to do with particle movement. Set to 0x10 after particle move.
+033-03c		Satellite data?
+025		Type of Satellite? values can be 00,04,08,0C
+023 		Direction of fire 0 = right, 1 = right/little down, 2 = right/more down, etc.
+022		countdown timer for changing fire direction
+	fire_direction
+7D - 3E	goes to VDC 0x00
+3C- 2D	goes to VDC 0x80
+
+3rd byte of foreground char:
+normal
+homing			bit 4 set (of 3rd character byte)
+UFO				bit 5 set (of 3rd character byte)
+Laser from UFO		bit 6 set (of 3rd character byte)
+
+3rd byte of sprite:
+bit	0		object hit
+bit	1		

@@ -110,14 +110,27 @@ TEST(DisassemblerTest, FormatInstruction) {
     EXPECT_NE(formatted.find("MOV"), std::string::npos);
 }
 
-TEST(DisassemblerTest, IdentifyBIOSCall) {
+TEST(DisassemblerTest, GetLabelName) {
     Disassembler disasm;
     
-    EXPECT_EQ(disasm.identify_bios_call(0x0E7), "Enable VDC");
-    EXPECT_EQ(disasm.identify_bios_call(0x38F), "Read Joystick");
-    EXPECT_EQ(disasm.identify_bios_call(0x400), "Cartridge entry point");
-    EXPECT_EQ(disasm.identify_bios_call(0x406), "VBLANK service routine");
-    EXPECT_EQ(disasm.identify_bios_call(0x999), "");  // Unknown address
+    // Test BIOS routine addresses
+    EXPECT_EQ(disasm.get_label_name(0x000), "cold_boot");
+    EXPECT_EQ(disasm.get_label_name(0x0E7), "set_up_vdc_access");
+    EXPECT_EQ(disasm.get_label_name(0x0EC), "set_up_ram_access");
+    EXPECT_EQ(disasm.get_label_name(0x11C), "display_off");
+    EXPECT_EQ(disasm.get_label_name(0x127), "display_on");
+    EXPECT_EQ(disasm.get_label_name(0x38F), "read_joystick");
+    
+    // Test cartridge vector addresses
+    EXPECT_EQ(disasm.get_label_name(0x400), "restart");
+    EXPECT_EQ(disasm.get_label_name(0x402), "vblank_external_interrupt");
+    EXPECT_EQ(disasm.get_label_name(0x404), "timer_clock_interrupt_cart");
+    EXPECT_EQ(disasm.get_label_name(0x406), "vblank_routine_vector");
+    EXPECT_EQ(disasm.get_label_name(0x408), "end_of_select_game");
+    EXPECT_EQ(disasm.get_label_name(0x40A), "continuation_of_vblank");
+    
+    // Test unknown address
+    EXPECT_EQ(disasm.get_label_name(0x999), "");
 }
 
 TEST(DisassemblerTest, UnknownOpcode) {

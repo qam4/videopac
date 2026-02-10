@@ -117,12 +117,13 @@ void VDC::write_register(uint8 address, uint8 value) {
     
     // Handle special registers that update internal state
     switch (address) {
-        case VDCRegisters::CONTROL:
+        case VDCRegisters::CONTROL: {
             // Control register - update display and grid enable flags
             // Reference: doc/o2doc.md section 4.6, doc/8245.md lines 440-470
             state_.display_enabled = (value & ControlBits::ENABLE_DISPLAY) != 0;
             state_.grid_enabled = (value & ControlBits::ENABLE_GRID) != 0;
             break;
+        }
             
         case VDCRegisters::COLLISION:
             // Collision register - writing sets which objects to track
