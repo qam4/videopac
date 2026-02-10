@@ -656,7 +656,7 @@ The implementation follows a bottom-up approach: core data structures and utilit
   - Ask the user if questions arise
 
 - [ ] 14. Implement frontend layer (standalone application)
-  - [ ] 14.1 Create frontend interface (frontend.h)
+  - [x] 14.1 Create frontend interface (frontend.h)
     - Define Frontend abstract class with virtual methods
     - Define Configuration struct (video standard, display scale, audio settings, key mappings)
     - Define InputState struct for host input

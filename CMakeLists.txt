@@ -22,6 +22,7 @@ endif()
 option(BUILD_TESTS "Build unit tests" ON)
 option(BUILD_LIBRETRO "Build libretro core" ON)
 option(BUILD_STANDALONE "Build standalone emulator" ON)
+option(ENABLE_SDL "Enable SDL2 frontend (requires SDL2)" ON)
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -37,6 +38,7 @@ set(CORE_SOURCES
     src/savestate.cpp
     src/debugger.cpp
     src/debugger_ui.cpp
+    src/frontend_headless.cpp
 )
 
 # Core emulator library
@@ -45,18 +47,35 @@ target_include_directories(videopac_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
 # Standalone executable
 if(BUILD_STANDALONE)
-    find_package(SDL2 REQUIRED)
-    
-    add_executable(videopac
-        src/main.cpp
-        src/frontend_sdl.cpp
-    )
-    
-    target_include_directories(videopac PRIVATE ${SDL2_INCLUDE_DIRS})
-    target_link_libraries(videopac
-        videopac_core
-        ${SDL2_LIBRARIES}
-    )
+    if(ENABLE_SDL)
+        find_package(SDL2)
+        if(SDL2_FOUND)
+            add_executable(videopac
+                src/main.cpp
+                src/frontend_sdl.cpp
+            )
+            
+            target_include_directories(videopac PRIVATE ${SDL2_INCLUDE_DIRS})
+            target_link_libraries(videopac
+                videopac_core
+                ${SDL2_LIBRARIES}
+            )
+            target_compile_definitions(videopac PRIVATE ENABLE_SDL)
+            message(STATUS "Building with SDL2 support")
+        else()
+            message(WARNING "SDL2 not found, building headless-only version")
+            add_executable(videopac
+                src/main.cpp
+            )
+            target_link_libraries(videopac videopac_core)
+        endif()
+    else()
+        message(STATUS "SDL2 disabled, building headless-only version")
+        add_executable(videopac
+            src/main.cpp
+        )
+        target_link_libraries(videopac videopac_core)
+    endif()
 endif()
 
 # Libretro core

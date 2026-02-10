@@ -6,7 +6,7 @@ namespace videopac {
 
 EmulatorCore::EmulatorCore(const Configuration& config)
     : config_(config), vdc_(config.video_standard), debugger_(nullptr), 
-      running_(false), paused_(false), frame_count_(0) {
+      running_(false), paused_(false), frame_count_(0), vblank_interrupt_triggered_(false) {
     
     // Connect components
     cpu_.set_memory_system(&memory_);
@@ -58,6 +58,9 @@ void EmulatorCore::run_frame() {
         return;
     }
     
+    // Reset VBlank interrupt flag at start of frame
+    vblank_interrupt_triggered_ = false;
+    
     // Execute one complete frame
     // Frame consists of multiple scanlines, each with CPU execution and VDC rendering
     uint32 scanlines = (config_.video_standard == VideoStandard::NTSC) ? 
@@ -69,6 +72,9 @@ void EmulatorCore::run_frame() {
         // Execute CPU for this scanline's worth of cycles
         uint32 cycles_executed = 0;
         while (cycles_executed < cycles_per_scanline_) {
+            // Check for interrupts BEFORE executing next instruction
+            handle_interrupts();
+            
             // Check for breakpoint before executing instruction
             check_debugger_breakpoint();
             
@@ -92,9 +98,6 @@ void EmulatorCore::run_frame() {
         if (!vdc_.is_vblank()) {
             vdc_.render_scanline();
         }
-        
-        // Check for interrupts at specific points
-        handle_interrupts();
     }
     
     // Update debugger frame statistics
@@ -178,15 +181,19 @@ void EmulatorCore::calculate_timing() {
 }
 
 void EmulatorCore::handle_interrupts() {
-    // Check for VBLANK interrupt (triggered at start of VBLANK)
-    // According to doc/o2doc.md, cartridge vector 0x406 is the VBLANK service routine
-    if (vdc_.is_vblank()) {
-        // Trigger VBLANK interrupt to cartridge vector 0x406
-        cpu_.trigger_interrupt(0x406);
+    // Check for VBLANK interrupt (triggered ONCE at start of VBLANK)
+    // According to doc/o2doc.md and BIOS disassembly:
+    // - External interrupt vector is at 0x003 in BIOS
+    // - BIOS jumps to 0x402 in cartridge
+    // - Cartridge should jump to 0x009 in BIOS (VBlank handler)
+    if (vdc_.is_vblank() && !vblank_interrupt_triggered_) {
+        // Trigger external interrupt (VBlank) to BIOS vector 0x003
+        cpu_.trigger_interrupt(0x003);
+        vblank_interrupt_triggered_ = true;
     }
     
-    // TODO: Add timer interrupt handling
-    // TODO: Add external interrupt handling
+    // TODO: Add timer interrupt handling (vector 0x007)
+    // TODO: Add other external interrupts
     // TODO: Add horizontal line interrupt handling (if enabled in VDC control register)
 }
 

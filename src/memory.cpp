@@ -105,8 +105,9 @@ uint8 MemorySystem::read_external(uint8 address) {
 }
 
 void MemorySystem::write_external(uint8 address, uint8 value) {
-    // VDC registers: 0x00-0xFF (when P13 = 0)
-    if (vdc_enabled_ && vdc_) {
+    // VDC registers: 0x00-0xFF (always accessible for writes from CPU)
+    // The P13 bit controls external bus access, not internal CPU access
+    if (vdc_) {
         vdc_->write_register(address, value);
     }
     

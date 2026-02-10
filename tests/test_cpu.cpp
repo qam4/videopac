@@ -412,7 +412,7 @@ TEST_F(CPUTest, CALL_PushesPC) {
     
     EXPECT_EQ(cpu->get_pc(), 0x020);
     auto state = get_state();
-    EXPECT_EQ(state.sp, 2);  // Stack pointer incremented by 2 (PC + PSW)
+    EXPECT_EQ(state.sp, 1);  // Stack pointer incremented by 1 (PC + PSW combined in single 16-bit entry)
 }
 
 TEST_F(CPUTest, RET_PopsPC) {
@@ -435,9 +435,8 @@ TEST_F(CPUTest, RET_PopsPC) {
     
     EXPECT_EQ(cpu->get_pc(), 0x002);  // Returned to after CALL
     auto state = get_state();
-    // Note: CALL pushes 2 values (PC + PSW), RET pops 1 (PC only), so SP = 1
-    // This leaves PSW on stack - use RETR to restore PSW
-    EXPECT_EQ(state.sp, 1);
+    // CALL pushes 1 value (PC + PSW combined), RET pops 1 value (extracts PC), so SP = 0
+    EXPECT_EQ(state.sp, 0);
 }
 
 // ========== FLAG TESTS ==========
