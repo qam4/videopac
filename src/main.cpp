@@ -18,6 +18,8 @@ void print_usage(const char* program_name) {
     std::cout << "  --screenshot <n>    Save screenshot every N frames (headless mode)" << std::endl;
     std::cout << "  --debug             Enable debugger" << std::endl;
     std::cout << "  --break <addr>      Set breakpoint at address (hex, e.g. 0x00B0)" << std::endl;
+    std::cout << "  --condition <expr>  Add condition to previous breakpoint" << std::endl;
+    std::cout << "                      Examples: \"cpu.A == 0xFF\", \"vdc.registers[0xA0] & 0x20\"" << std::endl;
     std::cout << "  --help              Show this help message" << std::endl;
 }
 
@@ -33,7 +35,7 @@ int main(int argc, char* argv[]) {
     bool force_headless = false;
     int frame_limit = 0;
     int screenshot_interval = 0;
-    std::vector<uint16> breakpoints;
+    std::vector<BreakpointConfig> breakpoints;
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0) {
@@ -54,8 +56,15 @@ int main(int argc, char* argv[]) {
             config.enable_debugger = true;
         } else if (strcmp(argv[i], "--break") == 0 && i + 1 < argc) {
             uint16 addr = static_cast<uint16>(std::strtol(argv[++i], nullptr, 16));
-            breakpoints.push_back(addr);
+            breakpoints.emplace_back(addr);
             config.enable_debugger = true;  // Auto-enable debugger if breakpoints are set
+        } else if (strcmp(argv[i], "--condition") == 0 && i + 1 < argc) {
+            if (breakpoints.empty()) {
+                std::cerr << "Error: --condition must follow --break" << std::endl;
+                return 1;
+            }
+            // Add condition to the last breakpoint
+            breakpoints.back().condition = argv[++i];
         } else if (argv[i][0] != '-') {
             rom_path = argv[i];
         } else {

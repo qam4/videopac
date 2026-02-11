@@ -82,9 +82,15 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
         debugger_->enable_trace(true);
         
         // Set breakpoints from config
-        for (uint16 addr : config_.breakpoints) {
-            debugger_->add_breakpoint(addr);
-            std::cout << "Breakpoint set at 0x" << std::hex << addr << std::dec << std::endl;
+        for (const auto& bp : config_.breakpoints) {
+            if (bp.condition.empty()) {
+                debugger_->add_breakpoint(bp.address);
+                std::cout << "Breakpoint set at 0x" << std::hex << bp.address << std::dec << std::endl;
+            } else {
+                debugger_->add_breakpoint(bp.address, bp.condition);
+                std::cout << "Conditional breakpoint set at 0x" << std::hex << bp.address << std::dec 
+                          << " with condition: " << bp.condition << std::endl;
+            }
         }
         
         std::cout << "Debugger enabled - Press F9 to step, F5 to continue, F1 for help" << std::endl;
@@ -247,46 +253,57 @@ void SDLFrontend::cleanup_audio() {
 }
 
 void SDLFrontend::run() {
-    while (running_) {
-        uint32 frame_start = SDL_GetTicks();
-        
-        // Process input
-        process_input();
-        
-        // Run emulator frame if not paused
-        bool emulator_paused = debugger_ && debugger_->is_paused();
-        if (!paused_ && !emulator_paused) {
-            emulator_->run_frame();
-            frame_count_++;
-        }
-        
-        // Render
-        render_frame();
-        
-        // Process audio
-        if (config_.audio_enabled) {
-            process_audio();
-        }
-        
-        // Update FPS counter
-        fps_counter_++;
-        uint32 current_time = SDL_GetTicks();
-        if (current_time - last_fps_time_ >= 1000) {
-            current_fps_ = fps_counter_ * 1000.0f / (current_time - last_fps_time_);
-            fps_counter_ = 0;
-            last_fps_time_ = current_time;
+    try {
+        while (running_) {
+            uint32 frame_start = SDL_GetTicks();
             
-            if (config_.show_fps) {
-                std::cout << "FPS: " << current_fps_ << std::endl;
+            // Process input
+            process_input();
+            
+            // Run emulator frame if not paused
+            bool emulator_paused = debugger_ && debugger_->is_paused();
+            if (!paused_ && !emulator_paused) {
+                emulator_->run_frame();
+                frame_count_++;
+            }
+            
+            // Render
+            render_frame();
+            
+            // Process audio
+            if (config_.audio_enabled) {
+                process_audio();
+            }
+            
+            // Update FPS counter
+            fps_counter_++;
+            uint32 current_time = SDL_GetTicks();
+            if (current_time - last_fps_time_ >= 1000) {
+                current_fps_ = fps_counter_ * 1000.0f / (current_time - last_fps_time_);
+                fps_counter_ = 0;
+                last_fps_time_ = current_time;
+                
+                if (config_.show_fps) {
+                    std::cout << "FPS: " << current_fps_ << std::endl;
+                }
+                
+                // Debug: Dump VDC registers every second
+                if (frame_count_ > 60) {  // After initial frames
+                    emulator_->get_vdc().dump_registers();
+                }
+            }
+            
+            // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
+            uint32 target_frame_time = (config_.video_standard == VideoStandard::NTSC) ? 17 : 20;  // ms
+            uint32 elapsed = SDL_GetTicks() - frame_start;
+            if (elapsed < target_frame_time) {
+                SDL_Delay(target_frame_time - elapsed);
             }
         }
-        
-        // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
-        uint32 target_frame_time = (config_.video_standard == VideoStandard::NTSC) ? 17 : 20;  // ms
-        uint32 elapsed = SDL_GetTicks() - frame_start;
-        if (elapsed < target_frame_time) {
-            SDL_Delay(target_frame_time - elapsed);
-        }
+    } catch (const std::exception& e) {
+        std::cerr << "\n*** Exception caught in main loop: " << e.what() << std::endl;
+        std::cerr << "Shutting down gracefully to save trace..." << std::endl;
+        running_ = false;
     }
 }
 

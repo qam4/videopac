@@ -30,6 +30,8 @@ struct CPUState {
     uint64 clock_cycles;        // Total cycles executed
     uint8 current_bank;         // Current register bank (0 or 1)
                                 // Note: F1 flag is PSW bit 4, same as Bank Select (BS)
+    bool memory_bank;           // Memory bank flag (DBF): false=MB0 (0x000-0x7FF), true=MB1 (0x800-0xFFF)
+                                // Set by SEL MB0/MB1 instructions, affects JMP/CALL target addresses
 };
 
 // Intel 8048 CPU emulation

@@ -8,15 +8,24 @@
 
 namespace videopac {
 
-// Forward declaration
+// Forward declarations
 class EmulatorCore;
+struct CPUState;
 
 // Breakpoint structure
 struct Breakpoint {
     uint16 address;
     bool enabled;
     
-    Breakpoint(uint16 addr, bool en = true) : address(addr), enabled(en) {}
+    // Conditional breakpoint support
+    bool has_condition;
+    std::string condition;  // e.g., "A==0xFF", "R0>0x80", "PSW&0x10"
+    
+    Breakpoint(uint16 addr, bool en = true) 
+        : address(addr), enabled(en), has_condition(false), condition("") {}
+    
+    Breakpoint(uint16 addr, const std::string& cond, bool en = true)
+        : address(addr), enabled(en), has_condition(true), condition(cond) {}
 };
 
 // Debugger state
@@ -43,6 +52,7 @@ public:
     
     // Breakpoint management
     void add_breakpoint(uint16 address);
+    void add_breakpoint(uint16 address, const std::string& condition);
     void remove_breakpoint(uint16 address);
     void enable_breakpoint(uint16 address, bool enabled);
     void clear_all_breakpoints();
@@ -82,6 +92,9 @@ private:
     std::vector<std::string> trace_log_;
     FrameStats frame_stats_;
     uint64 last_frame_time_;
+    
+    // Helper functions
+    bool evaluate_condition(const std::string& condition, const CPUState& cpu) const;
 };
 
 } // namespace videopac

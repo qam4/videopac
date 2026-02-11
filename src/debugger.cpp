@@ -29,6 +29,19 @@ void Debugger::add_breakpoint(uint16 address) {
     breakpoints_.emplace_back(address, true);
 }
 
+void Debugger::add_breakpoint(uint16 address, const std::string& condition) {
+    // Check if breakpoint already exists
+    for (auto& bp : breakpoints_) {
+        if (bp.address == address) {
+            // Update existing breakpoint with condition
+            bp.has_condition = true;
+            bp.condition = condition;
+            return;
+        }
+    }
+    breakpoints_.emplace_back(address, condition, true);
+}
+
 void Debugger::remove_breakpoint(uint16 address) {
     breakpoints_.erase(
         std::remove_if(breakpoints_.begin(), breakpoints_.end(),
@@ -53,9 +66,197 @@ void Debugger::clear_all_breakpoints() {
 bool Debugger::check_breakpoint(uint16 address) const {
     for (const auto& bp : breakpoints_) {
         if (bp.address == address && bp.enabled) {
-            return true;
+            // If no condition, break immediately
+            if (!bp.has_condition) {
+                return true;
+            }
+            
+            // Evaluate condition
+            CPUState cpu = emulator_->get_cpu_state();
+            if (evaluate_condition(bp.condition, cpu)) {
+                return true;
+            }
         }
     }
+    return false;
+}
+
+// Helper function to evaluate breakpoint conditions
+// Supports simple expressions like: cpu.A==0xFF, vdc.registers[0xA0]&0x20, memory.copy_mode==true
+bool Debugger::evaluate_condition(const std::string& condition, const CPUState& cpu) const {
+    if (condition.empty()) {
+        return true;
+    }
+    
+    // Get all emulator state
+    VDCState vdc = emulator_->get_vdc_state();
+    MemoryState mem = emulator_->get_memory_state();
+    
+    // Find operator
+    size_t op_pos = std::string::npos;
+    std::string op;
+    
+    if ((op_pos = condition.find("==")) != std::string::npos) {
+        op = "==";
+    } else if ((op_pos = condition.find("!=")) != std::string::npos) {
+        op = "!=";
+    } else if ((op_pos = condition.find(">=")) != std::string::npos) {
+        op = ">=";
+    } else if ((op_pos = condition.find("<=")) != std::string::npos) {
+        op = "<=";
+    } else if ((op_pos = condition.find(">")) != std::string::npos) {
+        op = ">";
+    } else if ((op_pos = condition.find("<")) != std::string::npos) {
+        op = "<";
+    } else if ((op_pos = condition.find("&")) != std::string::npos) {
+        op = "&";
+    } else if ((op_pos = condition.find("|")) != std::string::npos) {
+        op = "|";
+    } else {
+        return false;  // Invalid condition
+    }
+    
+    // Extract left side (variable path) and right side (value)
+    std::string var_path = condition.substr(0, op_pos);
+    std::string value_str = condition.substr(op_pos + op.length());
+    
+    // Trim whitespace
+    var_path.erase(0, var_path.find_first_not_of(" \t"));
+    var_path.erase(var_path.find_last_not_of(" \t") + 1);
+    value_str.erase(0, value_str.find_first_not_of(" \t"));
+    value_str.erase(value_str.find_last_not_of(" \t") + 1);
+    
+    // Parse value (supports hex with 0x prefix, or boolean true/false)
+    uint16 value = 0;
+    bool is_bool = false;
+    bool bool_value = false;
+    
+    if (value_str == "true") {
+        is_bool = true;
+        bool_value = true;
+    } else if (value_str == "false") {
+        is_bool = true;
+        bool_value = false;
+    } else if (value_str.find("0x") == 0 || value_str.find("0X") == 0) {
+        value = std::stoi(value_str, nullptr, 16);
+    } else {
+        value = std::stoi(value_str);
+    }
+    
+    // Parse variable path and get value
+    uint16 var_value = 0;
+    bool var_is_bool = false;
+    bool var_bool_value = false;
+    
+    // Split by '.' to get namespace and field
+    size_t dot_pos = var_path.find('.');
+    if (dot_pos == std::string::npos) {
+        return false;  // Must have namespace (cpu., vdc., memory.)
+    }
+    
+    std::string ns = var_path.substr(0, dot_pos);
+    std::string field = var_path.substr(dot_pos + 1);
+    
+    // Handle array indexing like registers[0xA0]
+    size_t bracket_pos = field.find('[');
+    std::string array_name;
+    int array_index = -1;
+    
+    if (bracket_pos != std::string::npos) {
+        array_name = field.substr(0, bracket_pos);
+        size_t close_bracket = field.find(']');
+        if (close_bracket == std::string::npos) {
+            return false;  // Invalid array syntax
+        }
+        std::string index_str = field.substr(bracket_pos + 1, close_bracket - bracket_pos - 1);
+        // Trim whitespace
+        index_str.erase(0, index_str.find_first_not_of(" \t"));
+        index_str.erase(index_str.find_last_not_of(" \t") + 1);
+        
+        if (index_str.find("0x") == 0 || index_str.find("0X") == 0) {
+            array_index = std::stoi(index_str, nullptr, 16);
+        } else {
+            array_index = std::stoi(index_str);
+        }
+        field = array_name;
+    }
+    
+    // Get variable value based on namespace
+    if (ns == "cpu") {
+        if (field == "A") {
+            var_value = cpu.a;
+        } else if (field == "PSW") {
+            var_value = cpu.psw;
+        } else if (field == "PC") {
+            var_value = cpu.pc;
+        } else if (field == "SP") {
+            var_value = cpu.sp;
+        } else if (field.length() == 2 && field[0] == 'R' && field[1] >= '0' && field[1] <= '7') {
+            int r = field[1] - '0';
+            var_value = cpu.r[r];
+        } else if (field == "ram" && array_index >= 0 && array_index < 64) {
+            var_value = cpu.ram[array_index];
+        } else {
+            return false;  // Unknown CPU field
+        }
+    } else if (ns == "vdc") {
+        if (field == "registers" && array_index >= 0 && array_index < 256) {
+            var_value = vdc.registers[array_index];
+        } else if (field == "scanline") {
+            var_value = vdc.scanline;
+        } else if (field == "display_enabled") {
+            var_is_bool = true;
+            var_bool_value = vdc.display_enabled;
+        } else if (field == "grid_enabled") {
+            var_is_bool = true;
+            var_bool_value = vdc.grid_enabled;
+        } else {
+            return false;  // Unknown VDC field
+        }
+    } else if (ns == "memory") {
+        if (field == "external_ram" && array_index >= 0 && array_index < 128) {
+            var_value = mem.external_ram[array_index];
+        } else if (field == "current_bank") {
+            var_value = mem.current_bank;
+        } else if (field == "rom_size_kb") {
+            var_value = mem.rom_size_kb;
+        } else {
+            return false;  // Unknown memory field
+        }
+    } else {
+        return false;  // Unknown namespace
+    }
+    
+    // Evaluate condition
+    if (var_is_bool && is_bool) {
+        // Boolean comparison
+        if (op == "==") {
+            return var_bool_value == bool_value;
+        } else if (op == "!=") {
+            return var_bool_value != bool_value;
+        }
+        return false;
+    }
+    
+    // Numeric comparison
+    if (op == "==") {
+        return var_value == value;
+    } else if (op == "!=") {
+        return var_value != value;
+    } else if (op == ">") {
+        return var_value > value;
+    } else if (op == "<") {
+        return var_value < value;
+    } else if (op == ">=") {
+        return var_value >= value;
+    } else if (op == "<=") {
+        return var_value <= value;
+    } else if (op == "&") {
+        return (var_value & value) != 0;
+    } else if (op == "|") {
+        return (var_value | value) != 0;
+    }
+    
     return false;
 }
 

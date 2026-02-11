@@ -212,6 +212,9 @@ public:
     // Accessors
     uint16 get_scanline() const { return state_.scanline; }
     VideoStandard get_video_standard() const { return state_.video_standard; }
+    
+    // Debug helpers
+    void dump_registers() const;
 
 private:
     VDCState state_;

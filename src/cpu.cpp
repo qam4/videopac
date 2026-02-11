@@ -24,10 +24,10 @@ void CPU::set_input_handler(InputHandler* input) {
 }
 
 uint8 CPU::read_memory(uint16 address) {
-    if (memory_) {
-        return memory_->read_program(address);
+    if (!memory_) {
+        throw std::runtime_error("CPU::read_memory() called with null memory system");
     }
-    return 0xFF;
+    return memory_->read_program(address);
 }
 
 void CPU::write_memory(uint16 address, uint8 value) {
@@ -302,6 +302,10 @@ uint8 CPU::execute_instruction() {
         case 0x94: case 0xB4: case 0xD4: case 0xF4: {
             uint8 addr_low = fetch_byte();
             uint16 addr = ((opcode & 0xE0) << 3) | addr_low;
+            // Apply memory bank flag (DBF) to bit 11
+            if (state_.memory_bank) {
+                addr |= 0x800;  // Set bit 11 for MB1
+            }
             // Push PC (12 bits) and PSW bits 4-7 (4 bits) as a single 16-bit value
             uint16 stack_value = (state_.pc & 0x0FFF) | ((state_.psw & 0xF0) << 8);
             push_stack(stack_value);
@@ -634,7 +638,12 @@ uint8 CPU::execute_instruction() {
         case 0x04: case 0x24: case 0x44: case 0x64:
         case 0x84: case 0xA4: case 0xC4: case 0xE4: {
             uint8 addr_low = fetch_byte();
-            state_.pc = ((opcode & 0xE0) << 3) | addr_low;
+            uint16 addr = ((opcode & 0xE0) << 3) | addr_low;
+            // Apply memory bank flag (DBF) to bit 11
+            if (state_.memory_bank) {
+                addr |= 0x800;  // Set bit 11 for MB1
+            }
+            state_.pc = addr;
             cycles = 2;
             break;
         }
@@ -1057,7 +1066,7 @@ uint8 CPU::execute_instruction() {
         // Selects the lower 2K of program memory (addresses 0x000-0x7FF).
         // Takes effect on the next jump or call instruction.
         case 0xE5:
-            state_.pc &= 0x7FF;  // Clear bit 11
+            state_.memory_bank = false;  // Set DBF to 0
             break;
             
         // SEL MB1 - Select memory bank 1 (0xF5)
@@ -1067,7 +1076,7 @@ uint8 CPU::execute_instruction() {
         // Selects the upper 2K of program memory (addresses 0x800-0xFFF).
         // Takes effect on the next jump or call instruction.
         case 0xF5:
-            state_.pc |= 0x800;  // Set bit 11
+            state_.memory_bank = true;  // Set DBF to 1
             break;
             
         // SEL RB0 - Select register bank 0 (0xC5)

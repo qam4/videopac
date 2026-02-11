@@ -1,5 +1,7 @@
 #include "vdc.h"
 #include <cstring>
+#include <iostream>
+#include <iomanip>
 
 namespace videopac {
 
@@ -113,6 +115,13 @@ void VDC::tick(uint8 cycles) {
 // Write to VDC register
 // Reference: doc/o2doc.md Appendix D, doc/8245.md lines 600-650
 void VDC::write_register(uint8 address, uint8 value) {
+    // Debug: Log writes to Color register with value 0xFF
+    if (address == VDCRegisters::COLOR && value == 0xFF) {
+        std::cout << "\n*** WARNING: Writing 0xFF to Color register (0xA3) ***" << std::endl;
+        std::cout << "    This sets background to WHITE (palette 7)" << std::endl;
+        std::cout << "    Scanline: " << state_.scanline << std::endl;
+    }
+    
     state_.registers[address] = value;
     
     // Handle special registers that update internal state
@@ -1131,5 +1140,41 @@ void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8
     }
 }
 
+// Debug helper: Dump VDC registers to console
+void VDC::dump_registers() const {
+    std::cout << "\n=== VDC Register Dump ===" << std::endl;
+    std::cout << "Control (0xA0): 0x" << std::hex << static_cast<int>(state_.registers[0xA0]) << std::dec;
+    std::cout << " [Display:" << (state_.display_enabled ? "ON" : "OFF");
+    std::cout << " Grid:" << (state_.grid_enabled ? "ON" : "OFF") << "]" << std::endl;
+    
+    std::cout << "Status (0xA1): 0x" << std::hex << static_cast<int>(state_.registers[0xA1]) << std::dec << std::endl;
+    std::cout << "Collision (0xA2): 0x" << std::hex << static_cast<int>(state_.registers[0xA2]) << std::dec << std::endl;
+    std::cout << "Color (0xA3): 0x" << std::hex << static_cast<int>(state_.registers[0xA3]) << std::dec;
+    std::cout << " (palette index " << (state_.registers[0xA3] & 0x07) << ")" << std::endl;
+    
+    std::cout << "\nSprite 0 (Player):" << std::endl;
+    std::cout << "  X: " << static_cast<int>(state_.registers[0x7C]) << std::endl;
+    std::cout << "  Y: " << static_cast<int>(state_.registers[0x7D]) << std::endl;
+    std::cout << "  Attr: 0x" << std::hex << static_cast<int>(state_.registers[0x7A]) << std::dec << std::endl;
+    std::cout << "  Color: 0x" << std::hex << static_cast<int>(state_.registers[0x7B]) << std::dec << std::endl;
+    
+    std::cout << "\nCharacters (first 4):" << std::endl;
+    for (int i = 0; i < 4; i++) {
+        int base = 0x10 + (i * 4);
+        std::cout << "  Char " << i << ": X=" << static_cast<int>(state_.registers[base + 1]);
+        std::cout << " Y=" << static_cast<int>(state_.registers[base + 2]);
+        std::cout << " Attr=0x" << std::hex << static_cast<int>(state_.registers[base]) << std::dec << std::endl;
+    }
+    
+    std::cout << "\nAudio:" << std::endl;
+    std::cout << "  Control (0xAA): 0x" << std::hex << static_cast<int>(state_.registers[0xAA]) << std::dec;
+    std::cout << " [Enabled:" << (state_.audio_enabled ? "YES" : "NO");
+    std::cout << " Volume:" << static_cast<int>(state_.audio_volume) << "]" << std::endl;
+    
+    std::cout << "\nTiming:" << std::endl;
+    std::cout << "  Scanline: " << state_.scanline << " / " << total_scanlines_ << std::endl;
+    std::cout << "  VBLANK: " << (is_vblank() ? "YES" : "NO") << std::endl;
+    std::cout << "========================\n" << std::endl;
+}
 
 } // namespace videopac

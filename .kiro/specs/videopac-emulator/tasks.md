@@ -924,3 +924,41 @@ The task order follows a bottom-up approach:
 7. **Validation** (Task 16): Testing and optimization
 
 This order ensures each component can be tested independently before integration, catching errors early and enabling incremental progress.
+
+
+## Future Enhancements
+
+- [ ] 17. Enhanced trace logging system
+  - [ ] 17.1 Add cycle/tick counter to CPU trace
+    - Include total cycle count in trace output
+    - Show cycles per instruction
+    - Add timestamp information
+    - _Requirements: Debugging and analysis_
+
+  - [ ] 17.2 Expand CPU trace with additional state
+    - Include all register values (R0-R7, PSW flags)
+    - Show stack pointer and stack contents
+    - Display Port 1 and Port 2 states
+    - Show memory bank selection state
+    - _Requirements: Debugging and analysis_
+
+  - [ ] 17.3 Implement VDC trace logging
+    - Log VDC register writes with scanline/cycle info
+    - Track display enable/disable events
+    - Log sprite and character updates
+    - Record collision detection events
+    - _Requirements: Graphics debugging_
+
+  - [ ] 17.4 Implement memory system trace logging
+    - Log bank switches with context
+    - Track external RAM reads/writes
+    - Log copy mode enable/disable
+    - Record VDC enable/disable events
+    - _Requirements: Memory debugging_
+
+  - [ ] 17.5 Add configurable trace filtering
+    - Allow filtering by component (CPU, VDC, Memory)
+    - Support address range filtering
+    - Enable/disable specific event types
+    - Add trace level control (minimal, normal, verbose)
+    - _Requirements: Performance and usability_

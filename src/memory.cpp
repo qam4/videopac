@@ -3,6 +3,9 @@
 #include "utils.h"
 #include <fstream>
 #include <cstring>
+#include <iostream>
+#include <stdexcept>
+#include <iomanip>
 
 namespace videopac {
 
@@ -82,18 +85,40 @@ uint8 MemorySystem::read_program(uint16 address) {
             rom_offset += state_.current_bank * 1024;  // 1KB per bank
         }
         
-        // Check if accessing beyond ROM size - return 0xFF for unpopulated addresses
+        // Check if accessing beyond ROM size
         if (rom_offset >= state_.cart_rom.size()) {
+            // Return 0xFF for unmapped memory (NOP in 8048)
+            // This allows execution to continue gracefully
             return 0xFF;
         }
         
         return state_.cart_rom[rom_offset];
     }
     
+    // No cartridge loaded - return 0xFF
     return 0xFF;
 }
 
 uint8 MemorySystem::read_external(uint8 address) {
+    // Copy mode: P16=1, P13=0, P14=0
+    // In copy mode, external reads come from RAM (not ROM!)
+    // This allows data to be copied from RAM to VDC easily
+    if (copy_mode_) {
+        // Debug: Log first few copy mode reads
+        static int copy_mode_read_count = 0;
+        if (copy_mode_read_count < 5) {
+            std::cout << "Copy mode read from RAM: address=0x" << std::hex << static_cast<int>(address) 
+                      << " value=0x" << static_cast<int>(state_.external_ram[address]) << std::dec << std::endl;
+            copy_mode_read_count++;
+        }
+        
+        // Read from external RAM
+        if (address < 128) {
+            return state_.external_ram[address];
+        }
+        return 0xFF;  // Beyond RAM bounds
+    }
+    
     // VDC registers: 0x00-0xFF (when P13 = 0)
     if (vdc_enabled_ && vdc_) {
         return vdc_->read_register(address);
@@ -104,12 +129,23 @@ uint8 MemorySystem::read_external(uint8 address) {
         return state_.external_ram[address];
     }
     
+    // If neither VDC nor RAM is enabled, external reads return 0xFF
+    // This represents floating bus / no device responding
     return 0xFF;
 }
 
 void MemorySystem::write_external(uint8 address, uint8 value) {
+    // Copy mode: P16=1, P13=0, P14=0
+    // In copy mode, writes go ONLY to VDC (not RAM)
+    if (copy_mode_) {
+        if (vdc_) {
+            vdc_->write_register(address, value);
+        }
+        return;  // Don't write to RAM in copy mode
+    }
+    
     // VDC registers: 0x00-0xFF (always accessible for writes from CPU)
-    // The P13 bit controls external bus access, not internal CPU access
+    // The P13 bit controls external bus READ access, not internal CPU WRITE access
     if (vdc_) {
         vdc_->write_register(address, value);
     }
@@ -139,7 +175,18 @@ void MemorySystem::update_control_signals(uint8 port1_value) {
     
     // P16 = 1, P13 = 0, P14 = 0: Copy mode
     bool p16 = utils::get_bit(port1_value, 6);
+    bool old_copy_mode = copy_mode_;
     copy_mode_ = p16 && !utils::get_bit(port1_value, 3) && !utils::get_bit(port1_value, 4);
+    
+    // Debug: Log when copy mode changes
+    if (copy_mode_ != old_copy_mode) {
+        std::cout << "Copy mode " << (copy_mode_ ? "ENABLED" : "DISABLED") 
+                  << " - Port1=0x" << std::hex << static_cast<int>(port1_value) << std::dec
+                  << " (P16=" << (p16 ? "1" : "0")
+                  << " P14=" << (utils::get_bit(port1_value, 4) ? "1" : "0")
+                  << " P13=" << (utils::get_bit(port1_value, 3) ? "1" : "0") << ")"
+                  << std::endl;
+    }
     
     // Bank switching: P10 and P11
     if (state_.num_banks > 1) {

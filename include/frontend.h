@@ -9,6 +9,14 @@
 namespace videopac {
 
 // Frontend configuration
+struct BreakpointConfig {
+    uint16 address;
+    std::string condition;  // Empty string means unconditional
+    
+    BreakpointConfig(uint16 addr) : address(addr), condition("") {}
+    BreakpointConfig(uint16 addr, const std::string& cond) : address(addr), condition(cond) {}
+};
+
 struct FrontendConfig {
     // Video settings
     VideoStandard video_standard;
@@ -29,7 +37,7 @@ struct FrontendConfig {
     // Debug settings
     bool show_fps;
     bool enable_debugger;
-    std::vector<uint16> breakpoints;
+    std::vector<BreakpointConfig> breakpoints;
     
     // File paths
     std::string bios_path;

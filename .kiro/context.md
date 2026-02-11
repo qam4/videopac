@@ -399,3 +399,134 @@ The disassembler automatically:
 - `doc/o2romsrc.txt` - US BIOS disassembly with detailed comments
 - `tools/disasm_tool.cpp` - Disassembler with label generation
 - `tools/annotate_disasm.py` - Merges disassembly with comments
+
+
+## Recent Fixes and Debugging Progress
+
+### SEL MB0/MB1 Bug Fix (2026-02-11)
+
+**Problem**: The `SEL MB1` (0xF5) and `SEL MB0` (0xE5) instructions were incorrectly modifying the Program Counter immediately, causing PC to jump to invalid addresses. When `SEL MB1` was executed at 0x414, it changed PC from 0x415 to 0xC15 (0x415 | 0x800), causing execution beyond ROM bounds.
+
+**Root Cause**: The implementation was setting/clearing bit 11 of PC directly (`state_.pc |= 0x800` or `state_.pc &= 0x7FF`), but according to Intel 8048 specification, these instructions should set a Data Bank Flag (DBF) that affects **future** JMP/CALL instructions, not the current PC.
+
+**Solution**:
+1. Added `memory_bank` flag to `CPUState` to track the DBF
+2. Modified `SEL MB0` to set `state_.memory_bank = false`
+3. Modified `SEL MB1` to set `state_.memory_bank = true`
+4. Updated all `JMP` instructions (0x04, 0x24, 0x44, 0x64, 0x84, 0xA4, 0xC4, 0xE4) to apply the memory bank flag:
+   ```cpp
+   uint16 addr = ((opcode & 0xE0) << 3) | addr_low;
+   if (state_.memory_bank) {
+       addr |= 0x800;  // Set bit 11 for MB1
+   }
+   state_.pc = addr;
+   ```
+5. Updated all `CALL` instructions (0x14, 0x34, 0x54, 0x74, 0x94, 0xB4, 0xD4, 0xF4) similarly
+
+**Files Modified**:
+- `include/cpu.h`: Added `memory_bank` flag to CPUState
+- `src/cpu.cpp`: Fixed SEL MB0/MB1, JMP, and CALL instructions
+- `src/memory.cpp`: Added PC bounds checking with detailed error reporting
+- `src/frontend_sdl.cpp`: Added exception handling to save trace before exit
+
+**Testing**: Satellite Attack ROM now runs past the select_game screen without crashing.
+
+### Memory Bounds Checking (2026-02-11)
+
+Added comprehensive bounds checking in `MemorySystem::read_program()` to detect when PC goes beyond valid ROM space:
+
+```cpp
+if (rom_offset >= state_.cart_rom.size()) {
+    std::cerr << "\n*** FATAL ERROR: PC out of bounds ***" << std::endl;
+    std::cerr << "PC = 0x" << std::hex << address << std::dec << std::endl;
+    std::cerr << "ROM size: " << state_.rom_size_kb << "KB (" << state_.num_banks << " banks)" << std::endl;
+    std::cerr << "Current bank: " << static_cast<int>(state_.current_bank) << std::endl;
+    // ... more diagnostic info ...
+    throw std::runtime_error("PC out of bounds - halting emulator");
+}
+```
+
+This helps catch emulation bugs early by halting execution with detailed diagnostics when PC goes to unmapped memory.
+
+### Current Status: Satellite Attack Debugging
+
+**What Works**:
+- ✅ BIOS loads and executes correctly
+- ✅ Select game screen displays "QUEL JEU?" text
+- ✅ Keyboard input works (can press keys 0-9)
+- ✅ Game starts after pressing '1'
+- ✅ No crashes or PC out of bounds errors
+- ✅ Trace logging works (2.5M+ instructions captured)
+- ✅ VDC register dumps working
+- ✅ Conditional breakpoints implemented
+
+**Current Issue**:
+- ❌ Screen goes all white after pressing '1' and game starts
+- The game reads VDC Control register (0xA0), ORs with 0x28, gets 0xFF
+- This 0xFF value propagates through the system, setting all VDC registers to 0xFF
+- Background color becomes white (palette index 7)
+
+**Recent Fixes (2026-02-11)**:
+1. **Copy Mode Implementation**: Added copy mode support in `read_external()` to allow reading ROM data via MOVX
+2. **Error Handling**: Changed `read_memory()` and copy mode bounds checks to throw exceptions instead of returning 0xFF
+3. **VDC Debug Logging**: Added `dump_registers()` method to VDC for runtime inspection
+4. **Conditional Breakpoints**: Implemented comprehensive conditional breakpoint system supporting:
+   - CPU state: `cpu.A == 0xFF`, `cpu.R0 > 0x80`, `cpu.PSW & 0x10`
+   - VDC state: `vdc.registers[0xA0] & 0x20`, `vdc.display_enabled == true`
+   - Memory state: `memory.external_ram[0x20] == 0xFF`, `memory.current_bank == 1`
+   - Array indexing with hex values: `vdc.registers[0xA0]`, `cpu.ram[0x10]`
+
+**Next Debugging Steps**:
+1. Use conditional breakpoints to track when A becomes 0xFF:
+   ```bash
+   # Break at ORL instruction when result is 0xFF
+   --break 0x09F --condition "cpu.A == 0xFF"
+   ```
+2. Check if VDC Control register is being written with wrong value before the read
+3. Verify copy mode is working correctly for ROM data reads
+4. Check if there's an issue with how VDC registers are initialized
+
+**Useful Debugging Commands**:
+```bash
+# Run with debugger and trace
+./run_emulator.sh "roms/Satellite Attack (1981)(Philips)(EU).bin"
+
+# Run with conditional breakpoint (breaks at 0x09F when A == 0xFF)
+./build/videopac --bios <bios> --break 0x09F --condition "cpu.A == 0xFF" <rom>
+
+# Multiple breakpoints with different conditions
+./build/videopac --bios <bios> \
+  --break 0x09F --condition "cpu.A == 0xFF" \
+  --break 0x0A8 --condition "memory.external_ram[0x20] > 0x80" \
+  <rom>
+
+# Break when VDC display is enabled
+./build/videopac --bios <bios> --break 0x127 --condition "vdc.display_enabled == true" <rom>
+
+# Check trace around game start (after key press)
+grep -A 50 "0x500:" trace.log | head -60
+
+# Check for VDC writes (register 0xA0 is control register)
+grep "MOVX @R" trace.log | grep -E "0x[a-f][0-9a-f]"
+
+# Find when A becomes 0xFF after ORL
+grep -B2 "0x09f: 43 28.*ORL.*A=0xff" trace.log
+
+# Take screenshots in headless mode
+./build/videopac --bios <bios> <rom> --headless --frames 500 --screenshot 100
+```
+
+**Conditional Breakpoint Syntax**:
+- CPU: `cpu.A`, `cpu.R0`, `cpu.PSW`, `cpu.PC`, `cpu.SP`, `cpu.ram[index]`
+- VDC: `vdc.registers[index]`, `vdc.scanline`, `vdc.display_enabled`, `vdc.grid_enabled`
+- Memory: `memory.external_ram[index]`, `memory.current_bank`, `memory.rom_size_kb`
+- Operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `&` (bitwise), `|` (bitwise)
+- Values: Decimal (`255`) or hex (`0xFF`), boolean (`true`/`false`)
+
+**Known ROM Addresses**:
+- `0x400`: Cartridge entry point (JMP to select_game)
+- `0x408`: Game start (JMP to 0x500)
+- `0x500`: main_loop2 - main game loop
+- `0x411`: main_loop1 - inner game loop
+- `0x09E-0x0A1`: VDC Control register read/modify/write sequence
+

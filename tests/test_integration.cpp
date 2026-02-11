@@ -93,19 +93,27 @@ TEST(IntegrationTest, CompleteFrameExecution) {
     
     EmulatorCore emulator(config);
     
-    // Load minimal BIOS (just NOPs)
+    // Load minimal BIOS with infinite loop at 0x000
     uint8 bios[1024];
     for (int i = 0; i < 1024; i++) {
         bios[i] = 0x00;  // NOP instruction
     }
+    // Put JMP 0x000 at address 0x000 (opcode 0x04, operand 0x00)
+    bios[0] = 0x04;  // JMP instruction
+    bios[1] = 0x00;  // Jump to address 0x000
+    
     auto result = emulator.load_bios(bios, 1024);
     EXPECT_TRUE(result.is_ok());
     
-    // Load minimal ROM
+    // Load minimal ROM with infinite loop at 0x400
     uint8 rom[2048];
     for (int i = 0; i < 2048; i++) {
         rom[i] = 0x00;  // NOP instruction
     }
+    // Put JMP 0x400 at address 0x400 (opcode 0x04, operand 0x00)
+    rom[0] = 0x04;  // JMP instruction
+    rom[1] = 0x00;  // Jump to address 0x000 (which becomes 0x400 in ROM space)
+    
     result = emulator.load_rom(rom, 2048);
     EXPECT_TRUE(result.is_ok());
     EXPECT_TRUE(emulator.is_running());
@@ -129,11 +137,19 @@ TEST(IntegrationTest, CPUVDCTimingSynchronization) {
     
     EmulatorCore emulator(config);
     
-    // Load BIOS and ROM
+    // Load BIOS and ROM with infinite loops
     uint8 bios[1024];
     uint8 rom[2048];
     for (int i = 0; i < 1024; i++) bios[i] = 0x00;
     for (int i = 0; i < 2048; i++) rom[i] = 0x00;
+    
+    // Put JMP 0x000 at BIOS start
+    bios[0] = 0x04;  // JMP instruction
+    bios[1] = 0x00;  // Jump to address 0x000
+    
+    // Put JMP 0x400 at ROM start
+    rom[0] = 0x04;  // JMP instruction
+    rom[1] = 0x00;  // Jump to address 0x000 (becomes 0x400)
     
     emulator.load_bios(bios, 1024);
     emulator.load_rom(rom, 2048);
@@ -199,6 +215,14 @@ TEST(IntegrationTest, PauseAndResume) {
     uint8 rom[2048];
     for (int i = 0; i < 1024; i++) bios[i] = 0x00;
     for (int i = 0; i < 2048; i++) rom[i] = 0x00;
+    
+    // Put JMP 0x000 at BIOS start
+    bios[0] = 0x04;  // JMP instruction
+    bios[1] = 0x00;  // Jump to address 0x000
+    
+    // Put JMP 0x400 at ROM start
+    rom[0] = 0x04;  // JMP instruction
+    rom[1] = 0x00;  // Jump to address 0x000 (becomes 0x400)
     
     emulator.load_bios(bios, 1024);
     emulator.load_rom(rom, 2048);
