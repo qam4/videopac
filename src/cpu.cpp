@@ -13,6 +13,14 @@ void CPU::reset() {
     std::memset(&state_, 0, sizeof(state_));
     state_.pc = 0x000;
     state_.sp = 0;
+    
+    // Hardware reset behavior: Port 1 and Port 2 are set to 0xFF
+    // Reference: Intel 8048/8049 datasheet - all port pins are set to high-impedance (1) on reset
+    // This is critical for Odyssey 2 because Port 1 controls VDC/RAM access
+    state_.port1 = 0xFF;
+    state_.port2 = 0xFF;
+    
+    // Note: No need to sync with MemorySystem - it reads Port 1 directly from CPU
 }
 
 void CPU::set_memory_system(MemorySystem* mem) {
@@ -57,8 +65,9 @@ uint8 CPU::read_port(uint8 port) {
 void CPU::write_port(uint8 port, uint8 value) {
     if (port == 1) {
         state_.port1 = value;
+        // Bank switching is handled by MemorySystem reading Port 1 directly
         if (memory_) {
-            memory_->update_control_signals(value);
+            memory_->update_control_signals(value);  // Only for bank switching
         }
     } else if (port == 2) {
         state_.port2 = value;
@@ -342,11 +351,11 @@ uint8 CPU::execute_instruction() {
             
         // CLR F1 - Clear flag 1 (0xA5)
         // Operation: (F1) <- 0
-        // Flags affected: F1
+        // Flags affected: F1 (separate flag, NOT PSW bit 4)
         // Cycles: 1
+        // NOTE: F1 is a separate user flag, NOT the bank select bit!
         case 0xA5:
-            state_.psw &= 0xEF;  // Clear bit 4 (F1 flag)
-            state_.current_bank = 0;  // F1=0 means Bank 0
+            state_.f1_flag = false;  // Clear F1 flag (does NOT affect register bank)
             break;
             
         // CPL A - Complement accumulator (0x37)
@@ -376,11 +385,11 @@ uint8 CPU::execute_instruction() {
             
         // CPL F1 - Complement flag 1 (0xB5)
         // Operation: (F1) <- NOT (F1)
-        // Flags affected: F1
+        // Flags affected: F1 (separate flag, NOT PSW bit 4)
         // Cycles: 1
+        // NOTE: F1 is a separate user flag, NOT the bank select bit!
         case 0xB5:
-            state_.psw ^= 0x10;  // Toggle bit 4 (F1 flag)
-            state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update bank
+            state_.f1_flag = !state_.f1_flag;  // Toggle F1 flag (does NOT affect register bank)
             break;
             
         // DA A - Decimal Adjust Accumulator (0x57)
@@ -620,9 +629,10 @@ uint8 CPU::execute_instruction() {
         // Flags affected: None
         // Cycles: 2
         // Jumps to the address within the current page if flag F1 is set.
+        // NOTE: Tests the separate F1 flag, NOT PSW bit 4!
         case 0x76: {
             uint8 addr = fetch_byte();
-            if (state_.psw & 0x10) {  // Test bit 4 (F1 flag)
+            if (state_.f1_flag) {  // Test F1 flag (separate from PSW)
                 state_.pc = (state_.pc & 0xF00) | addr;
             }
             cycles = 2;
@@ -988,19 +998,19 @@ uint8 CPU::execute_instruction() {
         }
             
         // RETR - Return from interrupt and restore PSW (0x93)
-        // Restores PC and PSW bits 5-7 (F0, AC, C) from stack.
-        // Bit 4 (F1/BS) is NOT restored - keeps current value.
+        // Operation: (PC) <- ((SP)), (PSW4-7) <- ((SP)), (SP) <- (SP) - 1, enable interrupts
+        // Restores PC and PSW bits 4-7 (BS, F0, AC, C) from stack.
+        // NOTE: F1 is NOT restored because F1 is not in the PSW (it's a separate flag)
         // Cycles: 2
         // Used when returning from interrupt service routines.
-        // Reference: doc/mcs-48-assembly-language-manual.md: "F1 is not restored by RETR"
+        // Reference: doc/mcs-48-assembly-language-manual.md: "RETR restores PSW bits 4-7"
         case 0x93: {
             uint16 stack_value = pop_stack();
             state_.pc = stack_value & 0x0FFF;  // Extract PC (12 bits)
-            // Restore PSW bits 5-7 (F0, AC, C) but NOT bit 4 (F1/BS)
-            // Per Intel: "F1 is not restored by RETR" - bit 4 keeps its current value
-            // This allows ISR to signal to main program via F1, and preserves bank selection
-            state_.psw = (state_.psw & 0x1F) | ((stack_value >> 8) & 0xE0);  // Preserve bits 0-4, restore 5-7
-            state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update bank from current bit 4
+            // Restore PSW bits 4-7 (BS, F0, AC, C) from stack
+            state_.psw = (state_.psw & 0x0F) | ((stack_value >> 8) & 0xF0);  // Preserve bits 0-3, restore 4-7
+            state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update bank from restored bit 4
+            state_.interrupts_enabled = true;  // RETR re-enables interrupts
             cycles = 2;
             break;
         }

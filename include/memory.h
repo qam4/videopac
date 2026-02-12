@@ -6,8 +6,9 @@
 
 namespace videopac {
 
-// Forward declaration
+// Forward declarations
 class VDC;
+class CPU;
 
 // Memory system state
 struct MemoryState {
@@ -43,20 +44,20 @@ public:
     // VDC connection
     void set_vdc(VDC* vdc);
     
+    // CPU connection (for reading Port 1)
+    void set_cpu(CPU* cpu);
+    
     // State management
     MemoryState get_state() const;
     void set_state(const MemoryState& state);
     
-    // Port 1 control signals
+    // Port 1 control signals (for bank switching)
     void update_control_signals(uint8 port1_value);
 
 private:
     MemoryState state_;
     VDC* vdc_;
-    
-    // Port 1 value (control signals for memory/VDC access)
-    // Reference: doc/port1_bits.md for bit definitions
-    uint8 port1_;
+    CPU* cpu_;  // For reading Port 1 control signals
     
     // Port 1 bit masks (from BIOS naming convention)
     // Reference: doc/french_bios_annotated.txt
@@ -68,9 +69,10 @@ private:
     
     // Helper methods to check Port 1 control signals
     // These return true when the device is ENABLED (active-low signals inverted for clarity)
-    inline bool vdc_enabled() const { return !(port1_ & P1_VDCEN); }  // P13=0 enables VDC
-    inline bool ram_enabled() const { return !(port1_ & P1_RAMEN); }  // P14=0 enables RAM
-    inline bool copy_mode() const { return (port1_ & P1_COPYEN) != 0; }  // P16=1 enables copy mode
+    bool vdc_enabled() const;
+    bool ram_enabled() const;
+    bool copy_mode() const;
+    uint8 get_port1() const;  // Get Port 1 value from CPU
     
     // Helper functions
     Result<void> validate_rom_size(size_t size);

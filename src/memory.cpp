@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "cpu.h"
 #include "vdc.h"
 #include "utils.h"
 #include <fstream>
@@ -10,7 +11,7 @@
 namespace videopac {
 
 MemorySystem::MemorySystem() 
-    : vdc_(nullptr), port1_(0x00) {
+    : vdc_(nullptr), cpu_(nullptr) {
     std::memset(&state_, 0, sizeof(state_));
     state_.current_bank = 0;
     state_.num_banks = 1;
@@ -166,9 +167,31 @@ void MemorySystem::set_vdc(VDC* vdc) {
     vdc_ = vdc;
 }
 
+void MemorySystem::set_cpu(CPU* cpu) {
+    cpu_ = cpu;
+}
+
+uint8 MemorySystem::get_port1() const {
+    if (!cpu_) {
+        // Default for testing: P13=1, P14=0 (RAM enabled, VDC disabled)
+        return 0x08;  // Only bit 3 (P13) set
+    }
+    return cpu_->get_state().port1;
+}
+
+bool MemorySystem::vdc_enabled() const {
+    return !(get_port1() & P1_VDCEN);  // P13=0 enables VDC
+}
+
+bool MemorySystem::ram_enabled() const {
+    return !(get_port1() & P1_RAMEN);  // P14=0 enables RAM
+}
+
+bool MemorySystem::copy_mode() const {
+    return (get_port1() & P1_COPYEN) != 0;  // P16=1 enables copy mode
+}
+
 void MemorySystem::update_control_signals(uint8 port1_value) {
-    port1_ = port1_value;
-    
     // Bank switching: P10 and P11
     if (state_.num_banks > 1) {
         uint8 bank = 0;

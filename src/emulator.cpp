@@ -2,17 +2,20 @@
 #include "debugger.h"
 #include "savestate.h"
 #include <iostream>
+#include <chrono>
 
 namespace videopac {
 
 EmulatorCore::EmulatorCore(const Configuration& config)
-    : config_(config), vdc_(config.video_standard), debugger_(nullptr), 
-      running_(false), paused_(false), frame_count_(0), vblank_interrupt_triggered_(false) {
+    : config_(config), vdc_(config.video_standard), master_clock_(config.video_standard),
+      debugger_(nullptr), running_(false), paused_(false), frame_count_(0), 
+      vblank_interrupt_triggered_(false) {
     
     // Connect components
     cpu_.set_memory_system(&memory_);
     cpu_.set_input_handler(&input_);
     memory_.set_vdc(&vdc_);
+    memory_.set_cpu(&cpu_);  // Allow memory system to read Port 1 from CPU
     
     calculate_timing();
 }
@@ -47,6 +50,7 @@ void EmulatorCore::reset() {
     cpu_.reset();
     vdc_.reset();
     input_.reset();
+    master_clock_.reset_frame();
     frame_count_ = 0;
     
     // According to doc/o2doc.md section 6.1:
@@ -63,50 +67,127 @@ void EmulatorCore::run_frame() {
     // Reset VBlank interrupt flag at start of frame
     vblank_interrupt_triggered_ = false;
     
-    // Execute one complete frame
-    // Frame consists of multiple scanlines, each with CPU execution and VDC rendering
-    uint32 scanlines = (config_.video_standard == VideoStandard::NTSC) ? 
-                       NTSC_SCANLINES : PAL_SCANLINES;
+    // Reset master clock for new frame
+    master_clock_.reset_frame();
     
-    uint32 total_cycles = 0;
+    // Diagnostic counters (only if profiling enabled)
+    static uint64 total_cpu_calls = 0;
+    static uint64 total_vdc_calls = 0;
+    static uint64 frame_counter = 0;
+    uint64 cpu_calls_this_frame = 0;
+    uint64 vdc_calls_this_frame = 0;
     
-    for (uint32 scanline = 0; scanline < scanlines; ++scanline) {
-        // Execute CPU for this scanline's worth of cycles
-        uint32 cycles_executed = 0;
-        while (cycles_executed < cycles_per_scanline_) {
-            // Check for interrupts BEFORE executing next instruction
-            handle_interrupts();
-            
-            // Check for breakpoint before executing instruction
-            check_debugger_breakpoint();
-            
-            // If paused by debugger, stop execution
-            if (paused_) {
-                return;
-            }
-            
-            uint8 instruction_cycles = cpu_.execute_instruction();
-            cycles_executed += instruction_cycles;
-            total_cycles += instruction_cycles;
-            
-            // Log instruction trace AFTER executing (so cycle count is correct)
-            if (debugger_ && debugger_->is_trace_enabled()) {
-                debugger_->log_instruction(total_cycles);
-            }
-            
-            // Advance VDC by the same number of cycles
-            vdc_.tick(instruction_cycles);
+    // Timing measurements (in microseconds, only if profiling enabled)
+    static uint64 total_cpu_time = 0;
+    static uint64 total_vdc_time = 0;
+    static uint64 total_overhead_time = 0;
+    uint64 cpu_time_this_frame = 0;
+    uint64 vdc_time_this_frame = 0;
+    uint64 overhead_time_this_frame = 0;
+    
+    bool profiling = config_.enable_profile;
+    
+    // Cycle-accurate execution loop
+    // CPU and VDC execute interleaved based on master clock cycle debt
+    while (!master_clock_.is_frame_complete()) {
+        auto loop_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
+        
+        MasterClock::ExecuteNext next = master_clock_.tick();
+        
+        if (profiling) {
+            auto tick_end = std::chrono::high_resolution_clock::now();
+            overhead_time_this_frame += std::chrono::duration_cast<std::chrono::microseconds>(tick_end - loop_start).count();
         }
         
-        // Render this scanline if not in VBLANK
-        if (!vdc_.is_vblank()) {
-            vdc_.render_scanline();
+        switch (next) {
+            case MasterClock::ExecuteNext::CPU: {
+                auto cpu_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
+                
+                if (profiling) cpu_calls_this_frame++;
+                
+                // Check for interrupts BEFORE executing next instruction
+                handle_interrupts();
+                
+                // Check for breakpoint before executing instruction
+                check_debugger_breakpoint();
+                
+                // If paused by debugger, stop execution
+                if (paused_) {
+                    return;
+                }
+                
+                // Execute one CPU instruction
+                uint8 instruction_cycles = cpu_.execute_instruction();
+                
+                // Notify master clock that CPU executed
+                master_clock_.cpu_executed(instruction_cycles);
+                
+                // Log instruction trace AFTER executing
+                if (debugger_ && debugger_->is_trace_enabled()) {
+                    debugger_->log_instruction(master_clock_.get_master_cycle_count());
+                }
+                
+                if (profiling) {
+                    auto cpu_end = std::chrono::high_resolution_clock::now();
+                    cpu_time_this_frame += std::chrono::duration_cast<std::chrono::microseconds>(cpu_end - cpu_start).count();
+                }
+                break;
+            }
+            
+            case MasterClock::ExecuteNext::VDC: {
+                auto vdc_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
+                
+                if (profiling) vdc_calls_this_frame++;
+                
+                // Advance VDC by one cycle
+                vdc_.tick_one_cycle();
+                
+                // Notify master clock that VDC ticked
+                master_clock_.vdc_ticked();
+                
+                if (profiling) {
+                    auto vdc_end = std::chrono::high_resolution_clock::now();
+                    vdc_time_this_frame += std::chrono::duration_cast<std::chrono::microseconds>(vdc_end - vdc_start).count();
+                }
+                break;
+            }
+            
+            case MasterClock::ExecuteNext::FRAME_COMPLETE: {
+                // Frame is complete, exit loop
+                break;
+            }
+        }
+    }
+    
+    // Update diagnostics
+    if (profiling) {
+        total_cpu_calls += cpu_calls_this_frame;
+        total_vdc_calls += vdc_calls_this_frame;
+        total_cpu_time += cpu_time_this_frame;
+        total_vdc_time += vdc_time_this_frame;
+        total_overhead_time += overhead_time_this_frame;
+        frame_counter++;
+        
+        // Print diagnostics every 60 frames
+        if (frame_counter % 60 == 0) {
+            uint64 total_time = cpu_time_this_frame + vdc_time_this_frame + overhead_time_this_frame;
+            std::cout << "Frame " << frame_counter << " timing (microseconds):" << std::endl;
+            std::cout << "  CPU time: " << cpu_time_this_frame << " us (" 
+                      << (100.0 * cpu_time_this_frame / total_time) << "%)" << std::endl;
+            std::cout << "  VDC time: " << vdc_time_this_frame << " us (" 
+                      << (100.0 * vdc_time_this_frame / total_time) << "%)" << std::endl;
+            std::cout << "  Overhead time: " << overhead_time_this_frame << " us (" 
+                      << (100.0 * overhead_time_this_frame / total_time) << "%)" << std::endl;
+            std::cout << "  Total frame time: " << total_time << " us" << std::endl;
+            std::cout << "  Target frame time: 16667 us (60 FPS)" << std::endl;
+            std::cout << "  CPU calls: " << cpu_calls_this_frame << std::endl;
+            std::cout << "  VDC calls: " << vdc_calls_this_frame << std::endl;
         }
     }
     
     // Update debugger frame statistics
     if (debugger_) {
-        debugger_->update_frame_stats(total_cycles);
+        debugger_->update_frame_stats(master_clock_.get_master_cycle_count());
     }
     
     frame_count_++;
@@ -211,8 +292,8 @@ void EmulatorCore::check_debugger_breakpoint() {
     CPUState cpu_state = cpu_.get_state();
     uint16 pc = cpu_state.pc;
     
-    // Check if breakpoint is hit
-    if (debugger_->check_breakpoint(pc)) {
+    // Check if breakpoint is hit (address-based or condition-only)
+    if (debugger_->check_breakpoint(pc) || debugger_->check_condition_breakpoints()) {
         paused_ = true;
         debugger_->pause();
         std::cout << "\n*** BREAKPOINT HIT at 0x" << std::hex << pc << std::dec << " ***" << std::endl;
