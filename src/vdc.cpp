@@ -115,13 +115,6 @@ void VDC::tick(uint8 cycles) {
 // Write to VDC register
 // Reference: doc/o2doc.md Appendix D, doc/8245.md lines 600-650
 void VDC::write_register(uint8 address, uint8 value) {
-    // Debug: Log writes to Color register with value 0xFF
-    if (address == VDCRegisters::COLOR && value == 0xFF) {
-        std::cout << "\n*** WARNING: Writing 0xFF to Color register (0xA3) ***" << std::endl;
-        std::cout << "    This sets background to WHITE (palette 7)" << std::endl;
-        std::cout << "    Scanline: " << state_.scanline << std::endl;
-    }
-    
     state_.registers[address] = value;
     
     // Handle special registers that update internal state

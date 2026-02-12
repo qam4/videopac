@@ -75,7 +75,7 @@ public:
     // Trace logging
     void enable_trace(bool enabled);
     bool is_trace_enabled() const { return trace_enabled_; }
-    void log_instruction();
+    void log_instruction(uint64 current_cycles = 0);
     const std::vector<std::string>& get_trace_log() const { return trace_log_; }
     void clear_trace_log();
     

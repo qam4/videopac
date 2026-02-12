@@ -5,8 +5,10 @@
 #include "emulator.h"
 #include "debugger.h"
 #include "debugger_ui.h"
+#include "input.h"
 #include <memory>
 #include <chrono>
+#include <vector>
 
 namespace videopac {
 
@@ -40,6 +42,12 @@ public:
         auto_screenshot_ = enabled;
         screenshot_interval_ = interval;
     }
+    
+    // Input simulation
+    void press_key(VidKey key, int duration_frames = 5);
+    void release_key(VidKey key);
+    void schedule_key_press(VidKey key, int trigger_frame, int duration_frames = 5);
+    int get_frame_count() const { return frame_count_; }
 
 private:
     FrontendConfig config_;
@@ -59,6 +67,21 @@ private:
     // Timing
     std::chrono::steady_clock::time_point start_time_;
     std::chrono::steady_clock::time_point last_frame_time_;
+    bool enable_frame_pacing_;  // Enable frame pacing for accurate timing
+    
+    // Input simulation
+    struct KeyPress {
+        VidKey key;
+        int frames_remaining;
+    };
+    std::vector<KeyPress> active_keys_;
+    
+    struct ScheduledKeyPress {
+        VidKey key;
+        int trigger_frame;
+        int duration;
+    };
+    std::vector<ScheduledKeyPress> scheduled_keys_;
     
     // Helpers
     void write_ppm(const std::string& filename, const uint8* framebuffer, int width, int height);

@@ -10,7 +10,7 @@
 namespace videopac {
 
 MemorySystem::MemorySystem() 
-    : vdc_(nullptr), vdc_enabled_(false), ram_enabled_(false), copy_mode_(false) {
+    : vdc_(nullptr), port1_(0x00) {
     std::memset(&state_, 0, sizeof(state_));
     state_.current_bank = 0;
     state_.num_banks = 1;
@@ -101,31 +101,26 @@ uint8 MemorySystem::read_program(uint16 address) {
 
 uint8 MemorySystem::read_external(uint8 address) {
     // Copy mode: P16=1, P13=0, P14=0
-    // In copy mode, external reads come from RAM (not ROM!)
-    // This allows data to be copied from RAM to VDC easily
-    if (copy_mode_) {
-        // Debug: Log first few copy mode reads
-        static int copy_mode_read_count = 0;
-        if (copy_mode_read_count < 5) {
-            std::cout << "Copy mode read from RAM: address=0x" << std::hex << static_cast<int>(address) 
-                      << " value=0x" << static_cast<int>(state_.external_ram[address]) << std::dec << std::endl;
-            copy_mode_read_count++;
-        }
-        
-        // Read from external RAM
+    // Reference: doc/o2doc.md section 1.1 "P16: Copy mode enable"
+    // In copy mode, all external reads come from RAM
+    if (copy_mode() && vdc_enabled() && ram_enabled()) {
         if (address < 128) {
             return state_.external_ram[address];
         }
         return 0xFF;  // Beyond RAM bounds
     }
     
-    // VDC registers: 0x00-0xFF (when P13 = 0)
-    if (vdc_enabled_ && vdc_) {
+    // VDC registers: 0x00-0xFF (when P13=0)
+    // Reference: doc/o2doc.md section 4.0 "VDC"
+    // Hardware behavior: VDC reads work when P13=0 (VDC chip select active)
+    if (vdc_enabled() && vdc_) {
         return vdc_->read_register(address);
     }
     
-    // External RAM: 0x00-0x7F (when P14 = 0)
-    if (ram_enabled_ && address < 128) {
+    // External RAM: 0x00-0x7F (when P13=1, P14=0)
+    // Reference: doc/o2doc.md section 3.0 "External RAM"
+    // "To enable the external ram set P14 low and P13 high"
+    if (!vdc_enabled() && ram_enabled() && address < 128) {
         return state_.external_ram[address];
     }
     
@@ -136,22 +131,27 @@ uint8 MemorySystem::read_external(uint8 address) {
 
 void MemorySystem::write_external(uint8 address, uint8 value) {
     // Copy mode: P16=1, P13=0, P14=0
-    // In copy mode, writes go ONLY to VDC (not RAM)
-    if (copy_mode_) {
+    // Reference: doc/o2doc.md section 1.1 "P16: Copy mode enable"
+    // In copy mode: reads from RAM, writes to VDC only (EXRAM writes disabled)
+    if (copy_mode() && vdc_enabled() && ram_enabled()) {
         if (vdc_) {
             vdc_->write_register(address, value);
         }
-        return;  // Don't write to RAM in copy mode
+        return;  // Don't write to RAM in copy mode (P16=1 disables EXRAM writes)
     }
     
-    // VDC registers: 0x00-0xFF (always accessible for writes from CPU)
-    // The P13 bit controls external bus READ access, not internal CPU WRITE access
-    if (vdc_) {
+    // VDC writes: Work when P13=0 (regardless of P14 state)
+    // Reference: Hardware behavior confirmed via internet research
+    // "VDC writes generally work with P13=0 regardless of the state of P14, provided that P16 is 0"
+    // Note: If P13=0 AND P14=0, data writes to BOTH VDC and EXRAM simultaneously
+    if (vdc_enabled() && vdc_) {
         vdc_->write_register(address, value);
     }
     
-    // External RAM: 0x00-0x7F (when P14 = 0)
-    if (ram_enabled_ && address < 128) {
+    // External RAM: 0x00-0x7F (when P14=0)
+    // Reference: doc/o2doc.md section 3.0 "External RAM"
+    // Note: If P13=0 AND P14=0, data writes to BOTH VDC and EXRAM simultaneously
+    if (ram_enabled() && address < 128) {
         state_.external_ram[address] = value;
     }
 }
@@ -167,26 +167,7 @@ void MemorySystem::set_vdc(VDC* vdc) {
 }
 
 void MemorySystem::update_control_signals(uint8 port1_value) {
-    // P13 = 0: VDC enabled
-    vdc_enabled_ = !utils::get_bit(port1_value, 3);
-    
-    // P14 = 0: External RAM enabled
-    ram_enabled_ = !utils::get_bit(port1_value, 4);
-    
-    // P16 = 1, P13 = 0, P14 = 0: Copy mode
-    bool p16 = utils::get_bit(port1_value, 6);
-    bool old_copy_mode = copy_mode_;
-    copy_mode_ = p16 && !utils::get_bit(port1_value, 3) && !utils::get_bit(port1_value, 4);
-    
-    // Debug: Log when copy mode changes
-    if (copy_mode_ != old_copy_mode) {
-        std::cout << "Copy mode " << (copy_mode_ ? "ENABLED" : "DISABLED") 
-                  << " - Port1=0x" << std::hex << static_cast<int>(port1_value) << std::dec
-                  << " (P16=" << (p16 ? "1" : "0")
-                  << " P14=" << (utils::get_bit(port1_value, 4) ? "1" : "0")
-                  << " P13=" << (utils::get_bit(port1_value, 3) ? "1" : "0") << ")"
-                  << std::endl;
-    }
+    port1_ = port1_value;
     
     // Bank switching: P10 and P11
     if (state_.num_banks > 1) {

@@ -16,6 +16,9 @@ void print_usage(const char* program_name) {
     std::cout << "  --headless          Run without display (for testing)" << std::endl;
     std::cout << "  --frames <n>        Run for N frames then exit (headless mode)" << std::endl;
     std::cout << "  --screenshot <n>    Save screenshot every N frames (headless mode)" << std::endl;
+    std::cout << "  --press-key <key> <frame>" << std::endl;
+    std::cout << "                      Press key at frame N (headless mode)" << std::endl;
+    std::cout << "                      Example: --press-key 1 60 (press '1' at frame 60)" << std::endl;
     std::cout << "  --debug             Enable debugger" << std::endl;
     std::cout << "  --break <addr>      Set breakpoint at address (hex, e.g. 0x00B0)" << std::endl;
     std::cout << "  --condition <expr>  Add condition to previous breakpoint" << std::endl;
@@ -37,6 +40,12 @@ int main(int argc, char* argv[]) {
     int screenshot_interval = 0;
     std::vector<BreakpointConfig> breakpoints;
     
+    struct ScheduledKeyPress {
+        int key_code;
+        int frame;
+    };
+    std::vector<ScheduledKeyPress> scheduled_keys;
+    
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
@@ -52,6 +61,11 @@ int main(int argc, char* argv[]) {
             force_headless = true;  // Frame limit implies headless
         } else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
             screenshot_interval = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--press-key") == 0 && i + 2 < argc) {
+            int key_code = std::atoi(argv[++i]);
+            int frame = std::atoi(argv[++i]);
+            scheduled_keys.push_back({key_code, frame});
+            force_headless = true;  // Key press implies headless
         } else if (strcmp(argv[i], "--debug") == 0) {
             config.enable_debugger = true;
         } else if (strcmp(argv[i], "--break") == 0 && i + 1 < argc) {
@@ -117,6 +131,12 @@ int main(int argc, char* argv[]) {
         if (!frontend.initialize(config)) {
             std::cerr << "Failed to initialize frontend" << std::endl;
             return 1;
+        }
+        
+        // Schedule key presses
+        for (const auto& key_press : scheduled_keys) {
+            VidKey key = static_cast<VidKey>(key_press.key_code);
+            frontend.schedule_key_press(key, key_press.frame, 5);  // Press for 5 frames to ensure detection
         }
         
         frontend.run();

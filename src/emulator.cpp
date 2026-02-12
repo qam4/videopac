@@ -85,12 +85,14 @@ void EmulatorCore::run_frame() {
                 return;
             }
             
-            // Log instruction trace if enabled
-            log_debugger_trace();
-            
             uint8 instruction_cycles = cpu_.execute_instruction();
             cycles_executed += instruction_cycles;
             total_cycles += instruction_cycles;
+            
+            // Log instruction trace AFTER executing (so cycle count is correct)
+            if (debugger_ && debugger_->is_trace_enabled()) {
+                debugger_->log_instruction(total_cycles);
+            }
             
             // Advance VDC by the same number of cycles
             vdc_.tick(instruction_cycles);

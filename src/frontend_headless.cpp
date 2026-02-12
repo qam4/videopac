@@ -4,6 +4,9 @@
 #include <iomanip>
 #include <sstream>
 #include <cstring>
+#include <algorithm>
+#include <vector>
+#include <thread>
 
 namespace videopac {
 
@@ -14,6 +17,7 @@ HeadlessFrontend::HeadlessFrontend()
     , auto_screenshot_(false)
     , screenshot_interval_(60)
     , screenshot_count_(0)
+    , enable_frame_pacing_(false)
 {}
 
 HeadlessFrontend::~HeadlessFrontend() {
@@ -183,8 +187,77 @@ void HeadlessFrontend::process_audio() {
 }
 
 void HeadlessFrontend::process_input() {
-    // No input in headless mode
-    // Could read from file or network if needed
+    if (!emulator_) {
+        return;
+    }
+    
+    // Process simulated key presses
+    InputHandler& input = emulator_->get_input_handler();
+    
+    // Check for scheduled key presses that should trigger this frame
+    // Note: frame_count_ is the NEXT frame that will be rendered
+    int next_frame = frame_count_ + 1;
+    for (auto it = scheduled_keys_.begin(); it != scheduled_keys_.end(); ) {
+        if (next_frame >= it->trigger_frame) {
+            // Trigger the key press
+            input.set_key_state(it->key, true);
+            active_keys_.push_back({it->key, it->duration});
+            std::cout << "\n[Frame " << next_frame << "] Pressing key " 
+                      << static_cast<int>(it->key) << " for " << it->duration << " frames" << std::endl;
+            it = scheduled_keys_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    // Update active keys and release expired ones
+    for (auto it = active_keys_.begin(); it != active_keys_.end(); ) {
+        it->frames_remaining--;
+        
+        if (it->frames_remaining <= 0) {
+            // Release the key
+            input.set_key_state(it->key, false);
+            std::cout << "[Frame " << next_frame << "] Releasing key " 
+                      << static_cast<int>(it->key) << std::endl;
+            it = active_keys_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void HeadlessFrontend::press_key(VidKey key, int duration_frames) {
+    if (!emulator_) {
+        return;
+    }
+    
+    InputHandler& input = emulator_->get_input_handler();
+    
+    // Press the key immediately
+    input.set_key_state(key, true);
+    
+    // Schedule release after duration_frames
+    if (duration_frames > 0) {
+        active_keys_.push_back({key, duration_frames});
+    }
+}
+
+void HeadlessFrontend::release_key(VidKey key) {
+    if (!emulator_) {
+        return;
+    }
+    
+    InputHandler& input = emulator_->get_input_handler();
+    
+    // Release immediately
+    input.set_key_state(key, false);
+    
+    // Remove from active keys if present
+    active_keys_.erase(
+        std::remove_if(active_keys_.begin(), active_keys_.end(),
+            [key](const KeyPress& kp) { return kp.key == key; }),
+        active_keys_.end()
+    );
 }
 
 MenuAction HeadlessFrontend::process_menu() {
@@ -235,22 +308,30 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
 }
 
 void HeadlessFrontend::update_timing() {
-    // Calculate frame time
-    auto current_time = std::chrono::steady_clock::now();
-    auto frame_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        current_time - last_frame_time_);
-    
     // Target frame time (60 Hz for NTSC, 50 Hz for PAL)
     int target_fps = (config_.video_standard == VideoStandard::NTSC) ? 60 : 50;
     auto target_frame_time = std::chrono::microseconds(1000000 / target_fps);
     
-    // Sleep if we're ahead of schedule (optional in headless mode)
-    // Disabled by default to run as fast as possible
-    // if (frame_duration < target_frame_time) {
-    //     std::this_thread::sleep_for(target_frame_time - frame_duration);
-    // }
+    // Use frame pacing when enabled (set when scheduled keys are present)
+    if (enable_frame_pacing_) {
+        auto current_time = std::chrono::steady_clock::now();
+        auto frame_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+            current_time - last_frame_time_);
+        
+        if (frame_duration < target_frame_time) {
+            std::this_thread::sleep_for(target_frame_time - frame_duration);
+        }
+    }
     
-    last_frame_time_ = current_time;
+    last_frame_time_ = std::chrono::steady_clock::now();
+}
+
+void HeadlessFrontend::schedule_key_press(VidKey key, int trigger_frame, int duration_frames) {
+    scheduled_keys_.push_back({key, trigger_frame, duration_frames});
+    enable_frame_pacing_ = true;  // Enable frame pacing for accurate key timing
+    std::cout << "Scheduled key " << static_cast<int>(key) 
+              << " to be pressed at frame " << trigger_frame 
+              << " for " << duration_frames << " frames" << std::endl;
 }
 
 } // namespace videopac

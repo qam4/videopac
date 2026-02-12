@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "memory.h"
+#include "vdc.h"
 #include <cstring>
 
 using namespace videopac;
@@ -184,8 +185,9 @@ TEST(MemoryTest, BankSwitchingViaPort1) {
 TEST(MemoryTest, ExternalRAMAccess) {
     MemorySystem memory;
     
-    // Enable external RAM via Port 1 (P14 = 0)
-    memory.update_control_signals(0x00);  // All pins low
+    // Enable external RAM via Port 1 (P13=1, P14=0)
+    // Reference: doc/port1_bits.md - "For RAM access: P13=1, P14=0"
+    memory.update_control_signals(0x08);  // P13=1 (bit 3), P14=0
     
     // Write to external RAM
     for (uint8 addr = 0; addr < 128; addr++) {
@@ -207,8 +209,8 @@ TEST(MemoryTest, ExternalRAMDisabled) {
     // Try to write to external RAM (should not work)
     memory.write_external(0x00, 0x42);
     
-    // Enable RAM and check it wasn't written
-    memory.update_control_signals(0x00);
+    // Enable RAM (P13=1, P14=0) and check it wasn't written
+    memory.update_control_signals(0x08);
     EXPECT_NE(memory.read_external(0x00), 0x42);
 }
 
@@ -227,15 +229,16 @@ TEST(MemoryTest, Port1ControlSignals) {
     // VDC would not be accessible
     
     // Test P14 (RAM enable) - bit 4
-    // P14 = 0: RAM enabled
-    memory.update_control_signals(0x00);
+    // P14 = 0, P13 = 1: RAM enabled for read/write
+    // Reference: doc/port1_bits.md - "For RAM access: P13=1, P14=0"
+    memory.update_control_signals(0x08);  // P13=1, P14=0
     memory.write_external(0x00, 0x42);
     EXPECT_EQ(memory.read_external(0x00), 0x42);
     
     // P14 = 1: RAM disabled
     memory.update_control_signals(0x10);
     memory.write_external(0x01, 0x99);
-    memory.update_control_signals(0x00);
+    memory.update_control_signals(0x08);  // Re-enable RAM
     EXPECT_NE(memory.read_external(0x01), 0x99);
 }
 
@@ -257,8 +260,8 @@ TEST(MemoryTest, GetSetState) {
     }
     memory.load_cartridge(rom, 2048);
     
-    // Write to external RAM
-    memory.update_control_signals(0x00);
+    // Write to external RAM (P13=1, P14=0)
+    memory.update_control_signals(0x08);
     for (uint8 i = 0; i < 128; i++) {
         memory.write_external(i, i + 0x10);
     }
@@ -283,9 +286,49 @@ TEST(MemoryTest, GetSetState) {
         }
     }
     
-    // Verify external RAM
-    memory2.update_control_signals(0x00);
+    // Verify external RAM (P13=1, P14=0)
+    memory2.update_control_signals(0x08);
     for (uint8 i = 0; i < 128; i++) {
         EXPECT_EQ(memory2.read_external(i), i + 0x10);
     }
+}
+
+// ========== VDC INTEGRATION TESTS ==========
+
+TEST(MemoryTest, VDCReadWithVariousPort1Values) {
+    MemorySystem memory;
+    VDC vdc;
+    memory.set_vdc(&vdc);
+    
+    // Write a test value to VDC register 0xA0 (Control register)
+    memory.update_control_signals(0x00);  // P13=0, P14=0 (both enabled)
+    memory.write_external(0xA0, 0x42);
+    
+    // Test 1: Read VDC with P13=0, P14=0 (both enabled - initial state)
+    // This is the case that caused the regression
+    memory.update_control_signals(0x00);
+    EXPECT_EQ(memory.read_external(0xA0), 0x42) 
+        << "VDC read should work with P13=0, P14=0 (both enabled)";
+    
+    // Test 2: Read VDC with P13=0, P14=1 (VDC enabled, RAM disabled - typical BIOS setup)
+    memory.update_control_signals(0x10);  // P14=1
+    EXPECT_EQ(memory.read_external(0xA0), 0x42)
+        << "VDC read should work with P13=0, P14=1 (typical VDC access)";
+    
+    // Test 3: Read VDC with P13=1, P14=0 (VDC disabled, RAM enabled)
+    memory.update_control_signals(0x08);  // P13=1
+    EXPECT_EQ(memory.read_external(0xA0), 0xFF)
+        << "VDC read should return 0xFF when P13=1 (VDC disabled)";
+    
+    // Test 4: Verify VDC write works with P13=0 regardless of P14
+    // Use 0xA3 (Color register) which is a normal read/write register
+    memory.update_control_signals(0x00);  // P13=0, P14=0
+    memory.write_external(0xA3, 0x99);
+    EXPECT_EQ(memory.read_external(0xA3), 0x99)
+        << "VDC write/read should work with P13=0, P14=0";
+    
+    memory.update_control_signals(0x10);  // P13=0, P14=1
+    memory.write_external(0xA3, 0x88);
+    EXPECT_EQ(memory.read_external(0xA3), 0x88)
+        << "VDC write/read should work with P13=0, P14=1";
 }

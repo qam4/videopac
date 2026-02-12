@@ -402,7 +402,7 @@ void Debugger::enable_trace(bool enabled) {
     trace_enabled_ = enabled;
 }
 
-void Debugger::log_instruction() {
+void Debugger::log_instruction(uint64 current_cycles) {
     CPUState cpu = emulator_->get_cpu_state();
     Disassembler disasm;
     MemoryState mem = emulator_->get_memory_state();
@@ -416,8 +416,13 @@ void Debugger::log_instruction() {
     Instruction instr = disasm.disassemble_instruction(cpu.pc, code);
     std::string formatted = disasm.format_instruction(instr);
     
-    // Add CPU state
+    // Use provided current_cycles if non-zero, otherwise use frame_stats total
+    uint64 cycles_to_log = (current_cycles > 0) ? current_cycles : frame_stats_.total_cycles;
+    
+    // Add frame and cycle info, then CPU state
     std::stringstream ss;
+    ss << "[F:" << std::dec << frame_stats_.frame_count 
+       << " C:" << cycles_to_log << "] ";
     ss << formatted << " | A=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.a;
     ss << " PSW=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.psw;
     

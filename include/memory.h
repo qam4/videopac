@@ -54,10 +54,23 @@ private:
     MemoryState state_;
     VDC* vdc_;
     
-    // Control signals from Port 1
-    bool vdc_enabled_;      // P13 = 0
-    bool ram_enabled_;      // P14 = 0
-    bool copy_mode_;        // P16 = 1, P13 = 0, P14 = 0
+    // Port 1 value (control signals for memory/VDC access)
+    // Reference: doc/port1_bits.md for bit definitions
+    uint8 port1_;
+    
+    // Port 1 bit masks (from BIOS naming convention)
+    // Reference: doc/french_bios_annotated.txt
+    static constexpr uint8 P1_KBSCAN = 0x04;  // P12: Keyboard scan enable (active low)
+    static constexpr uint8 P1_VDCEN  = 0x08;  // P13: VDC enable (active low)
+    static constexpr uint8 P1_RAMEN  = 0x10;  // P14: RAM enable (active low)
+    static constexpr uint8 P1_COPYEN = 0x40;  // P16: Copy mode enable (active high)
+    static constexpr uint8 P1_LUMEN  = 0x80;  // P17: Luminance enable (active high)
+    
+    // Helper methods to check Port 1 control signals
+    // These return true when the device is ENABLED (active-low signals inverted for clarity)
+    inline bool vdc_enabled() const { return !(port1_ & P1_VDCEN); }  // P13=0 enables VDC
+    inline bool ram_enabled() const { return !(port1_ & P1_RAMEN); }  // P14=0 enables RAM
+    inline bool copy_mode() const { return (port1_ & P1_COPYEN) != 0; }  // P16=1 enables copy mode
     
     // Helper functions
     Result<void> validate_rom_size(size_t size);

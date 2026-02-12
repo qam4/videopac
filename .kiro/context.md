@@ -2,6 +2,16 @@
 
 This document contains general instructions and guidelines for working on the Videopac emulator project.
 
+## Build Instructions
+
+To build the project, use CMake:
+
+```bash
+cmake --build build
+```
+
+This will compile all targets (emulator, tests, tools).
+
 ## Git Commit Workflow
 
 When making commits, always follow this process:
