@@ -37,7 +37,10 @@ struct FrontendConfig {
     // Debug settings
     bool show_fps;
     bool enable_debugger;
+    bool enable_trace;              // Enable instruction trace logging (very slow!)
+    bool enable_profile;            // Enable performance profiling
     std::vector<BreakpointConfig> breakpoints;
+    std::vector<std::string> watch_conditions;  // Condition-only breakpoints
     
     // File paths
     std::string bios_path;
@@ -57,6 +60,8 @@ struct FrontendConfig {
         , audio_enabled(true)
         , show_fps(true)
         , enable_debugger(false)
+        , enable_trace(false)
+        , enable_profile(false)
         , screenshot_path("screenshots")
     {}
 };

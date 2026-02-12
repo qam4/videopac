@@ -16,13 +16,18 @@ void print_usage(const char* program_name) {
     std::cout << "  --headless          Run without display (for testing)" << std::endl;
     std::cout << "  --frames <n>        Run for N frames then exit (headless mode)" << std::endl;
     std::cout << "  --screenshot <n>    Save screenshot every N frames (headless mode)" << std::endl;
+    std::cout << "  --extended-fb       Enable extended framebuffer mode (240x250, shows area beyond visible 160x200)" << std::endl;
     std::cout << "  --press-key <key> <frame>" << std::endl;
     std::cout << "                      Press key at frame N (headless mode)" << std::endl;
     std::cout << "                      Example: --press-key 1 60 (press '1' at frame 60)" << std::endl;
     std::cout << "  --debug             Enable debugger" << std::endl;
+    std::cout << "  --trace             Enable instruction trace logging (very slow!)" << std::endl;
+    std::cout << "  --profile           Enable performance profiling" << std::endl;
     std::cout << "  --break <addr>      Set breakpoint at address (hex, e.g. 0x00B0)" << std::endl;
     std::cout << "  --condition <expr>  Add condition to previous breakpoint" << std::endl;
     std::cout << "                      Examples: \"cpu.A == 0xFF\", \"vdc.registers[0xA0] & 0x20\"" << std::endl;
+    std::cout << "  --watch <expr>      Set condition-only breakpoint (no address)" << std::endl;
+    std::cout << "                      Examples: \"memory.external_ram[0x7F]==0xF8\"" << std::endl;
     std::cout << "  --help              Show this help message" << std::endl;
 }
 
@@ -38,7 +43,11 @@ int main(int argc, char* argv[]) {
     bool force_headless = false;
     int frame_limit = 0;
     int screenshot_interval = 0;
+    bool extended_framebuffer = false;
+    bool enable_trace = false;
+    bool enable_profile = false;
     std::vector<BreakpointConfig> breakpoints;
+    std::vector<std::string> watch_conditions;  // Condition-only breakpoints
     
     struct ScheduledKeyPress {
         int key_code;
@@ -61,6 +70,8 @@ int main(int argc, char* argv[]) {
             force_headless = true;  // Frame limit implies headless
         } else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
             screenshot_interval = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--extended-fb") == 0) {
+            extended_framebuffer = true;
         } else if (strcmp(argv[i], "--press-key") == 0 && i + 2 < argc) {
             int key_code = std::atoi(argv[++i]);
             int frame = std::atoi(argv[++i]);
@@ -68,6 +79,11 @@ int main(int argc, char* argv[]) {
             force_headless = true;  // Key press implies headless
         } else if (strcmp(argv[i], "--debug") == 0) {
             config.enable_debugger = true;
+        } else if (strcmp(argv[i], "--trace") == 0) {
+            enable_trace = true;
+            config.enable_debugger = true;  // Trace requires debugger
+        } else if (strcmp(argv[i], "--profile") == 0) {
+            enable_profile = true;
         } else if (strcmp(argv[i], "--break") == 0 && i + 1 < argc) {
             uint16 addr = static_cast<uint16>(std::strtol(argv[++i], nullptr, 16));
             breakpoints.emplace_back(addr);
@@ -79,6 +95,10 @@ int main(int argc, char* argv[]) {
             }
             // Add condition to the last breakpoint
             breakpoints.back().condition = argv[++i];
+        } else if (strcmp(argv[i], "--watch") == 0 && i + 1 < argc) {
+            // Add condition-only breakpoint
+            watch_conditions.push_back(argv[++i]);
+            config.enable_debugger = true;  // Auto-enable debugger
         } else if (argv[i][0] != '-') {
             rom_path = argv[i];
         } else {
@@ -95,7 +115,10 @@ int main(int argc, char* argv[]) {
     }
     
     config.rom_path = rom_path;
+    config.enable_trace = enable_trace;
+    config.enable_profile = enable_profile;
     config.breakpoints = breakpoints;
+    config.watch_conditions = watch_conditions;
     
     // Determine which frontend to use
 #ifdef ENABLE_SDL
@@ -131,6 +154,10 @@ int main(int argc, char* argv[]) {
         if (!frontend.initialize(config)) {
             std::cerr << "Failed to initialize frontend" << std::endl;
             return 1;
+        }
+        
+        if (extended_framebuffer) {
+            frontend.set_extended_framebuffer_mode(true);
         }
         
         // Schedule key presses

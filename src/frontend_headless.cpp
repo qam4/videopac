@@ -35,6 +35,7 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
     Configuration emu_config;
     emu_config.video_standard = config.video_standard;
     emu_config.bios_path = config.bios_path;
+    emu_config.enable_profile = config.enable_profile;
     
     emulator_ = std::make_unique<EmulatorCore>(emu_config);
     
@@ -64,6 +65,25 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
         debugger_ui_ = std::make_unique<DebuggerUI>(debugger_.get());
         emulator_->set_debugger(debugger_.get());
         debugger_->enable_trace(true);  // Enable trace logging
+        
+        // Set breakpoints from config
+        for (const auto& bp : config.breakpoints) {
+            if (bp.condition.empty()) {
+                debugger_->add_breakpoint(bp.address);
+                std::cout << "  Breakpoint set at 0x" << std::hex << bp.address << std::dec << std::endl;
+            } else {
+                debugger_->add_breakpoint(bp.address, bp.condition);
+                std::cout << "  Conditional breakpoint set at 0x" << std::hex << bp.address << std::dec 
+                          << " with condition: " << bp.condition << std::endl;
+            }
+        }
+        
+        // Set condition-only breakpoints (watch conditions)
+        for (const auto& condition : config.watch_conditions) {
+            debugger_->add_breakpoint(condition);
+            std::cout << "  Watch condition set: " << condition << std::endl;
+        }
+        
         std::cout << "  Debugger enabled (with trace)" << std::endl;
     }
     
@@ -273,8 +293,20 @@ void HeadlessFrontend::save_screenshot(const std::string& filename) {
         return;
     }
     
-    const uint8* framebuffer = emulator_->get_framebuffer();
-    write_ppm(filename, framebuffer, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+    VDC& vdc = emulator_->get_vdc();
+    
+    // If extended framebuffer mode is enabled, save extended screenshot
+    if (vdc.is_extended_framebuffer_mode()) {
+        const uint8* framebuffer = vdc.get_extended_framebuffer();
+        int width = vdc.get_extended_framebuffer_width();
+        int height = vdc.get_extended_framebuffer_height();
+        write_ppm(filename, framebuffer, width, height);
+    } else {
+        // Normal screenshot
+        const uint8* framebuffer = emulator_->get_framebuffer();
+        write_ppm(filename, framebuffer, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+    }
+    
     screenshot_count_++;
 }
 
@@ -324,6 +356,35 @@ void HeadlessFrontend::update_timing() {
     }
     
     last_frame_time_ = std::chrono::steady_clock::now();
+}
+
+void HeadlessFrontend::set_extended_framebuffer_mode(bool enabled) {
+    if (!emulator_) {
+        return;
+    }
+    
+    // Access VDC through emulator and enable extended framebuffer mode
+    VDC& vdc = emulator_->get_vdc();
+    vdc.set_extended_framebuffer_mode(enabled);
+}
+
+void HeadlessFrontend::save_extended_screenshot(const std::string& filename) {
+    if (!emulator_) {
+        return;
+    }
+    
+    VDC& vdc = emulator_->get_vdc();
+    if (!vdc.is_extended_framebuffer_mode()) {
+        std::cerr << "Extended framebuffer mode is not enabled" << std::endl;
+        return;
+    }
+    
+    const uint8* framebuffer = vdc.get_extended_framebuffer();
+    int width = vdc.get_extended_framebuffer_width();
+    int height = vdc.get_extended_framebuffer_height();
+    
+    write_ppm(filename, framebuffer, width, height);
+    std::cout << "Saved extended screenshot (" << width << "x" << height << "): " << filename << std::endl;
 }
 
 void HeadlessFrontend::schedule_key_press(VidKey key, int trigger_frame, int duration_frames) {

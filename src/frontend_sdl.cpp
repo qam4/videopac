@@ -49,6 +49,7 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     // Create emulator
     Configuration emu_config;
     emu_config.video_standard = config_.video_standard;
+    emu_config.enable_profile = config_.enable_profile;
     emulator_ = std::make_unique<EmulatorCore>(emu_config);
     
     // Load BIOS
@@ -79,7 +80,12 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
         debugger_ = std::make_unique<Debugger>(emulator_.get());
         debugger_ui_ = std::make_unique<DebuggerUI>(debugger_.get());
         emulator_->set_debugger(debugger_.get());
-        debugger_->enable_trace(true);
+        
+        // Enable trace if requested (very expensive!)
+        if (config_.enable_trace) {
+            debugger_->enable_trace(true);
+            std::cout << "Instruction trace enabled (performance will be slow)" << std::endl;
+        }
         
         // Set breakpoints from config
         for (const auto& bp : config_.breakpoints) {
@@ -91,6 +97,12 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
                 std::cout << "Conditional breakpoint set at 0x" << std::hex << bp.address << std::dec 
                           << " with condition: " << bp.condition << std::endl;
             }
+        }
+        
+        // Set condition-only breakpoints (watch conditions)
+        for (const auto& condition : config_.watch_conditions) {
+            debugger_->add_breakpoint(condition);
+            std::cout << "Watch condition set: " << condition << std::endl;
         }
         
         std::cout << "Debugger enabled - Press F9 to step, F5 to continue, F1 for help" << std::endl;
@@ -288,9 +300,9 @@ void SDLFrontend::run() {
                 }
                 
                 // Debug: Dump VDC registers every second
-                if (frame_count_ > 60) {  // After initial frames
-                    emulator_->get_vdc().dump_registers();
-                }
+                // if (frame_count_ > 60) {  // After initial frames
+                //     emulator_->get_vdc().dump_registers();
+                // }
             }
             
             // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
