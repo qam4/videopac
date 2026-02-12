@@ -34,6 +34,7 @@ set(CORE_SOURCES
     src/memory.cpp
     src/input.cpp
     src/emulator.cpp
+    src/master_clock.cpp
     src/disassembler.cpp
     src/savestate.cpp
     src/debugger.cpp
@@ -134,6 +135,8 @@ if(BUILD_TESTS)
         tests/test_debugger.cpp
         tests/test_integration.cpp
         tests/test_utils.cpp
+        tests/test_master_clock.cpp
+        tests/test_character_rendering.cpp
         tests/property_tests.cpp
     )
     

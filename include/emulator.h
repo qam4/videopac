@@ -6,6 +6,7 @@
 #include "vdc.h"
 #include "memory.h"
 #include "input.h"
+#include "master_clock.h"
 #include <memory>
 
 namespace videopac {
@@ -17,8 +18,9 @@ class Debugger;
 struct Configuration {
     VideoStandard video_standard;
     std::string bios_path;
+    bool enable_profile;
     
-    Configuration() : video_standard(VideoStandard::NTSC) {}
+    Configuration() : video_standard(VideoStandard::NTSC), enable_profile(false) {}
 };
 
 // Emulator core
@@ -78,6 +80,7 @@ private:
     VDC vdc_;
     MemorySystem memory_;
     InputHandler input_;
+    MasterClock master_clock_;
     
     // Debugger (optional)
     Debugger* debugger_;

@@ -99,6 +99,12 @@ constexpr Color PALETTE_DIM[8] = {
 constexpr int FRAMEBUFFER_WIDTH = 160;
 constexpr int FRAMEBUFFER_HEIGHT = 200;
 
+// Extended debug framebuffer dimensions (shows area beyond visible display)
+// VDC can address Y positions up to ~242 (PAL), X up to 227 (full scanline)
+// We'll use a reasonable extended area for debugging
+constexpr int EXTENDED_FB_WIDTH = 240;   // Show extra 80 pixels horizontally
+constexpr int EXTENDED_FB_HEIGHT = 250;  // Show extra 50 lines vertically
+
 // Timing constants
 constexpr uint32 NTSC_SCANLINES = 262;
 constexpr uint32 PAL_SCANLINES = 312;
