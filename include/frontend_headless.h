@@ -36,6 +36,10 @@ public:
     void save_screenshot(const std::string& filename) override;
     void dump_framebuffer(const std::string& filename) override;
     
+    // Extended framebuffer support
+    void save_extended_screenshot(const std::string& filename);
+    void set_extended_framebuffer_mode(bool enabled);
+    
     // Control
     void set_frame_limit(int frames) { frame_limit_ = frames; }
     void set_auto_screenshot(bool enabled, int interval) {

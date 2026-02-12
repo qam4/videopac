@@ -18,7 +18,7 @@ TEST(SaveStateTest, SerializationRoundTrip) {
     state.cpu_state.psw = 0x80;
     
     // Set some VDC state
-    state.vdc_state.scanline = 100;
+    state.vdc_state.beam_y = 100;
     state.vdc_state.registers[0xA0] = 0x38;  // Control register
     
     // Set some memory state
@@ -45,7 +45,7 @@ TEST(SaveStateTest, SerializationRoundTrip) {
     EXPECT_EQ(loaded_state.frame_count, state.frame_count);
     EXPECT_EQ(loaded_state.cpu_state.pc, state.cpu_state.pc);
     EXPECT_EQ(loaded_state.cpu_state.a, state.cpu_state.a);
-    EXPECT_EQ(loaded_state.vdc_state.scanline, state.vdc_state.scanline);
+    EXPECT_EQ(loaded_state.vdc_state.beam_y, state.vdc_state.beam_y);
     EXPECT_EQ(loaded_state.vdc_state.registers[0xA0], state.vdc_state.registers[0xA0]);
     EXPECT_EQ(loaded_state.memory_state.current_bank, state.memory_state.current_bank);
     EXPECT_EQ(loaded_state.memory_state.external_ram[0], state.memory_state.external_ram[0]);

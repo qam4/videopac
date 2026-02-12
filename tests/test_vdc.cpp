@@ -4,8 +4,8 @@
 using namespace videopac;
 
 // Helper function to advance VDC to a specific scanline
-static void advance_to_scanline(VDC& vdc, int scanline, VideoStandard standard = VideoStandard::NTSC) {
-    int cycles_per_line = (standard == VideoStandard::NTSC) ? 23 : 25;
+static void advance_to_scanline(VDC& vdc, int scanline) {
+    int cycles_per_line = 227;  // Using new CYCLES_PER_SCANLINE constant
     for (int i = 0; i < scanline; i++) {
         for (int j = 0; j < cycles_per_line; j++) {
             vdc.tick(1);
@@ -254,8 +254,8 @@ TEST(VDCTest, HBlankTiming) {
     // Not in HBLANK at start of scanline
     EXPECT_FALSE(vdc.is_hblank());
     
-    // Advance to near end of scanline
-    vdc.tick(20);  // Near end of 23-cycle scanline
+    // Advance to visible area end (beam_x = 160, HBLANK starts)
+    vdc.tick(160);  // HBLANK starts at beam_x >= 160
     EXPECT_TRUE(vdc.is_hblank());
 }
 
@@ -265,7 +265,7 @@ TEST(VDCTest, PALTiming) {
     vdc.reset();
     
     // PAL has 312 scanlines, VBLANK starts at 284
-    advance_to_scanline(vdc, 284, VideoStandard::PAL);
+    advance_to_scanline(vdc, 284);
     EXPECT_TRUE(vdc.is_vblank());
 }
 
