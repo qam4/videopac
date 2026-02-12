@@ -32,7 +32,7 @@ void Debugger::add_breakpoint(uint16 address) {
 void Debugger::add_breakpoint(uint16 address, const std::string& condition) {
     // Check if breakpoint already exists
     for (auto& bp : breakpoints_) {
-        if (bp.address == address) {
+        if (bp.address == address && !bp.condition_only) {
             // Update existing breakpoint with condition
             bp.has_condition = true;
             bp.condition = condition;
@@ -40,6 +40,11 @@ void Debugger::add_breakpoint(uint16 address, const std::string& condition) {
         }
     }
     breakpoints_.emplace_back(address, condition, true);
+}
+
+void Debugger::add_breakpoint(const std::string& condition) {
+    // Add condition-only breakpoint
+    breakpoints_.emplace_back(condition, true);
 }
 
 void Debugger::remove_breakpoint(uint16 address) {
@@ -65,7 +70,11 @@ void Debugger::clear_all_breakpoints() {
 
 bool Debugger::check_breakpoint(uint16 address) const {
     for (const auto& bp : breakpoints_) {
-        if (bp.address == address && bp.enabled) {
+        if (!bp.enabled || bp.condition_only) {
+            continue;  // Skip disabled or condition-only breakpoints
+        }
+        
+        if (bp.address == address) {
             // If no condition, break immediately
             if (!bp.has_condition) {
                 return true;
@@ -76,6 +85,22 @@ bool Debugger::check_breakpoint(uint16 address) const {
             if (evaluate_condition(bp.condition, cpu)) {
                 return true;
             }
+        }
+    }
+    return false;
+}
+
+bool Debugger::check_condition_breakpoints() const {
+    CPUState cpu = emulator_->get_cpu_state();
+    
+    for (const auto& bp : breakpoints_) {
+        if (!bp.enabled || !bp.condition_only) {
+            continue;  // Skip disabled or address-based breakpoints
+        }
+        
+        // Evaluate condition-only breakpoint
+        if (evaluate_condition(bp.condition, cpu)) {
+            return true;
         }
     }
     return false;
@@ -203,7 +228,7 @@ bool Debugger::evaluate_condition(const std::string& condition, const CPUState& 
         if (field == "registers" && array_index >= 0 && array_index < 256) {
             var_value = vdc.registers[array_index];
         } else if (field == "scanline") {
-            var_value = vdc.scanline;
+            var_value = vdc.beam_y;
         } else if (field == "display_enabled") {
             var_is_bool = true;
             var_bool_value = vdc.display_enabled;
@@ -350,8 +375,8 @@ std::string Debugger::dump_vdc_registers() const {
            << " Pattern=0x" << (int)pattern << "\n";
     }
     
-    ss << "  Scanline: " << std::dec << vdc.scanline;
-    ss << " (VBLANK: " << (vdc.scanline >= (vdc.video_standard == VideoStandard::NTSC ? 240 : 288) ? "Yes" : "No") << ")\n";
+    ss << "  Beam Position: (" << std::dec << vdc.beam_x << ", " << vdc.beam_y << ")";
+    ss << " (VBLANK: " << (vdc.beam_y >= (vdc.video_standard == VideoStandard::NTSC ? 240 : 288) ? "Yes" : "No") << ")\n";
     
     return ss.str();
 }
@@ -416,6 +441,34 @@ void Debugger::log_instruction(uint64 current_cycles) {
     Instruction instr = disasm.disassemble_instruction(cpu.pc, code);
     std::string formatted = disasm.format_instruction(instr);
     
+    // For CALL/JMP instructions with MB1 selected, show effective address instead of instruction operand
+    // This makes the trace more readable and matches the actual execution behavior
+    // Example: "CALL 0x176" becomes "CALL 0x976" when MB1 is selected
+    uint8 opcode = code[0];
+    bool is_call = (opcode == 0x14 || opcode == 0x34 || opcode == 0x54 || opcode == 0x74 ||
+                    opcode == 0x94 || opcode == 0xB4 || opcode == 0xD4 || opcode == 0xF4);
+    bool is_jmp = (opcode == 0x04 || opcode == 0x24 || opcode == 0x44 || opcode == 0x64 ||
+                   opcode == 0x84 || opcode == 0xA4 || opcode == 0xC4 || opcode == 0xE4);
+    
+    if ((is_call || is_jmp) && cpu.memory_bank && instr.has_operand) {
+        // Calculate effective address with MB1 applied
+        uint16 effective_addr = ((opcode & 0xE0) << 3) | instr.operand;
+        effective_addr |= 0x800;  // Apply MB1 (set bit 11)
+        
+        // Replace the operand text with effective address
+        std::stringstream addr_ss;
+        addr_ss << "0x" << std::hex << std::setw(3) << std::setfill('0') << effective_addr;
+        
+        // Rebuild formatted string with effective address
+        std::stringstream formatted_ss;
+        formatted_ss << "0x" << std::hex << std::setw(3) << std::setfill('0') << cpu.pc << ": ";
+        formatted_ss << std::hex << std::setw(2) << std::setfill('0') << (int)opcode;
+        formatted_ss << " " << std::setw(2) << std::setfill('0') << (int)instr.operand;
+        formatted_ss << "  ";
+        formatted_ss << instr.mnemonic << addr_ss.str();
+        formatted = formatted_ss.str();
+    }
+    
     // Use provided current_cycles if non-zero, otherwise use frame_stats total
     uint64 cycles_to_log = (current_cycles > 0) ? current_cycles : frame_stats_.total_cycles;
     
@@ -426,12 +479,123 @@ void Debugger::log_instruction(uint64 current_cycles) {
     ss << formatted << " | A=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.a;
     ss << " PSW=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.psw;
     
+    // Always show Port 1 and Port 2 for I/O debugging
+    ss << " P1=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.port1;
+    ss << " P2=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.port2;
+    
+    // Decode Port 1 control signals for easier debugging
+    bool vdc_en = !(cpu.port1 & 0x08);   // P13=0 enables VDC (active low)
+    bool ram_en = !(cpu.port1 & 0x10);   // P14=0 enables RAM (active low)
+    bool copy_mode = (cpu.port1 & 0x40); // P16=1 enables copy mode
+    ss << " [VDC:" << (vdc_en ? "ON" : "OFF");
+    ss << " RAM:" << (ram_en ? "ON" : "OFF");
+    if (copy_mode) ss << " COPY";
+    ss << "]";
+    
+    // Show register bank and F1 flag
+    ss << " RB" << (int)cpu.current_bank;
+    ss << " F1=" << (cpu.f1_flag ? "1" : "0");
+    
+    // Show R0-R7 registers for both banks
+    ss << " [RB0:";
+    for (int i = 0; i < 8; i++) {
+        if (i > 0) ss << " ";
+        ss << "R" << i << "=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.r[i];
+    }
+    ss << " RB1:";
+    for (int i = 0; i < 8; i++) {
+        if (i > 0) ss << " ";
+        ss << "R" << i << "=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.r[i + 8];
+    }
+    ss << "]";
+    
+    // Add VDC state (condensed on 1 line)
+    VDCState vdc = emulator_->get_vdc_state();
+    ss << " VDC[";
+    ss << "beam:" << std::dec << vdc.beam_x << "," << vdc.beam_y;
+    ss << " ctrl:0x" << std::hex << std::setw(2) << std::setfill('0') << (int)vdc.registers[0xA0];
+    ss << " stat:0x" << std::hex << std::setw(2) << std::setfill('0') << (int)vdc.registers[0xA1];
+    ss << " disp:" << (vdc.display_enabled ? "ON" : "OFF");
+    // Check VBLANK based on video standard
+    uint16 vblank_start = (vdc.video_standard == VideoStandard::NTSC) ? 240 : 288;
+    ss << " vbl:" << (vdc.beam_y >= vblank_start ? "Y" : "N");
+    ss << "]";
+    
+    // Add detailed info for memory access instructions
+    // Note: opcode already declared earlier in function for CALL/JMP effective address handling
+    
+    // MOVX @Rr,A - Write to external memory
+    if (opcode == 0x90 || opcode == 0x91) {
+        uint8 reg_idx = (opcode & 0x01);
+        if (cpu.current_bank == 1) reg_idx += 8;
+        uint8 addr = cpu.r[reg_idx];
+        ss << " [WRITE @R" << (opcode & 0x01) << "=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)addr;
+        ss << " val=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.a;
+        
+        // Indicate where the write goes based on Port 1
+        if (copy_mode && vdc_en && ram_en) {
+            ss << " -> VDC";
+        } else if (vdc_en && ram_en) {
+            ss << " -> VDC+RAM";
+        } else if (vdc_en) {
+            ss << " -> VDC";
+        } else if (ram_en) {
+            ss << " -> RAM";
+        } else {
+            ss << " -> NOWHERE!";
+        }
+        ss << "]";
+    }
+    
+    // MOVX A,@Rr - Read from external memory
+    else if (opcode == 0x80 || opcode == 0x81) {
+        uint8 reg_idx = (opcode & 0x01);
+        if (cpu.current_bank == 1) reg_idx += 8;
+        uint8 addr = cpu.r[reg_idx];
+        ss << " [READ @R" << (opcode & 0x01) << "=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)addr;
+        
+        // Indicate where the read comes from based on Port 1
+        if (copy_mode && vdc_en && ram_en) {
+            ss << " <- RAM";
+        } else if (vdc_en) {
+            ss << " <- VDC";
+        } else if (ram_en) {
+            ss << " <- RAM";
+        } else {
+            ss << " <- 0xFF";
+        }
+        ss << "]";
+    }
+    
+    // OUTL P1,A - Port 1 output (control signals change)
+    else if (opcode == 0x39) {
+        ss << " [P1 CHANGE: 0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.port1;
+        ss << " -> 0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.a << "]";
+    }
+    
+    // OUTL P2,A - Port 2 output
+    else if (opcode == 0x3A) {
+        ss << " [P2 CHANGE: 0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.port2;
+        ss << " -> 0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.a << "]";
+    }
+    
+    // Show all R registers for MOV/INC/DEC operations on registers
+    else if ((opcode >= 0xA8 && opcode <= 0xAF) ||  // MOV Rr,A
+             (opcode >= 0xF8) ||  // MOV A,Rr (0xF8-0xFF)
+             (opcode >= 0x18 && opcode <= 0x1F) ||  // INC Rr
+             (opcode >= 0xC8 && opcode <= 0xCF)) {  // DEC Rr
+        uint8 reg_num = opcode & 0x07;
+        uint8 reg_idx = reg_num;
+        if (cpu.current_bank == 1) reg_idx += 8;
+        ss << " [R" << (int)reg_num << "=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.r[reg_idx] << "]";
+    }
+    
     trace_log_.push_back(ss.str());
     
-    // Limit trace log size to prevent memory issues (disabled for debugging)
-    // if (trace_log_.size() > 10000) {
-    //     trace_log_.erase(trace_log_.begin());
-    // }
+    // Limit trace log size to prevent memory issues
+    if (trace_log_.size() > 50000) {
+        trace_log_.erase(trace_log_.begin());
+    }
 }
 
 void Debugger::clear_trace_log() {

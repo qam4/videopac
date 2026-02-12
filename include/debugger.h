@@ -21,11 +21,18 @@ struct Breakpoint {
     bool has_condition;
     std::string condition;  // e.g., "A==0xFF", "R0>0x80", "PSW&0x10"
     
+    // Condition-only breakpoint (no specific address)
+    bool condition_only;
+    
     Breakpoint(uint16 addr, bool en = true) 
-        : address(addr), enabled(en), has_condition(false), condition("") {}
+        : address(addr), enabled(en), has_condition(false), condition(""), condition_only(false) {}
     
     Breakpoint(uint16 addr, const std::string& cond, bool en = true)
-        : address(addr), enabled(en), has_condition(true), condition(cond) {}
+        : address(addr), enabled(en), has_condition(true), condition(cond), condition_only(false) {}
+    
+    // Constructor for condition-only breakpoint
+    explicit Breakpoint(const std::string& cond, bool en = true)
+        : address(0), enabled(en), has_condition(true), condition(cond), condition_only(true) {}
 };
 
 // Debugger state
@@ -53,10 +60,12 @@ public:
     // Breakpoint management
     void add_breakpoint(uint16 address);
     void add_breakpoint(uint16 address, const std::string& condition);
+    void add_breakpoint(const std::string& condition);  // Condition-only breakpoint
     void remove_breakpoint(uint16 address);
     void enable_breakpoint(uint16 address, bool enabled);
     void clear_all_breakpoints();
     bool check_breakpoint(uint16 address) const;
+    bool check_condition_breakpoints() const;  // Check condition-only breakpoints
     const std::vector<Breakpoint>& get_breakpoints() const { return breakpoints_; }
     
     // Execution control

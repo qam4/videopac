@@ -46,8 +46,8 @@ namespace VDCRegisters {
     constexpr uint8 STATUS = 0xA1;            // VDC status register
     constexpr uint8 COLLISION = 0xA2;         // Collision register
     constexpr uint8 COLOR = 0xA3;             // Color register
-    constexpr uint8 BEAM_Y = 0xA4;            // Y beam position
-    constexpr uint8 BEAM_X = 0xA5;            // X beam position
+    constexpr uint8 BEAM_X = 0xA4;            // X beam position (horizontal)
+    constexpr uint8 BEAM_Y = 0xA5;            // Y beam position (vertical)
     
     // Audio registers
     constexpr uint8 SOUND0 = 0xA7;            // Sound shift register byte 0
@@ -126,17 +126,23 @@ constexpr uint16 AUDIO_FREQ_HIGH = 3933;       // High shift frequency
 // Video timing constants
 // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
 namespace VideoTiming {
+    // VDC clock frequency
+    constexpr double VDC_CLOCK_MHZ = 3.54;
+    
+    // Cycles per scanline (including HBLANK)
+    constexpr uint32 CYCLES_PER_SCANLINE = 227;
+    
     // NTSC timing (60Hz)
     constexpr uint16 NTSC_SCANLINES = 262;
     constexpr uint16 NTSC_VBLANK_START = 240;
     constexpr uint16 NTSC_VBLANK_LINES = 22;
-    constexpr uint32 NTSC_CYCLES_PER_SCANLINE = 23;
+    constexpr uint32 NTSC_CYCLES_PER_SCANLINE = 227;
     
     // PAL timing (50Hz)
     constexpr uint16 PAL_SCANLINES = 312;
     constexpr uint16 PAL_VBLANK_START = 284;
     constexpr uint16 PAL_VBLANK_LINES = 28;
-    constexpr uint32 PAL_CYCLES_PER_SCANLINE = 25;
+    constexpr uint32 PAL_CYCLES_PER_SCANLINE = 227;
 }
 
 // VDC state structure
@@ -150,12 +156,15 @@ struct VDCState {
     // Reference: doc/o2doc.md section 4.0, doc/8245.md lines 1-30
     uint8 framebuffer[FRAMEBUFFER_HEIGHT][FRAMEBUFFER_WIDTH];
     
+    // Extended debug framebuffer (240x250 pixels, shows area beyond visible display)
+    // Only used when extended_fb_mode is enabled
+    uint8 extended_framebuffer[EXTENDED_FB_HEIGHT][EXTENDED_FB_WIDTH];
+    
     // Video timing state
     // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
-    uint16 scanline;                                // Current scanline (0-261 NTSC, 0-311 PAL)
-    uint8 beam_x;                                   // Horizontal beam position (0-159)
-    uint8 beam_y;                                   // Vertical beam position (0-199)
-    uint32 cycle_counter;                           // Cycle counter within current scanline
+    uint16 beam_x;                                  // Horizontal beam position (0-227 for full scanline including HBLANK)
+    uint16 beam_y;                                  // Vertical beam position (0-261 NTSC, 0-311 PAL)
+    uint64 total_cycles;                            // Total VDC cycles since reset
     VideoStandard video_standard;                   // PAL or NTSC
     
     // Collision detection state
@@ -189,6 +198,7 @@ public:
     // Core interface
     void reset();
     void tick(uint8 cycles);
+    void tick_one_cycle();                          // Advance VDC by exactly 1 clock cycle
     
     // Register access
     void write_register(uint8 address, uint8 value);
@@ -196,11 +206,20 @@ public:
     
     // Rendering
     void render_scanline();
+    void render_current_pixel();                    // Render pixel at current beam position
     const uint8* get_framebuffer() const;
+    
+    // Extended debug framebuffer (shows area beyond visible 160×200)
+    void set_extended_framebuffer_mode(bool enabled);
+    bool is_extended_framebuffer_mode() const { return extended_fb_mode_; }
+    const uint8* get_extended_framebuffer() const;
+    int get_extended_framebuffer_width() const { return EXTENDED_FB_WIDTH; }
+    int get_extended_framebuffer_height() const { return EXTENDED_FB_HEIGHT; }
     
     // Status queries
     bool is_vblank() const;
     bool is_hblank() const;
+    bool is_beam_visible() const;                   // Check if beam is in visible area
     
     // Audio
     int16 get_audio_sample();
@@ -210,7 +229,9 @@ public:
     void set_state(const VDCState& state);
     
     // Accessors
-    uint16 get_scanline() const { return state_.scanline; }
+    uint16 get_scanline() const { return state_.beam_y; }  // For backward compatibility
+    uint16 get_beam_x() const { return state_.beam_x; }
+    uint16 get_beam_y() const { return state_.beam_y; }
     VideoStandard get_video_standard() const { return state_.video_standard; }
     
     // Debug helpers
@@ -218,6 +239,9 @@ public:
 
 private:
     VDCState state_;
+    
+    // Extended framebuffer mode flag
+    bool extended_fb_mode_;
     
     // Timing
     uint32 cycles_per_scanline_;
@@ -235,6 +259,11 @@ private:
     void render_characters(int y);
     void render_sprites(int y);
     void detect_collisions(int y);
+    
+    // Per-pixel rendering helpers (for continuous rendering)
+    bool is_grid_pixel_at(int x, int y) const;
+    bool is_character_pixel_at(int x, int y, uint8& color) const;
+    bool is_sprite_pixel_at(int x, int y, uint8& color) const;
     
     // Collision tracking helpers
     void track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable);

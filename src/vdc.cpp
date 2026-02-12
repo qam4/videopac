@@ -9,6 +9,7 @@ namespace videopac {
 // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
 VDC::VDC(VideoStandard standard) {
     state_.video_standard = standard;
+    extended_fb_mode_ = false;
     calculate_timing();
     reset();
 }
@@ -22,11 +23,13 @@ void VDC::reset() {
     // Clear framebuffer
     std::memset(&state_.framebuffer, 0, sizeof(state_.framebuffer));
     
+    // Clear extended framebuffer
+    std::memset(&state_.extended_framebuffer, 0, sizeof(state_.extended_framebuffer));
+    
     // Reset timing state
-    state_.scanline = 0;
     state_.beam_x = 0;
     state_.beam_y = 0;
-    state_.cycle_counter = 0;
+    state_.total_cycles = 0;
     
     // Reset collision state
     state_.collision_state = 0;
@@ -50,45 +53,41 @@ void VDC::reset() {
 // Advance VDC by specified number of cycles
 // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
 void VDC::tick(uint8 cycles) {
-    state_.cycle_counter += cycles;
-    
-    // Update audio for each cycle
+    // For backward compatibility, call tick_one_cycle() multiple times
     for (uint8 i = 0; i < cycles; i++) {
-        update_audio();
+        tick_one_cycle();
     }
+}
+
+// Advance VDC by exactly one clock cycle
+// Reference: Requirements 2.1, 2.3, 2.4
+void VDC::tick_one_cycle() {
+    // Advance total cycles
+    state_.total_cycles++;
     
-    // Check if we've completed a scanline
-    if (state_.cycle_counter >= cycles_per_scanline_) {
-        state_.cycle_counter -= cycles_per_scanline_;
-        state_.scanline++;
-        
-        // Wrap scanline counter at end of frame
-        if (state_.scanline >= total_scanlines_) {
-            state_.scanline = 0;
-        }
-        
-        // Update beam position for current scanline
-        if (!is_vblank()) {
-            state_.beam_y = static_cast<uint8>(state_.scanline);
-        }
+    // Calculate beam position from total cycles
+    uint32 cycles_per_frame = total_scanlines_ * VideoTiming::CYCLES_PER_SCANLINE;
+    uint32 frame_cycles = state_.total_cycles % cycles_per_frame;
+    state_.beam_y = frame_cycles / VideoTiming::CYCLES_PER_SCANLINE;
+    state_.beam_x = frame_cycles % VideoTiming::CYCLES_PER_SCANLINE;
+    
+    // Update audio
+    update_audio();
+    
+    // Update beam position registers based on latch bit
+    // Reference: doc/o2doc.md section 4.14 - Bit 1: 1 = Follow Beam, 0 = Latched
+    if (state_.registers[VDCRegisters::CONTROL] & ControlBits::LATCH_BEAM_POS) {
+        // When bit is SET, position follows beam (updates continuously)
+        state_.registers[VDCRegisters::BEAM_X] = static_cast<uint8>(state_.beam_x);
+        state_.registers[VDCRegisters::BEAM_Y] = static_cast<uint8>(state_.beam_y);
     }
-    
-    // Update horizontal beam position based on cycles within scanline
-    state_.beam_x = static_cast<uint8>((state_.cycle_counter * FRAMEBUFFER_WIDTH) / cycles_per_scanline_);
-    
-    // Update beam position registers if not latched
-    // Reference: doc/o2doc.md section 4.14, doc/8245.md lines 440-470
-    if (!(state_.registers[VDCRegisters::CONTROL] & ControlBits::LATCH_BEAM_POS)) {
-        state_.registers[VDCRegisters::BEAM_Y] = state_.beam_y;
-        state_.registers[VDCRegisters::BEAM_X] = state_.beam_x;
-    }
+    // When bit is CLEAR, registers remain latched at their current value
     
     // Update status register
-    // Reference: doc/o2doc.md section 4.7, doc/8245.md lines 480-500
     uint8 status = 0;
     
-    // HBLANK status (simplified - active during last portion of scanline)
-    if (state_.cycle_counter > (cycles_per_scanline_ * 3 / 4)) {
+    // HBLANK status - active when beam_x >= visible width
+    if (state_.beam_x >= FRAMEBUFFER_WIDTH) {
         status |= StatusBits::HBLANK;
     }
     
@@ -110,6 +109,11 @@ void VDC::tick(uint8 cycles) {
                                                           StatusBits::CHAR_OVERLAP));
     
     state_.registers[VDCRegisters::STATUS] = status;
+    
+    // Render pixel at current beam position if visible
+    if (is_beam_visible()) {
+        render_current_pixel();
+    }
 }
 
 // Write to VDC register
@@ -206,10 +210,14 @@ uint8 VDC::read_register(uint8 address) {
 }
 
 // Render current scanline to framebuffer
+// Render current scanline to framebuffer
 // Reference: doc/o2doc.md section 4.0, doc/8245.md lines 200-300
 void VDC::render_scanline() {
+    // Determine max height based on extended framebuffer mode
+    int max_height = extended_fb_mode_ ? EXTENDED_FB_HEIGHT : FRAMEBUFFER_HEIGHT;
+    
     // Only render during visible scanlines (not in VBLANK)
-    if (is_vblank() || state_.scanline >= FRAMEBUFFER_HEIGHT) {
+    if (is_vblank() || state_.beam_y >= max_height) {
         return;
     }
     
@@ -218,7 +226,7 @@ void VDC::render_scanline() {
         return;
     }
     
-    int y = static_cast<int>(state_.scanline);
+    int y = static_cast<int>(state_.beam_y);
     
     // Render in priority order (background to foreground)
     // Reference: doc/o2doc.md section 4.0, design.md Property 21
@@ -231,22 +239,105 @@ void VDC::render_scanline() {
     detect_collisions(y);
 }
 
+// Render pixel at current beam position
+// Reference: Requirements 2.1, 2.3, 2.6, 12.1-12.4
+void VDC::render_current_pixel() {
+    // Only render if beam is in visible area
+    if (!is_beam_visible()) {
+        return;
+    }
+    
+    // Check if display is enabled
+    if (!state_.display_enabled) {
+        return;
+    }
+    
+    int x = static_cast<int>(state_.beam_x);
+    int y = static_cast<int>(state_.beam_y);
+    
+    // Render in priority order (background to foreground)
+    // Priority: sprites (highest) > characters > grid > background (lowest)
+    // Reference: Requirements 12.1, 12.2, 12.3, 12.4
+    
+    // Start with background color
+    uint8 color_reg = state_.registers[VDCRegisters::COLOR];
+    uint8 bg_color = (color_reg >> 3) & 0x07;
+    uint8 pixel_color = bg_color;
+    
+    // Check grid at this position (if enabled)
+    if (state_.grid_enabled) {
+        uint8 grid_color = color_reg & 0x07;
+        if (is_grid_pixel_at(x, y)) {
+            pixel_color = grid_color;
+        }
+    }
+    
+    // Check characters at this position
+    uint8 char_color;
+    if (is_character_pixel_at(x, y, char_color)) {
+        pixel_color = char_color;
+    }
+    
+    // Check sprites at this position (highest priority)
+    uint8 sprite_color;
+    if (is_sprite_pixel_at(x, y, sprite_color)) {
+        pixel_color = sprite_color;
+    }
+    
+    // Write to normal framebuffer if within bounds
+    if (x < FRAMEBUFFER_WIDTH && y < FRAMEBUFFER_HEIGHT) {
+        state_.framebuffer[y][x] = pixel_color;
+    }
+    
+    // Write to extended framebuffer if enabled and within extended bounds
+    if (extended_fb_mode_ && x < EXTENDED_FB_WIDTH && y < EXTENDED_FB_HEIGHT) {
+        state_.extended_framebuffer[y][x] = pixel_color;
+    }
+}
+
 // Get framebuffer pointer
 const uint8* VDC::get_framebuffer() const {
     return &state_.framebuffer[0][0];
 }
 
+// Extended framebuffer mode control
+// Enables rendering to a larger framebuffer to see what's outside visible area
+void VDC::set_extended_framebuffer_mode(bool enabled) {
+    extended_fb_mode_ = enabled;
+    if (enabled) {
+        std::cout << "Extended framebuffer mode enabled (" 
+                  << EXTENDED_FB_WIDTH << "x" << EXTENDED_FB_HEIGHT << ")" << std::endl;
+    }
+}
+
+// Get extended framebuffer pointer
+const uint8* VDC::get_extended_framebuffer() const {
+    return &state_.extended_framebuffer[0][0];
+}
+
 // Check if in vertical blank period
 // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
 bool VDC::is_vblank() const {
-    return state_.scanline >= vblank_start_;
+    return state_.beam_y >= vblank_start_;
 }
 
 // Check if in horizontal blank period
 // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
 bool VDC::is_hblank() const {
-    // HBLANK is active during last portion of scanline
-    return state_.cycle_counter > (cycles_per_scanline_ * 3 / 4);
+    // HBLANK is active when beam_x is beyond visible width
+    return state_.beam_x >= FRAMEBUFFER_WIDTH;
+}
+
+// Check if beam is in visible area
+// Reference: Requirements 2.4, 2.6
+bool VDC::is_beam_visible() const {
+    int max_width = extended_fb_mode_ ? EXTENDED_FB_WIDTH : FRAMEBUFFER_WIDTH;
+    int max_height = extended_fb_mode_ ? EXTENDED_FB_HEIGHT : FRAMEBUFFER_HEIGHT;
+    
+    return state_.beam_x < max_width && 
+           state_.beam_y < max_height &&
+           !is_hblank() && 
+           !is_vblank();
 }
 
 // Get current audio sample
@@ -300,6 +391,13 @@ void VDC::render_background(int y) {
     // Fill entire scanline with background color
     for (int x = 0; x < FRAMEBUFFER_WIDTH; x++) {
         state_.framebuffer[y][x] = bg_color;
+    }
+    
+    // Fill extended framebuffer if enabled
+    if (extended_fb_mode_ && y < EXTENDED_FB_HEIGHT) {
+        for (int x = 0; x < EXTENDED_FB_WIDTH; x++) {
+            state_.extended_framebuffer[y][x] = bg_color;
+        }
     }
 }
 
@@ -365,6 +463,11 @@ void VDC::render_grid(int y) {
                     
                     for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
                         state_.framebuffer[y][x] = grid_color;
+                        
+                        // Write to extended framebuffer if enabled
+                        if (extended_fb_mode_ && x < EXTENDED_FB_WIDTH && y < EXTENDED_FB_HEIGHT) {
+                            state_.extended_framebuffer[y][x] = grid_color;
+                        }
                     }
                 }
             }
@@ -394,6 +497,11 @@ void VDC::render_grid(int y) {
                     
                     for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
                         state_.framebuffer[y][x] = grid_color;
+                        
+                        // Write to extended framebuffer if enabled
+                        if (extended_fb_mode_ && x < EXTENDED_FB_WIDTH && y < EXTENDED_FB_HEIGHT) {
+                            state_.extended_framebuffer[y][x] = grid_color;
+                        }
                     }
                 }
             }
@@ -439,6 +547,22 @@ void VDC::render_characters(int y) {
         uint8 char_ptr_low = state_.registers[base_addr + 2];
         uint8 char_attr = state_.registers[base_addr + 3];
         
+        // Character visibility bounds checking
+        // Requirements 4.1, 4.2, 4.3: Check if character Y position is within visible range
+        // In extended framebuffer mode, use extended bounds
+        int max_height = extended_fb_mode_ ? EXTENDED_FB_HEIGHT : FRAMEBUFFER_HEIGHT;
+        int max_width = extended_fb_mode_ ? EXTENDED_FB_WIDTH : FRAMEBUFFER_WIDTH;
+        
+        if (char_y >= max_height) {
+            continue;  // Character is entirely outside visible/extended area
+        }
+        
+        // Requirements 4.1, 4.2, 4.3: Check if character X position allows at least partial visibility
+        // Character is 8 pixels wide, so check if any part is visible
+        if (char_x >= max_width) {
+            continue;  // Character is entirely to the right of visible/extended area
+        }
+        
         // Extract character attributes
         uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);  // 9-bit character pointer
         uint8 color = (char_attr >> 1) & 0x07;  // Bits 1-3: color
@@ -459,8 +583,9 @@ void VDC::render_characters(int y) {
         // Formula: ROM Address = char_ptr + (char_y / 2) + char_row
         uint16 rom_addr = (char_ptr + (char_y / 2) + char_row) & 0x1FF;  // 9-bit address, wrap at 512
         
+        // Requirements 5.2, 11.3: Validate ROM address is within bounds
         if (rom_addr >= 512) {
-            continue;  // Invalid ROM address
+            continue;  // Invalid ROM address, skip this character
         }
         
         uint8 pattern = character_rom_[rom_addr];
@@ -469,38 +594,86 @@ void VDC::render_characters(int y) {
         for (int x = 0; x < 8; x++) {
             int screen_x = char_x + x;
             
-            // Check if pixel is within framebuffer bounds
-            if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
-                continue;
-            }
-            
             // Get bit from pattern (bit 7 = leftmost pixel)
             bool pixel_on = (pattern & (0x80 >> x)) != 0;
             
             // Draw pixel if it's on
             if (pixel_on) {
-                state_.framebuffer[y][screen_x] = color;
+                // Write to normal framebuffer if within bounds
+                // Requirements 11.1, 11.4: Per-pixel bounds checking before framebuffer writes
+                if (screen_x >= 0 && screen_x < FRAMEBUFFER_WIDTH && y >= 0 && y < FRAMEBUFFER_HEIGHT) {
+                    state_.framebuffer[y][screen_x] = color;
+                }
+                
+                // Write to extended framebuffer if enabled and within extended bounds
+                if (extended_fb_mode_ && screen_x >= 0 && screen_x < EXTENDED_FB_WIDTH && 
+                    y >= 0 && y < EXTENDED_FB_HEIGHT) {
+                    state_.extended_framebuffer[y][screen_x] = color;
+                }
             }
         }
     }
     
     // Render quad characters (4 groups, 16 bytes each, starting at 0x40)
-    // Reference: doc/o2doc.md section 4.5
+    // 
+    // IMPORTANT: Quad Character Position Register Layout
+    // ==================================================
+    // Each quad group has 16 bytes (4 characters × 4 bytes each):
+    //   Bytes 0-3:   Character 0 (Y, X, pattern_low, color+pattern_high)
+    //   Bytes 4-7:   Character 1 (Y, X, pattern_low, color+pattern_high)
+    //   Bytes 8-11:  Character 2 (Y, X, pattern_low, color+pattern_high)
+    //   Bytes 12-15: Character 3 (Y, X, pattern_low, color+pattern_high)
+    //
+    // The FIRST character's position (bytes 0-1) controls the entire quad group.
+    // All 4 sub-characters share this Y position and are spaced horizontally.
+    //
+    // NOTE: doc/o2doc.md incorrectly states "the X position and Y position of the 
+    // LAST character sets the position of the whole set". This is contradicted by:
+    // - Actual game code (writes to bytes 0-1, not 12-13)
+    // - Hardware behavior (confirmed via internet research)
+    // - BIOS routines (write to first character position)
+    //
+    // The hardware ignores the Y/X values in bytes 4-5, 8-9, and 12-13.
+    //
+    // Reference: doc/o2doc.md section 4.5 (contains error about "last character")
     for (int quad_num = 0; quad_num < 4; quad_num++) {
         uint8 base_addr = VDCRegisters::QUAD_BASE + (quad_num * 16);
         
-        // Each quad has 4 characters, last character's position determines the group position
-        uint8 quad_x = state_.registers[base_addr + 13];  // X of 4th character
+        // Read position from FIRST character (bytes 0-1)
+        // This is the Y/X position for the ENTIRE quad group
+        uint8 quad_y = state_.registers[base_addr + 0];  // Y of 1st character
+        uint8 quad_x = state_.registers[base_addr + 1];  // X of 1st character
         
         // Render all 4 characters in the quad
         for (int sub_char = 0; sub_char < 4; sub_char++) {
             uint8 char_offset = sub_char * 4;
-            uint8 char_y = state_.registers[base_addr + char_offset + 0];
+            
+            // Read pattern and color from each sub-character's bytes
+            // Note: Y/X position (bytes 0-1 of each sub-char) are IGNORED by hardware
+            // Only the quad's Y/X (from first character) are used
             uint8 char_ptr_low = state_.registers[base_addr + char_offset + 2];
             uint8 char_attr = state_.registers[base_addr + char_offset + 3];
             
-            // Calculate actual position (relative to quad position)
+            // Calculate actual screen position
+            // Y position: All sub-characters share quad_y (from first character)
+            // X position: Each sub-character is offset by 8 pixels from quad_x
             int char_x = quad_x + (sub_char * 8);  // Characters are spaced 8 pixels apart
+            int char_y = quad_y;  // All sub-characters use the quad's Y position
+            
+            // Character visibility bounds checking
+            // Requirements 4.1, 4.2, 4.3: Check if character position is within visible/extended range
+            // In extended framebuffer mode, use extended bounds
+            int max_height = extended_fb_mode_ ? EXTENDED_FB_HEIGHT : FRAMEBUFFER_HEIGHT;
+            int max_width = extended_fb_mode_ ? EXTENDED_FB_WIDTH : FRAMEBUFFER_WIDTH;
+            
+            if (char_y >= max_height) {
+                continue;  // Character is entirely outside visible/extended area
+            }
+            
+            // Requirements 4.1, 4.2, 4.3: Check if character X position allows at least partial visibility
+            if (char_x >= max_width) {
+                continue;  // Character is entirely to the right of visible/extended area
+            }
             
             // Extract character attributes
             uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);
@@ -519,8 +692,9 @@ void VDC::render_characters(int y) {
             // Formula: ROM Address = char_ptr + (char_y / 2) + char_row
             uint16 rom_addr = (char_ptr + (char_y / 2) + char_row) & 0x1FF;
             
+            // Requirements 5.2, 11.3: Validate ROM address is within bounds
             if (rom_addr >= 512) {
-                continue;
+                continue;  // Invalid ROM address, skip this character
             }
             
             uint8 pattern = character_rom_[rom_addr];
@@ -529,14 +703,20 @@ void VDC::render_characters(int y) {
             for (int x = 0; x < 8; x++) {
                 int screen_x = char_x + x;
                 
-                if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
-                    continue;
-                }
-                
                 bool pixel_on = (pattern & (0x80 >> x)) != 0;
                 
                 if (pixel_on) {
-                    state_.framebuffer[y][screen_x] = color;
+                    // Write to normal framebuffer if within bounds
+                    // Requirements 11.1, 11.4: Per-pixel bounds checking before framebuffer writes
+                    if (screen_x >= 0 && screen_x < FRAMEBUFFER_WIDTH && y >= 0 && y < FRAMEBUFFER_HEIGHT) {
+                        state_.framebuffer[y][screen_x] = color;
+                    }
+                    
+                    // Write to extended framebuffer if enabled and within extended bounds
+                    if (extended_fb_mode_ && screen_x >= 0 && screen_x < EXTENDED_FB_WIDTH && 
+                        y >= 0 && y < EXTENDED_FB_HEIGHT) {
+                        state_.extended_framebuffer[y][screen_x] = color;
+                    }
                 }
             }
         }
@@ -599,7 +779,10 @@ void VDC::render_sprites(int y) {
             
             // Check if pixel is within framebuffer bounds
             if (screen_x < 0 || screen_x >= FRAMEBUFFER_WIDTH) {
-                continue;
+                // Still check extended framebuffer even if outside normal bounds
+                if (!extended_fb_mode_ || screen_x < 0 || screen_x >= EXTENDED_FB_WIDTH) {
+                    continue;
+                }
             }
             
             // Get bit from pattern (bit 7 = leftmost pixel)
@@ -608,7 +791,16 @@ void VDC::render_sprites(int y) {
             
             // Draw pixel if it's on (sprites are transparent where pattern bit is 0)
             if (pixel_on) {
-                state_.framebuffer[y][screen_x] = color;
+                // Write to normal framebuffer if within bounds
+                if (screen_x >= 0 && screen_x < FRAMEBUFFER_WIDTH && y >= 0 && y < FRAMEBUFFER_HEIGHT) {
+                    state_.framebuffer[y][screen_x] = color;
+                }
+                
+                // Write to extended framebuffer if enabled and within extended bounds
+                if (extended_fb_mode_ && screen_x >= 0 && screen_x < EXTENDED_FB_WIDTH && 
+                    y >= 0 && y < EXTENDED_FB_HEIGHT) {
+                    state_.extended_framebuffer[y][screen_x] = color;
+                }
             }
         }
     }
@@ -1016,17 +1208,21 @@ void VDC::track_character_objects(int y, uint8* object_buffer, uint8 /* collisio
     }
 
     // Track quad characters
+    // See render_characters() for detailed explanation of quad character layout
+    // IMPORTANT: First character's Y/X (bytes 0-1) control entire quad group
     for (int quad_num = 0; quad_num < 4; quad_num++) {
         uint8 base_addr = VDCRegisters::QUAD_BASE + (quad_num * 16);
-        uint8 quad_x = state_.registers[base_addr + 13];
+        uint8 quad_y = state_.registers[base_addr + 0];  // Y of 1st character (controls entire quad)
+        uint8 quad_x = state_.registers[base_addr + 1];  // X of 1st character (controls entire quad)
 
         for (int sub_char = 0; sub_char < 4; sub_char++) {
             uint8 char_offset = sub_char * 4;
-            uint8 char_y = state_.registers[base_addr + char_offset + 0];
+            // Y/X from sub-character bytes are ignored; only pattern and color are used
             uint8 char_ptr_low = state_.registers[base_addr + char_offset + 2];
             uint8 char_attr = state_.registers[base_addr + char_offset + 3];
 
             int char_x = quad_x + (sub_char * 8);
+            int char_y = quad_y;  // All sub-characters use the quad's Y position
 
             if (y < char_y || y >= char_y + 14) {
                 continue;
@@ -1165,9 +1361,259 @@ void VDC::dump_registers() const {
     std::cout << " Volume:" << static_cast<int>(state_.audio_volume) << "]" << std::endl;
     
     std::cout << "\nTiming:" << std::endl;
-    std::cout << "  Scanline: " << state_.scanline << " / " << total_scanlines_ << std::endl;
+    std::cout << "  Beam Position: (" << state_.beam_x << ", " << state_.beam_y << ")" << std::endl;
+    std::cout << "  Total Scanlines: " << total_scanlines_ << std::endl;
     std::cout << "  VBLANK: " << (is_vblank() ? "YES" : "NO") << std::endl;
     std::cout << "========================\n" << std::endl;
+}
+
+// Per-pixel rendering helper: Check if grid pixel exists at position
+// Reference: Requirements 12.1, 12.2
+bool VDC::is_grid_pixel_at(int x, int y) const {
+    if (!state_.grid_enabled) {
+        return false;
+    }
+    
+    uint8 control = state_.registers[VDCRegisters::CONTROL];
+    bool fill_mode = (control & ControlBits::ENABLE_FILL_MODE) != 0;
+    bool dot_mode = (control & ControlBits::ENABLE_DOT_GRID) != 0;
+    
+    const int GRID_START_Y = 24;
+    const int GRID_ROW_HEIGHT = 24;
+    const int GRID_LINE_HEIGHT = 3;
+    const int GRID_START_X = 10;
+    const int GRID_COL_WIDTH = 16;
+    const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
+    
+    if (y < GRID_START_Y) {
+        return false;
+    }
+    
+    int y_offset = y - GRID_START_Y;
+    int grid_row = y_offset / GRID_ROW_HEIGHT;
+    int row_offset = y_offset % GRID_ROW_HEIGHT;
+    
+    // Check horizontal grid lines
+    if (grid_row < 9 && row_offset < GRID_LINE_HEIGHT) {
+        uint8 h_line_data;
+        if (grid_row < 8) {
+            h_line_data = state_.registers[VDCRegisters::GRID_H_BASE + grid_row];
+        } else {
+            h_line_data = 0;
+            for (int col = 0; col < 9; col++) {
+                if (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) {
+                    h_line_data |= (1 << col);
+                }
+            }
+        }
+        
+        for (int col = 0; col < 9; col++) {
+            if (h_line_data & (1 << col)) {
+                int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                int x_end = x_start + 14;
+                
+                if (x >= x_start && x < x_end) {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    // Check vertical grid lines
+    if (grid_row < 8) {
+        for (int col = 0; col < 10; col++) {
+            uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+            
+            if (v_line_data & (1 << grid_row)) {
+                int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                int x_end = x_start + VERT_LINE_WIDTH;
+                
+                if (x >= x_start && x < x_end) {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    // Check dot grid
+    if (dot_mode && grid_row < 9 && row_offset < 3) {
+        for (int col = 0; col < 10; col++) {
+            int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+            int x_end = x_start + 2;
+            
+            if (x >= x_start && x < x_end) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Per-pixel rendering helper: Check if character pixel exists at position
+// Reference: Requirements 12.2, 12.3
+bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
+    if (!state_.display_enabled) {
+        return false;
+    }
+    
+    // Check single characters (12 characters, 4 bytes each, starting at 0x10)
+    for (int char_num = 0; char_num < 12; char_num++) {
+        uint8 base_addr = VDCRegisters::CHAR_BASE + (char_num * 4);
+        uint8 char_y = state_.registers[base_addr + 0];
+        uint8 char_x = state_.registers[base_addr + 1];
+        uint8 char_ptr_low = state_.registers[base_addr + 2];
+        uint8 char_attr = state_.registers[base_addr + 3];
+        
+        // Check if pixel is within character bounds
+        if (y < char_y || y >= char_y + 14) {
+            continue;
+        }
+        
+        if (x < char_x || x >= char_x + 8) {
+            continue;
+        }
+        
+        // Calculate which row of the character to check
+        int char_row = (y - char_y) / 2;
+        
+        // Get character pattern from ROM
+        uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);
+        uint16 rom_addr = (char_ptr + (char_y / 2) + char_row) & 0x1FF;
+        
+        if (rom_addr >= 512) {
+            continue;
+        }
+        
+        uint8 pattern = character_rom_[rom_addr];
+        
+        // Check if pixel is on
+        int pixel_x = x - char_x;
+        bool pixel_on = (pattern & (0x80 >> pixel_x)) != 0;
+        
+        if (pixel_on) {
+            color = (char_attr >> 1) & 0x07;
+            return true;
+        }
+    }
+    
+    // Check quad characters (4 groups, 16 bytes each, starting at 0x40)
+    // See render_characters() for detailed explanation of quad character layout
+    // IMPORTANT: First character's Y/X (bytes 0-1) control entire quad group
+    for (int quad_num = 0; quad_num < 4; quad_num++) {
+        uint8 base_addr = VDCRegisters::QUAD_BASE + (quad_num * 16);
+        uint8 quad_y = state_.registers[base_addr + 0];  // Y of 1st character (controls entire quad)
+        uint8 quad_x = state_.registers[base_addr + 1];  // X of 1st character (controls entire quad)
+        
+        for (int sub_char = 0; sub_char < 4; sub_char++) {
+            uint8 char_offset = sub_char * 4;
+            // Y/X from sub-character bytes are ignored; only pattern and color are used
+            uint8 char_ptr_low = state_.registers[base_addr + char_offset + 2];
+            uint8 char_attr = state_.registers[base_addr + char_offset + 3];
+            
+            int char_x = quad_x + (sub_char * 8);
+            int char_y = quad_y;  // All sub-characters use the quad's Y position
+            
+            // Check if pixel is within character bounds
+            if (y < char_y || y >= char_y + 14) {
+                continue;
+            }
+            
+            if (x < char_x || x >= char_x + 8) {
+                continue;
+            }
+            
+            // Calculate which row to check
+            int char_row = (y - char_y) / 2;
+            
+            // Get character pattern from ROM
+            uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);
+            uint16 rom_addr = (char_ptr + (char_y / 2) + char_row) & 0x1FF;
+            
+            if (rom_addr >= 512) {
+                continue;
+            }
+            
+            uint8 pattern = character_rom_[rom_addr];
+            
+            // Check if pixel is on
+            int pixel_x = x - char_x;
+            bool pixel_on = (pattern & (0x80 >> pixel_x)) != 0;
+            
+            if (pixel_on) {
+                color = (char_attr >> 1) & 0x07;
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Per-pixel rendering helper: Check if sprite pixel exists at position
+// Reference: Requirements 12.3, 12.4
+bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
+    if (!state_.display_enabled) {
+        return false;
+    }
+    
+    // Check all 4 sprites (in reverse order for proper priority)
+    // Sprite 0 has highest priority, so check it last
+    for (int sprite_num = 3; sprite_num >= 0; sprite_num--) {
+        uint8 base_addr = VDCRegisters::SPRITE0_Y + (sprite_num * 4);
+        uint8 sprite_y = state_.registers[base_addr + 0];
+        uint8 sprite_x = state_.registers[base_addr + 1];
+        uint8 sprite_color_attr = state_.registers[base_addr + 2];
+        
+        // Extract sprite attributes
+        uint8 sprite_color = (sprite_color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT;
+        bool double_size = (sprite_color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
+        bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
+        bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
+        
+        // Calculate sprite height and check if pixel is within sprite bounds
+        int sprite_height = double_size ? 16 : 8;
+        if (y < sprite_y || y >= sprite_y + sprite_height) {
+            continue;
+        }
+        
+        // Calculate which row of the sprite pattern to check
+        int sprite_row = y - sprite_y;
+        if (double_size) {
+            sprite_row /= 2;
+        }
+        
+        // Get sprite pattern byte for this row
+        uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (sprite_num * 8) + sprite_row;
+        uint8 pattern = state_.registers[pattern_addr];
+        
+        // Calculate pixel position with horizontal shift
+        int pixel_x = x - sprite_x;
+        
+        bool is_even_row = (sprite_row & 1) == 0;
+        if (shift_full) {
+            pixel_x -= 1;
+        } else if (shift_even && is_even_row) {
+            pixel_x -= 1;
+        }
+        
+        // Check if pixel is within sprite width
+        int sprite_width = double_size ? 16 : 8;
+        if (pixel_x < 0 || pixel_x >= sprite_width) {
+            continue;
+        }
+        
+        // Get bit from pattern
+        int pattern_x = double_size ? (pixel_x / 2) : pixel_x;
+        bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;
+        
+        if (pixel_on) {
+            color = sprite_color;
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 } // namespace videopac

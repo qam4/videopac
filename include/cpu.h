@@ -29,7 +29,10 @@ struct CPUState {
                                 // The timer increments every 32 instruction cycles via this prescaler
     uint64 clock_cycles;        // Total cycles executed
     uint8 current_bank;         // Current register bank (0 or 1)
-                                // Note: F1 flag is PSW bit 4, same as Bank Select (BS)
+                                // Controlled by SEL RB0/RB1 instructions (PSW bit 4 = BS)
+    bool f1_flag;               // F1 flag (separate from PSW) - user flag, can be tested with JF1
+                                // NOTE: F1 is NOT in PSW! F0 is in PSW bit 5, but F1 is separate.
+                                // NOTE: F1 is NOT the same as Bank Select (BS)! They are independent.
     bool memory_bank;           // Memory bank flag (DBF): false=MB0 (0x000-0x7FF), true=MB1 (0x800-0xFFF)
                                 // Set by SEL MB0/MB1 instructions, affects JMP/CALL target addresses
 };
