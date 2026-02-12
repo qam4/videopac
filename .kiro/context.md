@@ -12,6 +12,22 @@ cmake --build build
 
 This will compile all targets (emulator, tests, tools).
 
+## Running the Emulator
+
+To run the emulator with trace logging enabled:
+
+```bash
+./run_emulator_hl.sh "roms/Satellite Attack (1981)(Philips)(EU).bin"
+```
+
+Or with the French BIOS:
+
+```bash
+./run_emulator_hl.sh "roms/Philips C52 BIOS (19xx)(Philips)(FR).bin" "roms/Satellite Attack (1981)(Philips)(EU).bin"
+```
+
+The trace will be written to `trace.log`.
+
 ## Git Commit Workflow
 
 When making commits, always follow this process:
@@ -138,7 +154,13 @@ build/videopac --bios <bios_file> <rom_file>
 
 ## Debugging and Development Tools
 
-### Command-Line Options
+**See [doc/debugging.md](../doc/debugging.md) for comprehensive debugging documentation.**
+
+**See [doc/trace_format.md](../doc/trace_format.md) for detailed trace log format.**
+
+### Quick Reference
+
+#### Command-Line Options
 
 ```bash
 build/videopac [options] <rom_file>
@@ -153,29 +175,16 @@ Options:
   --help              Show help message
 ```
 
-### Debugger Features
-
-The emulator includes a built-in debugger with:
-- **Breakpoints**: Set breakpoints at specific addresses
-- **Single-step execution**: Step through instructions one at a time
-- **Instruction trace**: Log every instruction executed (requires `--debug` flag)
-- **Memory inspection**: View CPU registers, RAM, and VDC state
-- **Disassembly**: View disassembled code around current PC
+#### Trace Logging
 
 **Important**: To generate trace logs, you MUST use the `--debug` flag. The trace will be written to `trace.log`.
 
-### Trace Log
-
-When running with `--debug`, the emulator generates a trace log showing:
-- Program counter (PC)
-- Instruction opcode and mnemonic
-- Accumulator (A) and PSW register values
-
-Example trace output:
+Trace format (see [doc/trace_format.md](../doc/trace_format.md) for details):
 ```
-0x0a8: 80     MOVX A,@R0 | A=0x43 PSW=0x90
-0x0a9: 91     MOVX @R1,A | A=0xf0 PSW=0x90
+[F:5 C:297419] 0x171: 90 MOVX @R0,A | A=0xf8 PSW=0x90 P1=0x1c P2=0x00 [VDC:OFF RAM:OFF] RB0 VDC[beam:123,5 ctrl:0x00 stat:0x02 disp:OFF vbl:N] [WRITE @R0=0x10 val=0xf8 -> NOWHERE!]
 ```
+
+**Note**: Traces log once per CPU instruction (not per VDC cycle). VDC runs ~10x faster than CPU, so VDC state shown is a snapshot at the moment the CPU instruction completes.
 
 ### Useful Debugging Addresses (BIOS)
 
