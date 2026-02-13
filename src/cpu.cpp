@@ -572,10 +572,18 @@ uint8 CPU::execute_instruction() {
         // Flags affected: None
         // Cycles: 2
         // Reads data from the external BUS with RD strobe active.
-        case 0x08:
-            // BUS input with RD strobe
+        // On Odyssey 2, this reads joystick data when Port 2 bits 0-2 select joystick
+        case 0x08: {
+            // Read joystick data from input handler
+            // Port 2 bits 0-2 select which joystick (0=joy2, 1=joy1)
+            if (input_) {
+                state_.a = input_->read_joystick(state_.port2 & 0x07);
+            } else {
+                state_.a = 0xFF;  // No input = all bits high (nothing pressed)
+            }
             cycles = 2;
             break;
+        }
             
         // ========== CONDITIONAL JUMP INSTRUCTIONS ==========
         
