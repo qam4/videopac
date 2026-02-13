@@ -65,18 +65,31 @@ TEST(UtilsTest, ChecksumCalculation) {
 }
 
 TEST(TypesTest, ColorPalette) {
-    // Test bright palette
-    EXPECT_EQ(PALETTE_BRIGHT[0].r, 0x00);  // Black
-    EXPECT_EQ(PALETTE_BRIGHT[0].g, 0x00);
-    EXPECT_EQ(PALETTE_BRIGHT[0].b, 0x00);
+    // Test bright palette - Intel 8245 VDC standard values
+    EXPECT_EQ(PALETTE_BRIGHT[0].r, 0x49);  // Dark Grey
+    EXPECT_EQ(PALETTE_BRIGHT[0].g, 0x49);
+    EXPECT_EQ(PALETTE_BRIGHT[0].b, 0x49);
+    
+    EXPECT_EQ(PALETTE_BRIGHT[1].r, 0xFF);  // Red
+    EXPECT_EQ(PALETTE_BRIGHT[1].g, 0x49);
+    EXPECT_EQ(PALETTE_BRIGHT[1].b, 0x49);
     
     EXPECT_EQ(PALETTE_BRIGHT[7].r, 0xFF);  // White
     EXPECT_EQ(PALETTE_BRIGHT[7].g, 0xFF);
     EXPECT_EQ(PALETTE_BRIGHT[7].b, 0xFF);
     
     // Test dim palette
-    EXPECT_EQ(PALETTE_DIM[1].b, 0x7F);  // Blue (dim)
-    EXPECT_EQ(PALETTE_DIM[7].r, 0x7F);  // White (dim)
+    EXPECT_EQ(PALETTE_DIM[0].r, 0x00);  // Black
+    EXPECT_EQ(PALETTE_DIM[0].g, 0x00);
+    EXPECT_EQ(PALETTE_DIM[0].b, 0x00);
+    
+    EXPECT_EQ(PALETTE_DIM[1].r, 0xB6);  // Red (half)
+    EXPECT_EQ(PALETTE_DIM[1].g, 0x00);
+    EXPECT_EQ(PALETTE_DIM[1].b, 0x00);
+    
+    EXPECT_EQ(PALETTE_DIM[7].r, 0xB6);  // Light Grey (half)
+    EXPECT_EQ(PALETTE_DIM[7].g, 0xB6);
+    EXPECT_EQ(PALETTE_DIM[7].b, 0xB6);
 }
 
 TEST(TypesTest, ResultType) {

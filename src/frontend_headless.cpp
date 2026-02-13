@@ -199,6 +199,12 @@ void HeadlessFrontend::render_frame() {
     
     emulator_->run_frame();
     frame_count_++;
+    
+    // Debug: Dump VDC registers at frame 8 (after game starts)
+    if (frame_count_ == 8) {
+        std::cout << "\n";
+        emulator_->get_vdc().dump_registers();
+    }
 }
 
 void HeadlessFrontend::process_audio() {
@@ -322,24 +328,52 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
         return;
     }
     
-    // Apply aspect ratio correction for Videopac resolution
-    // The Videopac has non-square pixels displayed on a 4:3 TV
-    // Each pixel is roughly 2x wider than it is tall
-    int output_width = (height * 4) / 3;
+    // Check if this is extended framebuffer (240x250) or normal (160x200)
+    bool is_extended = (width == EXTENDED_FB_WIDTH && height == EXTENDED_FB_HEIGHT);
     
-    // Write PPM header
-    file << "P6\n" << output_width << " " << height << "\n255\n";
-    
-    // Convert palette indices to RGB with horizontal stretching
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < output_width; x++) {
-            // Map output x coordinate back to source framebuffer
-            int src_x = (x * width) / output_width;
-            uint8 palette_index = framebuffer[y * width + src_x];
-            Color color = PALETTE_BRIGHT[palette_index % 8];
-            file.put(color.r);
-            file.put(color.g);
-            file.put(color.b);
+    if (is_extended) {
+        // Extended framebuffer: output as-is with 2x horizontal scaling
+        // This shows the full VDC area including overscan
+        int output_width = width * 2;   // 240 * 2 = 480
+        int output_height = height;     // 250
+        
+        file << "P6\n" << output_width << " " << output_height << "\n255\n";
+        
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                uint8 palette_index = framebuffer[y * width + x];
+                Color color = PALETTE_BRIGHT[palette_index % 8];
+                // Write each pixel twice (2x horizontal scaling)
+                file.put(color.r);
+                file.put(color.g);
+                file.put(color.b);
+                file.put(color.r);
+                file.put(color.g);
+                file.put(color.b);
+            }
+        }
+    } else {
+        // Normal framebuffer (160x240): O2EM-style 320x240 output
+        // - 2x horizontal scaling for square-looking pixels
+        // - No vertical borders needed since framebuffer is already 240 lines
+        int output_width = 320;   // 160 * 2
+        int output_height = 240;  // Same as framebuffer height
+        
+        file << "P6\n" << output_width << " " << output_height << "\n255\n";
+        
+        // Framebuffer area (240 lines, each pixel 2x wide)
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                uint8 palette_index = framebuffer[y * width + x];
+                Color color = PALETTE_BRIGHT[palette_index % 8];
+                // Write each pixel twice (2x horizontal scaling)
+                file.put(color.r);
+                file.put(color.g);
+                file.put(color.b);
+                file.put(color.r);
+                file.put(color.g);
+                file.put(color.b);
+            }
         }
     }
     

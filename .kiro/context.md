@@ -549,3 +549,28 @@ grep -B2 "0x09f: 43 28.*ORL.*A=0xff" trace.log
 - `0x411`: main_loop1 - inner game loop
 - `0x09E-0x0A1`: VDC Control register read/modify/write sequence
 
+
+
+## Known Issues
+
+### Satellite Attack Rendering Bugs (2026-02-13)
+
+The following rendering issues have been identified in Satellite Attack:
+
+1. **UFO sprite too small**: The player's UFO (Sprite 0) appears at 8x8 pixels when it should be 16x16. The sprite looks correct but is smaller than expected. This suggests the double-size flag (bit 2 of sprite color attribute register at 0x02) may not be set by the game, or the emulator isn't reading it correctly.
+
+2. **Collision with UFO not working**: Collisions between satellites work correctly, but collisions with the UFO (Sprite 0) don't register. The collision detection code in `detect_collisions()` and `track_sprite_object()` appears correct and should track all 4 sprites including Sprite 0. Need to verify the collision enable register (0xA2) includes bit 0.
+
+3. **Status bar wrong/out of screen**: The status bar (high score display using quad characters) is positioned incorrectly and appears cut off or outside the visible screen area. Earlier investigation showed it's positioned at Y=199 which is at the very bottom edge of the 200-line framebuffer. The boundary check in character rendering may be rejecting Y=199 incorrectly.
+
+4. **Enemy saucer looks incorrect**: The enemy saucer that appears periodically doesn't render correctly. This might be a sprite rendering issue (pattern data, double-size) or a character rendering issue depending on how the game implements it.
+
+**Investigation needed**:
+- Add debug logging to sprite rendering to check if double-size flag is set for Sprite 0
+- Verify collision enable register includes bit 0 for Sprite 0
+- Check character boundary checking logic (likely using `>=` when it should use `>`)
+- Examine enemy saucer sprite/character configuration
+
+**Related code**:
+- `src/vdc.cpp`: `render_sprites()`, `detect_collisions()`, `track_sprite_object()`, `render_characters()`
+- `include/vdc.h`: Sprite and collision register definitions

@@ -71,33 +71,39 @@ struct Color {
     constexpr Color(uint8 red, uint8 green, uint8 blue) : r(red), g(green), b(blue) {}
 };
 
-// Videopac 8-color palette (bright luminance)
+// Videopac 8-color palette (full brightness)
+// Reference: Intel 8245 VDC standard digital RGB values
+// Used for sprites and characters
 constexpr Color PALETTE_BRIGHT[8] = {
-    {0x00, 0x00, 0x00},  // 0: Black
-    {0x00, 0x00, 0xFF},  // 1: Blue
-    {0x00, 0xFF, 0x00},  // 2: Green
-    {0x00, 0xFF, 0xFF},  // 3: Cyan
-    {0xFF, 0x00, 0x00},  // 4: Red
-    {0xFF, 0x00, 0xFF},  // 5: Magenta
-    {0xFF, 0xFF, 0x00},  // 6: Yellow
+    {0x49, 0x49, 0x49},  // 0: Dark Grey
+    {0xFF, 0x49, 0x49},  // 1: Red
+    {0x49, 0xFF, 0x49},  // 2: Green
+    {0xFF, 0xFF, 0x49},  // 3: Yellow (Cyan in some docs)
+    {0x49, 0x49, 0xFF},  // 4: Blue
+    {0xFF, 0x49, 0xFF},  // 5: Magenta (Violet)
+    {0xFF, 0xFF, 0xFF},  // 6: White (Light Grey in some docs)
     {0xFF, 0xFF, 0xFF}   // 7: White
 };
 
-// Videopac 8-color palette (dim luminance - 50% brightness)
+// Videopac 8-color palette (half brightness)
+// Reference: Intel 8245 VDC standard digital RGB values
+// Used for background and grid elements
 constexpr Color PALETTE_DIM[8] = {
     {0x00, 0x00, 0x00},  // 0: Black
-    {0x00, 0x00, 0x7F},  // 1: Blue (dim)
-    {0x00, 0x7F, 0x00},  // 2: Green (dim)
-    {0x00, 0x7F, 0x7F},  // 3: Cyan (dim)
-    {0x7F, 0x00, 0x00},  // 4: Red (dim)
-    {0x7F, 0x00, 0x7F},  // 5: Magenta (dim)
-    {0x7F, 0x7F, 0x00},  // 6: Yellow (dim)
-    {0x7F, 0x7F, 0x7F}   // 7: White (dim)
+    {0xB6, 0x00, 0x00},  // 1: Red (half)
+    {0x00, 0xB6, 0x00},  // 2: Green (half)
+    {0xB6, 0xB6, 0x00},  // 3: Yellow (half)
+    {0x00, 0x00, 0xB6},  // 4: Blue (half)
+    {0xB6, 0x00, 0xB6},  // 5: Magenta (half)
+    {0xB6, 0xB6, 0xB6},  // 6: Light Grey (half)
+    {0xB6, 0xB6, 0xB6}   // 7: Light Grey (half)
 };
 
 // VDC framebuffer dimensions
+// The VDC can render up to Y=240 (or ~242 on PAL), not just 200
+// Games like Satellite Attack place status bars at Y=199-207
 constexpr int FRAMEBUFFER_WIDTH = 160;
-constexpr int FRAMEBUFFER_HEIGHT = 200;
+constexpr int FRAMEBUFFER_HEIGHT = 240;  // Full VDC height to capture status bars
 
 // Extended debug framebuffer dimensions (shows area beyond visible display)
 // VDC can address Y positions up to ~242 (PAL), X up to 227 (full scanline)

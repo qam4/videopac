@@ -157,15 +157,12 @@ void SDLFrontend::shutdown() {
 }
 
 bool SDLFrontend::init_video() {
-    // Calculate window size with correct aspect ratio
-    // The Videopac has non-square pixels: 160x200 displayed on a 4:3 TV
-    // Each pixel is roughly 2x wider than it is tall
-    // To maintain 4:3 aspect ratio: width = height * 4/3
-    // So for 200 lines: 200 * 4/3 = 266.67 display width
-    // This means 160 pixels stretched to 266.67 = 1.67x horizontal stretch
-    int display_width = (FRAMEBUFFER_HEIGHT * 4) / 3;  // 266 pixels for 4:3 aspect
+    // Proper Videopac display: 320x240 output (2x horizontal scaling)
+    // VDC framebuffer is 160x240 (full VDC height to capture status bars)
+    int display_width = 320;   // 160 * 2
+    int display_height = 240;  // Full VDC height
     int window_width = display_width * config_.display_scale;
-    int window_height = FRAMEBUFFER_HEIGHT * config_.display_scale;
+    int window_height = display_height * config_.display_scale;
     
     // Create window
     uint32 window_flags = SDL_WINDOW_SHOWN;
@@ -199,11 +196,11 @@ bool SDLFrontend::init_video() {
         return false;
     }
     
-    // Set logical size for automatic scaling
-    SDL_RenderSetLogicalSize(renderer_, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+    // Set logical size to 320x240 for proper aspect ratio
+    SDL_RenderSetLogicalSize(renderer_, display_width, display_height);
     
-    // Enable linear filtering for smoother scaling (antialiasing)
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");  // 0=nearest, 1=linear, 2=best
+    // Use nearest-neighbor filtering for sharp pixels
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");  // 0=nearest (sharp), 1=linear, 2=best
     
     // Create texture for framebuffer
     texture_ = SDL_CreateTexture(
@@ -335,12 +332,18 @@ bool SDLFrontend::is_running() const {
 void SDLFrontend::render_frame() {
     update_texture();
     
-    // Clear renderer
+    // Clear renderer (black background)
     SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
     SDL_RenderClear(renderer_);
     
-    // Render texture
-    SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
+    // Render texture: 160x240 framebuffer to 320x240 display (2x horizontal scaling)
+    SDL_Rect dest_rect;
+    dest_rect.x = 0;
+    dest_rect.y = 0;
+    dest_rect.w = 320; // 160 * 2
+    dest_rect.h = 240; // No vertical scaling
+    
+    SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
     
     // Present
     SDL_RenderPresent(renderer_);

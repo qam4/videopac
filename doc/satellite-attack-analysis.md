@@ -1,5 +1,7 @@
 # Satellite Attack Character Analysis
 
+https://www.youtube.com/watch?v=ViJYf3gqZSo
+
 ## Character Codes for Satellites
 
 Based on the Satellite Attack disassembly (`doc/satellite-attack-disassembly.txt` lines 874-877):
