@@ -322,13 +322,20 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
         return;
     }
     
-    // Write PPM header
-    file << "P6\n" << width << " " << height << "\n255\n";
+    // Apply aspect ratio correction for Videopac resolution
+    // The Videopac has non-square pixels displayed on a 4:3 TV
+    // Each pixel is roughly 2x wider than it is tall
+    int output_width = (height * 4) / 3;
     
-    // Convert palette indices to RGB
+    // Write PPM header
+    file << "P6\n" << output_width << " " << height << "\n255\n";
+    
+    // Convert palette indices to RGB with horizontal stretching
     for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            uint8 palette_index = framebuffer[y * width + x];
+        for (int x = 0; x < output_width; x++) {
+            // Map output x coordinate back to source framebuffer
+            int src_x = (x * width) / output_width;
+            uint8 palette_index = framebuffer[y * width + src_x];
             Color color = PALETTE_BRIGHT[palette_index % 8];
             file.put(color.r);
             file.put(color.g);

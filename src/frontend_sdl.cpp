@@ -157,8 +157,14 @@ void SDLFrontend::shutdown() {
 }
 
 bool SDLFrontend::init_video() {
-    // Calculate window size
-    int window_width = FRAMEBUFFER_WIDTH * config_.display_scale;
+    // Calculate window size with correct aspect ratio
+    // The Videopac has non-square pixels: 160x200 displayed on a 4:3 TV
+    // Each pixel is roughly 2x wider than it is tall
+    // To maintain 4:3 aspect ratio: width = height * 4/3
+    // So for 200 lines: 200 * 4/3 = 266.67 display width
+    // This means 160 pixels stretched to 266.67 = 1.67x horizontal stretch
+    int display_width = (FRAMEBUFFER_HEIGHT * 4) / 3;  // 266 pixels for 4:3 aspect
+    int window_width = display_width * config_.display_scale;
     int window_height = FRAMEBUFFER_HEIGHT * config_.display_scale;
     
     // Create window
@@ -195,6 +201,9 @@ bool SDLFrontend::init_video() {
     
     // Set logical size for automatic scaling
     SDL_RenderSetLogicalSize(renderer_, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+    
+    // Enable linear filtering for smoother scaling (antialiasing)
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");  // 0=nearest, 1=linear, 2=best
     
     // Create texture for framebuffer
     texture_ = SDL_CreateTexture(
@@ -400,7 +409,49 @@ void SDLFrontend::process_input() {
 void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
     bool key_down = (event.type == SDL_KEYDOWN);
     
-    // Check for special keys
+    // Ignore key repeat events (when holding a key down)
+    if (event.repeat != 0) {
+        return;
+    }
+    
+    // Handle joystick keys (both press and release)
+    switch (event.keysym.sym) {
+        // Arrow keys + Space for joystick 1
+        case SDLK_UP:
+            emulator_->get_input_handler().set_joystick_state(0, Direction::Up, key_down);
+            return;
+        case SDLK_DOWN:
+            emulator_->get_input_handler().set_joystick_state(0, Direction::Down, key_down);
+            return;
+        case SDLK_LEFT:
+            emulator_->get_input_handler().set_joystick_state(0, Direction::Left, key_down);
+            return;
+        case SDLK_RIGHT:
+            emulator_->get_input_handler().set_joystick_state(0, Direction::Right, key_down);
+            return;
+        case SDLK_SPACE:
+            emulator_->get_input_handler().set_joystick_button(0, key_down);
+            return;
+            
+        // WASD + Left Shift for joystick 2
+        case SDLK_w:
+            emulator_->get_input_handler().set_joystick_state(1, Direction::Up, key_down);
+            return;
+        case SDLK_s:
+            emulator_->get_input_handler().set_joystick_state(1, Direction::Down, key_down);
+            return;
+        case SDLK_a:
+            emulator_->get_input_handler().set_joystick_state(1, Direction::Left, key_down);
+            return;
+        case SDLK_d:
+            emulator_->get_input_handler().set_joystick_state(1, Direction::Right, key_down);
+            return;
+        case SDLK_LSHIFT:
+            emulator_->get_input_handler().set_joystick_button(1, key_down);
+            return;
+    }
+    
+    // Check for special keys (only on key down)
     if (key_down) {
         switch (event.keysym.sym) {
             case SDLK_ESCAPE:
@@ -444,8 +495,6 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
     // Map to Videopac key
     VidKey vid_key = map_sdl_key(event.keysym.sym);
     if (static_cast<uint8>(vid_key) != 0xFF) {
-        std::cout << "Key " << (key_down ? "pressed" : "released") << ": " 
-                  << std::hex << "0x" << static_cast<int>(vid_key) << std::dec << std::endl;
         emulator_->get_input_handler().set_key_state(vid_key, key_down);
     }
 }
