@@ -279,6 +279,88 @@ TEST(VDCTest, RegisterAccess) {
     EXPECT_EQ(vdc.read_register(VDCRegisters::SPRITE0_X), 123);
 }
 
+// Test that both sprites get collision bits set
+TEST(VDCTest, BothSpritesGetCollisionBits) {
+    VDC vdc(VideoStandard::NTSC);
+    vdc.reset();
+    
+    // Enable display
+    vdc.write_register(VDCRegisters::CONTROL, ControlBits::ENABLE_DISPLAY);
+    
+    // Enable collision detection for both sprites
+    vdc.write_register(VDCRegisters::COLLISION, 
+                      CollisionBits::SPRITE0 | CollisionBits::SPRITE1);
+    
+    // Set up overlapping sprites - Sprite 0 and Sprite 1 at same position
+    vdc.write_register(VDCRegisters::SPRITE0_Y, 50);
+    vdc.write_register(VDCRegisters::SPRITE0_X, 50);
+    vdc.write_register(VDCRegisters::SPRITE0_COLOR, 0x18);
+    vdc.write_register(VDCRegisters::SPRITE0_PATTERN, 0xFF);
+    
+    vdc.write_register(VDCRegisters::SPRITE1_Y, 50);
+    vdc.write_register(VDCRegisters::SPRITE1_X, 50);
+    vdc.write_register(VDCRegisters::SPRITE1_COLOR, 0x20);
+    vdc.write_register(VDCRegisters::SPRITE1_PATTERN, 0xFF);
+    
+    // Render to generate collision
+    advance_to_scanline(vdc, 50);
+    vdc.render_scanline();
+    
+    // Read collision register - BOTH sprite bits should be set
+    uint8 collision = vdc.read_register(VDCRegisters::COLLISION);
+    
+    // Debug output
+    if ((collision & CollisionBits::SPRITE0) == 0) {
+        std::cout << "ERROR: Sprite 0 collision bit NOT set! collision=0x" 
+                  << std::hex << (int)collision << std::dec << std::endl;
+    }
+    if ((collision & CollisionBits::SPRITE1) == 0) {
+        std::cout << "ERROR: Sprite 1 collision bit NOT set! collision=0x" 
+                  << std::hex << (int)collision << std::dec << std::endl;
+    }
+    
+    EXPECT_EQ(collision & CollisionBits::SPRITE0, CollisionBits::SPRITE0) << "Sprite 0 collision bit should be set";
+    EXPECT_EQ(collision & CollisionBits::SPRITE1, CollisionBits::SPRITE1) << "Sprite 1 collision bit should be set";
+}
+
+// Test sprite vs character collision - both bits should be set
+TEST(VDCTest, SpriteCharacterCollisionBothBitsSet) {
+    VDC vdc(VideoStandard::NTSC);
+    vdc.reset();
+    
+    // Enable display
+    vdc.write_register(VDCRegisters::CONTROL, ControlBits::ENABLE_DISPLAY);
+    
+    // Enable collision detection for sprite 0 and characters
+    vdc.write_register(VDCRegisters::COLLISION, 
+                      CollisionBits::SPRITE0 | CollisionBits::CHARACTERS);
+    
+    // Set up a character at position (50, 50)
+    // Character ROM has patterns, so this should render something
+    vdc.write_register(VDCRegisters::CHAR_BASE + 0, 50);  // Y
+    vdc.write_register(VDCRegisters::CHAR_BASE + 1, 50);  // X
+    vdc.write_register(VDCRegisters::CHAR_BASE + 2, 0x00); // Pattern pointer low
+    vdc.write_register(VDCRegisters::CHAR_BASE + 3, 0x0E); // Color=7, pattern high bit=0
+    
+    // Set up sprite 0 at same position
+    vdc.write_register(VDCRegisters::SPRITE0_Y, 50);
+    vdc.write_register(VDCRegisters::SPRITE0_X, 50);
+    vdc.write_register(VDCRegisters::SPRITE0_COLOR, 0x18);
+    vdc.write_register(VDCRegisters::SPRITE0_PATTERN, 0xFF);
+    
+    // Render to generate collision
+    advance_to_scanline(vdc, 50);
+    vdc.render_scanline();
+    
+    // Read collision register - BOTH sprite 0 and character bits should be set
+    uint8 collision = vdc.read_register(VDCRegisters::COLLISION);
+    
+    EXPECT_EQ(collision & CollisionBits::SPRITE0, CollisionBits::SPRITE0) 
+        << "Sprite 0 collision bit should be set when colliding with character";
+    EXPECT_EQ(collision & CollisionBits::CHARACTERS, CollisionBits::CHARACTERS) 
+        << "Character collision bit should be set when colliding with sprite";
+}
+
 // Test collision register auto-clear on read
 TEST(VDCTest, CollisionRegisterClear) {
     VDC vdc(VideoStandard::NTSC);

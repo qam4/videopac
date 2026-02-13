@@ -62,6 +62,9 @@ void VDC::tick(uint8 cycles) {
 // Advance VDC by exactly one clock cycle
 // Reference: Requirements 2.1, 2.3, 2.4
 void VDC::tick_one_cycle() {
+    // Save previous beam position to detect scanline completion
+    uint32 prev_beam_y = state_.beam_y;
+    
     // Advance total cycles
     state_.total_cycles++;
     
@@ -113,6 +116,12 @@ void VDC::tick_one_cycle() {
     // Render pixel at current beam position if visible
     if (is_beam_visible()) {
         render_current_pixel();
+    }
+    
+    // Detect collisions at the end of each scanline
+    // This must happen after all pixels on the scanline have been rendered
+    if (state_.beam_y != prev_beam_y && prev_beam_y < FRAMEBUFFER_HEIGHT) {
+        detect_collisions(prev_beam_y);
     }
 }
 
@@ -1321,8 +1330,33 @@ void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8
         if (pixel_on) {
             // Check for collision with existing objects
             if (object_buffer[screen_x] != 0) {
+                // Set collision bit for current sprite
                 state_.collision_state |= sprite_bit;
                 state_.collision_detected = true;
+                
+                // Also set collision bits for any other objects at this pixel
+                // This ensures both objects in a collision get their bits set
+                
+                // Check for other sprites
+                for (int other_sprite = 0; other_sprite < 4; other_sprite++) {
+                    uint8 other_bit = (1 << other_sprite);
+                    if (object_buffer[screen_x] & other_bit) {
+                        state_.collision_state |= other_bit;
+                    }
+                }
+                
+                // Check for characters
+                if (object_buffer[screen_x] & CollisionBits::CHARACTERS) {
+                    state_.collision_state |= CollisionBits::CHARACTERS;
+                }
+                
+                // Check for grid objects
+                if (object_buffer[screen_x] & CollisionBits::VERT_GRID) {
+                    state_.collision_state |= CollisionBits::VERT_GRID;
+                }
+                if (object_buffer[screen_x] & CollisionBits::HORIZ_GRID) {
+                    state_.collision_state |= CollisionBits::HORIZ_GRID;
+                }
             }
             object_buffer[screen_x] |= sprite_bit;
         }
@@ -1342,10 +1376,12 @@ void VDC::dump_registers() const {
     std::cout << " (palette index " << (state_.registers[0xA3] & 0x07) << ")" << std::endl;
     
     std::cout << "\nSprite 0 (Player):" << std::endl;
-    std::cout << "  X: " << static_cast<int>(state_.registers[0x7C]) << std::endl;
-    std::cout << "  Y: " << static_cast<int>(state_.registers[0x7D]) << std::endl;
-    std::cout << "  Attr: 0x" << std::hex << static_cast<int>(state_.registers[0x7A]) << std::dec << std::endl;
-    std::cout << "  Color: 0x" << std::hex << static_cast<int>(state_.registers[0x7B]) << std::dec << std::endl;
+    std::cout << "  Y: " << static_cast<int>(state_.registers[0x00]) << std::endl;
+    std::cout << "  X: " << static_cast<int>(state_.registers[0x01]) << std::endl;
+    std::cout << "  Color/Attr: 0x" << std::hex << static_cast<int>(state_.registers[0x02]) << std::dec;
+    bool double_size = (state_.registers[0x02] & 0x04) != 0;
+    uint8 color = (state_.registers[0x02] >> 3) & 0x07;
+    std::cout << " [double_size=" << double_size << " color=" << (int)color << "]" << std::endl;
     
     std::cout << "\nCharacters (first 4):" << std::endl;
     for (int i = 0; i < 4; i++) {
