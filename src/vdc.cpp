@@ -219,7 +219,8 @@ uint8 VDC::read_register(uint8 address) {
 }
 
 // Render current scanline to framebuffer
-// Render current scanline to framebuffer
+// NOTE: This function is primarily used by tests. During normal emulation,
+// rendering happens per-pixel via render_current_pixel() called from tick_one_cycle().
 // Reference: doc/o2doc.md section 4.0, doc/8245.md lines 200-300
 void VDC::render_scanline() {
     // Determine max height based on extended framebuffer mode
@@ -391,6 +392,8 @@ void VDC::calculate_timing() {
 }
 
 // Rendering helper: Fill scanline with background color
+// NOTE: This function is only used by render_scanline() for testing.
+// During normal emulation, background rendering happens in render_current_pixel().
 // Reference: doc/o2doc.md section 4.9, doc/8245.md lines 440-470
 void VDC::render_background(int y) {
     // Get background color from color register (bits 3-5)
@@ -411,6 +414,8 @@ void VDC::render_background(int y) {
 }
 
 // Rendering helper: Render grid elements for scanline
+// NOTE: This function is only used by render_scanline() for testing.
+// During normal emulation, grid rendering happens via is_grid_pixel_at() in render_current_pixel().
 // Reference: doc/o2doc.md section 4.2, doc/8245.md lines 300-350
 void VDC::render_grid(int y) {
     // Check if grid is enabled
@@ -540,6 +545,8 @@ void VDC::render_grid(int y) {
 }
 
 // Rendering helper: Render characters for scanline
+// NOTE: This function is only used by render_scanline() for testing.
+// During normal emulation, character rendering happens via is_character_pixel_at() in render_current_pixel().
 // Reference: doc/o2doc.md section 4.4-4.5, doc/8245.md lines 200-250
 void VDC::render_characters(int y) {
     // Check if display is enabled
@@ -633,25 +640,19 @@ void VDC::render_characters(int y) {
     //   Bytes 8-11:  Character 2 (Y, X, pattern_low, color+pattern_high)
     //   Bytes 12-15: Character 3 (Y, X, pattern_low, color+pattern_high)
     //
-    // The FIRST character's position (bytes 0-1) controls the entire quad group.
-    // All 4 sub-characters share this Y position and are spaced horizontally.
+    // NOTE: doc/o2doc.md says "the X position and Y position of the LAST character
+    // sets the position of the whole set", but testing shows Satellite Attack writes
+    // position to the FIRST character (bytes 0-1). Using bytes 0-1 for compatibility.
     //
-    // NOTE: doc/o2doc.md incorrectly states "the X position and Y position of the 
-    // LAST character sets the position of the whole set". This is contradicted by:
-    // - Actual game code (writes to bytes 0-1, not 12-13)
-    // - Hardware behavior (confirmed via internet research)
-    // - BIOS routines (write to first character position)
-    //
-    // The hardware ignores the Y/X values in bytes 4-5, 8-9, and 12-13.
-    //
-    // Reference: doc/o2doc.md section 4.5 (contains error about "last character")
+    // Reference: doc/o2doc.md section 4.5
+    
     for (int quad_num = 0; quad_num < 4; quad_num++) {
         uint8 base_addr = VDCRegisters::QUAD_BASE + (quad_num * 16);
         
         // Read position from FIRST character (bytes 0-1)
         // This is the Y/X position for the ENTIRE quad group
-        uint8 quad_y = state_.registers[base_addr + 0];  // Y of 1st character
-        uint8 quad_x = state_.registers[base_addr + 1];  // X of 1st character
+        uint8 quad_y = state_.registers[base_addr + 0];  // Y of FIRST character
+        uint8 quad_x = state_.registers[base_addr + 1];  // X of FIRST character
         
         // Render all 4 characters in the quad
         for (int sub_char = 0; sub_char < 4; sub_char++) {
@@ -665,8 +666,9 @@ void VDC::render_characters(int y) {
             
             // Calculate actual screen position
             // Y position: All sub-characters share quad_y (from first character)
-            // X position: Each sub-character is offset by 8 pixels from quad_x
-            int char_x = quad_x + (sub_char * 8);  // Characters are spaced 8 pixels apart
+            // X position: Each sub-character is offset by 16 pixels from quad_x
+            // (8 pixels for character + 8 pixels space between, per doc/o2doc.md section 4.5)
+            int char_x = quad_x + (sub_char * 16);  // Characters spaced 16 pixels apart
             int char_y = quad_y;  // All sub-characters use the quad's Y position
             
             // Character visibility bounds checking
@@ -733,6 +735,8 @@ void VDC::render_characters(int y) {
 }
 
 // Rendering helper: Render sprites for scanline
+// NOTE: This function is only used by render_scanline() for testing.
+// During normal emulation, sprite rendering happens via is_sprite_pixel_at() in render_current_pixel().
 // Reference: doc/o2doc.md section 4.3, doc/8245.md lines 150-200
 void VDC::render_sprites(int y) {
     // Check if display is enabled
@@ -779,7 +783,9 @@ void VDC::render_sprites(int y) {
             int screen_x = sprite_x + x;
             
             // Apply horizontal shift if enabled
-            bool is_even_row = (sprite_row & 1) == 0;
+            // Note: "even rows" refers to screen rows (y - sprite_y), not pattern rows
+            int screen_row = y - sprite_y;
+            bool is_even_row = (screen_row & 1) == 0;
             if (shift_full) {
                 screen_x += 1;
             } else if (shift_even && is_even_row) {
@@ -1313,7 +1319,9 @@ void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8
     for (int x = 0; x < sprite_width; x++) {
         int screen_x = sprite_x + x;
 
-        bool is_even_row = (sprite_row & 1) == 0;
+        // Apply shift based on screen row, not pattern row
+        int screen_row = y - sprite_y;
+        bool is_even_row = (screen_row & 1) == 0;
         if (shift_full) {
             screen_x += 1;
         } else if (shift_even && is_even_row) {
@@ -1535,11 +1543,13 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
     
     // Check quad characters (4 groups, 16 bytes each, starting at 0x40)
     // See render_characters() for detailed explanation of quad character layout
-    // IMPORTANT: First character's Y/X (bytes 0-1) control entire quad group
+    // IMPORTANT: Testing shows game writes position to FIRST character (bytes 0-1), not LAST
     for (int quad_num = 0; quad_num < 4; quad_num++) {
         uint8 base_addr = VDCRegisters::QUAD_BASE + (quad_num * 16);
-        uint8 quad_y = state_.registers[base_addr + 0];  // Y of 1st character (controls entire quad)
-        uint8 quad_x = state_.registers[base_addr + 1];  // X of 1st character (controls entire quad)
+        
+        // Use FIRST character position (bytes 0-1)
+        uint8 quad_y = state_.registers[base_addr + 0];
+        uint8 quad_x = state_.registers[base_addr + 1];
         
         for (int sub_char = 0; sub_char < 4; sub_char++) {
             uint8 char_offset = sub_char * 4;
@@ -1547,7 +1557,7 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
             uint8 char_ptr_low = state_.registers[base_addr + char_offset + 2];
             uint8 char_attr = state_.registers[base_addr + char_offset + 3];
             
-            int char_x = quad_x + (sub_char * 8);
+            int char_x = quad_x + (sub_char * 16);  // 8 pixels character + 8 pixels space
             int char_y = quad_y;  // All sub-characters use the quad's Y position
             
             // Check if pixel is within character bounds
@@ -1626,7 +1636,9 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
         // Calculate pixel position with horizontal shift
         int pixel_x = x - sprite_x;
         
-        bool is_even_row = (sprite_row & 1) == 0;
+        // Apply shift based on screen row, not pattern row
+        int screen_row = y - sprite_y;
+        bool is_even_row = (screen_row & 1) == 0;
         if (shift_full) {
             pixel_x -= 1;
         } else if (shift_even && is_even_row) {

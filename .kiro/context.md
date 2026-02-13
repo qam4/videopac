@@ -553,24 +553,21 @@ grep -B2 "0x09f: 43 28.*ORL.*A=0xff" trace.log
 
 ## Known Issues
 
-### Satellite Attack Rendering Bugs (2026-02-13)
+### Satellite Attack Rendering Bugs
 
-The following rendering issues have been identified in Satellite Attack:
+**FIXED (2026-02-13)**:
+1. ✅ **UFO sprite too small** - Fixed by correcting framebuffer height to 240 lines and implementing 2x horizontal scaling (320x240 output)
+2. ✅ **Collision with UFO not working** - Fixed by implementing per-scanline collision detection that sets collision bits for both objects
+3. ✅ **Status bar wrong/out of screen** - Fixed by extending framebuffer to 240 lines (status bar is at Y=199-207) and correcting quad character spacing from 8 pixels to 16 pixels (8 pixels character + 8 pixels space between each, per doc/o2doc.md section 4.5)
 
-1. **UFO sprite too small**: The player's UFO (Sprite 0) appears at 8x8 pixels when it should be 16x16. The sprite looks correct but is smaller than expected. This suggests the double-size flag (bit 2 of sprite color attribute register at 0x02) may not be set by the game, or the emulator isn't reading it correctly.
-
-2. **Collision with UFO not working**: Collisions between satellites work correctly, but collisions with the UFO (Sprite 0) don't register. The collision detection code in `detect_collisions()` and `track_sprite_object()` appears correct and should track all 4 sprites including Sprite 0. Need to verify the collision enable register (0xA2) includes bit 0.
-
-3. **Status bar wrong/out of screen**: The status bar (high score display using quad characters) is positioned incorrectly and appears cut off or outside the visible screen area. Earlier investigation showed it's positioned at Y=199 which is at the very bottom edge of the 200-line framebuffer. The boundary check in character rendering may be rejecting Y=199 incorrectly.
-
-4. **Enemy saucer looks incorrect**: The enemy saucer that appears periodically doesn't render correctly. This might be a sprite rendering issue (pattern data, double-size) or a character rendering issue depending on how the game implements it.
+**Remaining Issues**:
+4. **Enemy saucer looks incorrect** - The enemy saucer that appears periodically doesn't render correctly. This might be a sprite rendering issue (pattern data, double-size) or a character rendering issue depending on how the game implements it.
 
 **Investigation needed**:
-- Add debug logging to sprite rendering to check if double-size flag is set for Sprite 0
-- Verify collision enable register includes bit 0 for Sprite 0
-- Check character boundary checking logic (likely using `>=` when it should use `>`)
 - Examine enemy saucer sprite/character configuration
+- Check if it uses sprites or characters
+- Verify pattern data and rendering attributes
 
 **Related code**:
-- `src/vdc.cpp`: `render_sprites()`, `detect_collisions()`, `track_sprite_object()`, `render_characters()`
-- `include/vdc.h`: Sprite and collision register definitions
+- `src/vdc.cpp`: `render_sprites()`, `render_characters()`
+- `include/vdc.h`: Sprite and character register definitions
