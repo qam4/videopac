@@ -136,8 +136,8 @@ void VDC::write_register(uint8 address, uint8 value) {
             // Control register - update display and grid enable flags
             // Reference: doc/o2doc.md section 4.6, doc/8245.md lines 440-470
             state_.display_enabled = (value & ControlBits::ENABLE_DISPLAY) != 0;
-            state_.grid_enabled = (value & ControlBits::ENABLE_GRID) != 0;
-            break;
+            state_.grid_enabled = (value & ControlBits::ENABLE_GRID) != 0;          
+             break;
         }
             
         case VDCRegisters::COLLISION:
@@ -702,7 +702,7 @@ void VDC::render_characters(int y) {
             // The character pointer is a displacement value
             // Formula: ROM Address = char_ptr + (char_y / 2) + char_row
             uint16 rom_addr = (char_ptr + (char_y / 2) + char_row) & 0x1FF;
-            
+           
             // Requirements 5.2, 11.3: Validate ROM address is within bounds
             if (rom_addr >= 512) {
                 continue;  // Invalid ROM address, skip this character
@@ -1510,7 +1510,16 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
         uint8 char_attr = state_.registers[base_addr + 3];
         
         // Check if pixel is within character bounds
-        if (y < char_y || y >= char_y + 14) {
+        // Calculate how many rows to render based on o2em logic
+        int ypos_half = char_y / 2;
+        int n = 8 - (ypos_half % 8) - (char_ptr_low % 8);
+        if (n < 3) {
+            n = n + 7;
+        }
+        
+        // Character renders for n rows (each row is 2 scanlines)
+        int char_height = n * 2;
+        if (y < char_y || y >= char_y + char_height) {
             continue;
         }
         
@@ -1560,8 +1569,18 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
             int char_x = quad_x + (sub_char * 16);  // 8 pixels character + 8 pixels space
             int char_y = quad_y;  // All sub-characters use the quad's Y position
             
+            // Calculate how many rows to render based on o2em logic
+            int ypos_half = char_y / 2;
+            int n = 8 - (ypos_half % 8) - (char_ptr_low % 8);
+            if (n < 3) {
+                n = n + 7;
+            }
+            
+            // Character renders for n rows (each row is 2 scanlines)
+            int char_height = n * 2;
+            
             // Check if pixel is within character bounds
-            if (y < char_y || y >= char_y + 14) {
+            if (y < char_y || y >= char_y + char_height) {
                 continue;
             }
             

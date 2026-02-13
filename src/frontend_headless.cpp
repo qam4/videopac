@@ -64,7 +64,11 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
         debugger_ = std::make_unique<Debugger>(emulator_.get());
         debugger_ui_ = std::make_unique<DebuggerUI>(debugger_.get());
         emulator_->set_debugger(debugger_.get());
-        debugger_->enable_trace(true);  // Enable trace logging
+        // Enable trace if requested (very expensive!)
+        if (config_.enable_trace) {
+            debugger_->enable_trace(true);
+            std::cout << "Instruction trace enabled (performance will be slow)" << std::endl;
+        }
         
         // Set breakpoints from config
         for (const auto& bp : config.breakpoints) {
@@ -168,6 +172,35 @@ void HeadlessFrontend::run() {
         
         // Run one frame
         render_frame();
+        
+        // Check if emulator hit a breakpoint
+        if (emulator_ && emulator_->is_paused()) {
+            std::cout << "\n*** Breakpoint hit - executing 50 steps ***" << std::endl;
+            
+            // Execute 50 single steps and print state after each
+            for (int step = 1; step <= 50; step++) {
+                if (debugger_) {
+                    debugger_->step();
+                    
+                    // Print every 5th step, or when we return to 0x687 (after calcchar23)
+                    CPUState cpu = emulator_->get_cpu_state();
+                    if (step % 5 == 0 || cpu.pc == 0x687) {
+                        std::cout << "\n=== Step " << step << " ===" << std::endl;
+                        std::cout << debugger_->dump_cpu_state() << std::endl;
+                        std::cout << debugger_->disassemble_at_pc(0, 2) << std::endl;
+                        
+                        // Stop if we've returned from calcchar23
+                        if (cpu.pc == 0x687) {
+                            std::cout << "\n*** Returned from calcchar23 - R5 now contains byte 2 (char_ptr) ***" << std::endl;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            running_ = false;
+            break;
+        }
         
         // Process audio (no-op in headless mode)
         process_audio();

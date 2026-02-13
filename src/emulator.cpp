@@ -296,8 +296,8 @@ void EmulatorCore::check_debugger_breakpoint() {
     if (debugger_->check_breakpoint(pc) || debugger_->check_condition_breakpoints()) {
         paused_ = true;
         debugger_->pause();
-        std::cout << "\n*** BREAKPOINT HIT at 0x" << std::hex << pc << std::dec << " ***" << std::endl;
-        std::cout << "CPU State:" << std::endl;
+        std::cout << "\n*** BREAKPOINT HIT at 0x" << std::hex << pc << std::dec 
+                  << " (Frame " << frame_count_ << ") ***" << std::endl;
         std::cout << debugger_->dump_cpu_state() << std::endl;
         std::cout << "Press F9 to step, F5 to continue" << std::endl;
     }

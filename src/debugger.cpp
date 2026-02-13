@@ -218,7 +218,9 @@ bool Debugger::evaluate_condition(const std::string& condition, const CPUState& 
             var_value = cpu.sp;
         } else if (field.length() == 2 && field[0] == 'R' && field[1] >= '0' && field[1] <= '7') {
             int r = field[1] - '0';
-            var_value = cpu.r[r];
+            // Account for current register bank (0 or 1)
+            int reg_index = r + (cpu.current_bank * 8);
+            var_value = cpu.r[reg_index];
         } else if (field == "ram" && array_index >= 0 && array_index < 64) {
             var_value = cpu.ram[array_index];
         } else {
