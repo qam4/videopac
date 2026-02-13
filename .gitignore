@@ -1,6 +1,13 @@
 # Build directories
 build/
 cmake-build-*/
+build/dev-win64/
+build/dev-mingw/
+build/ci-win64/
+build/ci-mingw/
+
+# CMake User Presets (user-specific, not committed)
+CMakeUserPresets.json
 
 # Compiled files
 *.o
@@ -9,6 +16,14 @@ cmake-build-*/
 *.dylib
 *.dll
 *.exe
+*.pdb
+
+# Visual Studio specific files
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
 
 # IDE files
 .vscode/

@@ -6,8 +6,8 @@ This implementation plan adds native Windows build support for the Videopac emul
 
 ## Tasks
 
-- [ ] 1. Create CMake preset files
-  - [ ] 1.1 Create CMakePresets.json with Windows configurations
+- [x] 1. Create CMake preset files
+  - [x] 1.1 Create CMakePresets.json with Windows configurations
     - Add cmake-pedantic hidden base preset
     - Add ci-std hidden base preset (C++17 enforcement)
     - Add flags-windows hidden base preset with MSVC compiler flags
@@ -17,7 +17,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Ensure presets inherit from appropriate base presets
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
-  - [ ] 1.2 Create CMakeUserPresets.json.example template
+  - [x] 1.2 Create CMakeUserPresets.json.example template
     - Add dev-win64 preset for MSVC development builds
     - Add dev-mingw preset for MinGW development builds
     - Add build presets for dev-win64 and dev-mingw
@@ -27,7 +27,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Set CMAKE_EXPORT_COMPILE_COMMANDS for IDE integration
     - _Requirements: 1.7, 1.8, 1.9, 9.1, 9.2_
 
-  - [ ] 1.3 Update .gitignore for Windows
+  - [x] 1.3 Update .gitignore for Windows
     - Add CMakeUserPresets.json to .gitignore
     - Add build/dev-win64/ to .gitignore
     - Add build/dev-mingw/ to .gitignore
@@ -37,34 +37,34 @@ This implementation plan adds native Windows build support for the Videopac emul
 
 
 - [ ] 2. Update CMakeLists.txt for Windows support
-  - [ ] 2.1 Improve SDL2 detection for Windows
+  - [x] 2.1 Improve SDL2 detection for Windows
     - Try find_package(SDL2 CONFIG) first (for vcpkg)
     - Fall back to find_package(SDL2 MODULE) for manual installation
     - Provide clear error messages when SDL2 is not found
     - Support both dynamic and static SDL2 linking
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
 
-  - [ ] 2.2 Add Windows-specific linking
+  - [x] 2.2 Add Windows-specific linking
     - Link SDL2::SDL2main for WinMain wrapper on Windows
     - Handle both SDL2::SDL2 (vcpkg) and ${SDL2_LIBRARIES} (manual)
     - Add option to copy SDL2.dll to build directory
     - _Requirements: 4.7, 8.2, 8.3_
 
-  - [ ] 2.3 Verify existing MSVC flags in CMakeLists.txt
+  - [x] 2.3 Verify existing MSVC flags in CMakeLists.txt
     - Ensure MSVC-specific flags are compatible with presets
     - Remove any conflicting flags
     - Verify /W4 warning level is appropriate
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9_
 
-  - [ ] 2.4 Test CMakeLists.txt changes on Linux
+  - [x] 2.4 Test CMakeLists.txt changes on Linux
     - Verify Linux builds still work
     - Verify no regressions in existing functionality
     - Ensure changes are backward compatible
     - _Requirements: All (verification)_
 
 
-- [ ] 3. Create Windows build documentation
-  - [ ] 3.1 Create BUILDING.md (root level)
+- [x] 3. Create Windows build documentation
+  - [x] 3.1 Create BUILDING.md (root level)
     - Document general build instructions for all platforms
     - Provide simple commands for release builds
     - Document multi-configuration generator usage (Visual Studio)
@@ -75,7 +75,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Keep it simple and platform-agnostic where possible
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.7, 5.8_
 
-  - [ ] 3.2 Create HACKING.md (root level)
+  - [x] 3.2 Create HACKING.md (root level)
     - Document developer mode (videopac_DEVELOPER_MODE option)
     - Explain CMake presets system
     - Provide example CMakeUserPresets.json structure
@@ -85,7 +85,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Emphasize that CMakeUserPresets.json is NOT committed to repo
     - _Requirements: 5.5, 5.6, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6_
 
-  - [ ] 3.3 Update main README.md
+  - [x] 3.3 Update main README.md
     - Add Windows to supported platforms list
     - Add quick start section
     - Link to BUILDING.md for build instructions
@@ -93,7 +93,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Update build status badges (if applicable)
     - _Requirements: 5.10_
 
-  - [ ] 3.4 Create troubleshooting section in BUILDING.md
+  - [x] 3.4 Create troubleshooting section in BUILDING.md
     - SDL2 not found errors
     - Compiler not found errors
     - vcpkg toolchain not set errors
@@ -105,7 +105,7 @@ This implementation plan adds native Windows build support for the Videopac emul
 
 
 - [ ] 4. Test Windows builds
-  - [ ] 4.1 Test MSVC build on Windows
+  - [x] 4.1 Test MSVC build on Windows
     - Install Visual Studio 2022
     - Install vcpkg and SDL2
     - Configure with dev-win64 preset
@@ -116,7 +116,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Verify all tests pass
     - _Requirements: 2.10, 6.1, 6.2_
 
-  - [ ] 4.2 Test MinGW build on Windows
+  - [x] 4.2 Test MinGW build on Windows
     - Install MinGW-w64
     - Install vcpkg and SDL2 for MinGW
     - Configure with dev-mingw preset
@@ -127,7 +127,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Verify all tests pass
     - _Requirements: 3.7, 6.1, 6.2_
 
-  - [ ] 4.3 Test emulator functionality on Windows
+  - [x] 4.3 Test emulator functionality on Windows
     - Run videopac.exe with Satellite Attack ROM
     - Verify window opens and displays correctly
     - Verify graphics render correctly
@@ -137,7 +137,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Test loading different ROM sizes (2KB, 4KB, 8KB)
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
-  - [ ] 4.4 Test with different SDL2 installation methods
+  - [x] 4.4 Test with different SDL2 installation methods
     - Test with vcpkg SDL2
     - Test with manually installed SDL2
     - Test with static SDL2 linking
@@ -145,7 +145,7 @@ This implementation plan adds native Windows build support for the Videopac emul
     - Verify all methods work correctly
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-  - [ ] 4.5 Test path handling on Windows
+  - [x] 4.5 Test path handling on Windows
     - Test loading ROM with forward slashes (roms/game.bin)
     - Test loading ROM with backslashes (roms\game.bin)
     - Test loading ROM with absolute path (C:\path\to\rom.bin)

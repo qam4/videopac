@@ -1,0 +1,59 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 15,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev-win64",
+      "inherits": "ci-win64",
+      "binaryDir": "${sourceDir}/build/dev-win64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "C:/src/vcpkg/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "dev-mingw",
+      "inherits": "ci-mingw",
+      "binaryDir": "${sourceDir}/build/dev-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev-win64",
+      "configurePreset": "dev-win64",
+      "configuration": "Debug",
+      "jobs": 8
+    },
+    {
+      "name": "dev-mingw",
+      "configurePreset": "dev-mingw",
+      "jobs": 8
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev-win64",
+      "configurePreset": "dev-win64",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-mingw",
+      "configurePreset": "dev-mingw",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

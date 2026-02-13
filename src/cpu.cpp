@@ -2,6 +2,7 @@
 #include "memory.h"
 #include "input.h"
 #include <cstring>
+#include <stdexcept>
 
 namespace videopac {
 

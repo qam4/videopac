@@ -2,6 +2,12 @@
 
 A cycle-accurate emulator for the Philips Videopac / Magnavox Odyssey2 home video game console.
 
+## Supported Platforms
+
+- **Windows** (10 and later) - MSVC and MinGW-w64
+- **Linux** - GCC 7+ and Clang 5+
+- **macOS** - Xcode Command Line Tools
+
 ## Features
 
 - Intel 8048 CPU emulation with all 96 instructions
@@ -16,33 +22,48 @@ A cycle-accurate emulator for the Philips Videopac / Magnavox Odyssey2 home vide
 - SDL2-based standalone frontend
 - libretro core for RetroArch integration
 
-## Building
+## Quick Start
+
+### Building
+
+**For detailed build instructions, see [BUILDING.md](BUILDING.md).**
+
+Quick build (Linux/macOS):
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+Quick build (Windows with Visual Studio):
+```powershell
+cmake -S . -B build
+cmake --build build --config Release
+```
+
+Quick build (Windows with CMake presets):
+```powershell
+cmake --preset=ci-win64
+cmake --build --preset=ci-win64 --config Release
+```
 
 ### Requirements
 
 - CMake 3.15 or later
-- C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
-- SDL2 (for standalone build)
+- C++17 compatible compiler
+  - Windows: Visual Studio 2019+ or MinGW-w64 8.0+
+  - Linux: GCC 7+ or Clang 5+
+  - macOS: Xcode Command Line Tools
+- SDL2 (optional, for graphics and audio)
 - Google Test (automatically downloaded)
 - RapidCheck (automatically downloaded)
-
-### Build Instructions
-
-```bash
-mkdir build
-cmake --build .
-```
 
 ### Build Options
 
 - `BUILD_TESTS=ON/OFF` - Build unit tests (default: ON)
 - `BUILD_LIBRETRO=ON/OFF` - Build libretro core (default: ON)
 - `BUILD_STANDALONE=ON/OFF` - Build standalone emulator (default: ON)
-
-Example:
-```bash
-cmake -DBUILD_TESTS=OFF ..
-```
+- `ENABLE_SDL=ON/OFF` - Enable SDL2 frontend (default: ON)
+- `BUILD_TOOLS=ON/OFF` - Build development tools (default: ON)
 
 ## Running
 
@@ -96,6 +117,13 @@ Note: Audio may not work on systems without ALSA, but the emulator will continue
 ./videopac_tests
 ```
 
+## Documentation
+
+- **[BUILDING.md](BUILDING.md)** - Comprehensive build instructions for all platforms
+- **[HACKING.md](HACKING.md)** - Developer guide with CMake presets and IDE integration
+- **[.kiro/context.md](.kiro/context.md)** - Project-specific development guidelines
+- **[.kiro/specs/](.kiro/specs/)** - Feature specifications and implementation plans
+
 ## Project Structure
 
 ```
@@ -104,26 +132,54 @@ Note: Audio may not work on systems without ALSA, but the emulator will continue
 ├── src/              # Source files
 ├── tests/            # Unit and property-based tests
 ├── doc/              # Documentation
+├── tools/            # Development tools (disassembler, etc.)
 ├── roms/             # ROM files (not included)
-└── CMakeLists.txt    # Build configuration
+├── CMakeLists.txt    # Build configuration
+├── CMakePresets.json # CMake presets for CI and base configurations
+└── BUILDING.md       # Build instructions
 ```
+
+## Contributing
+
+Contributions are welcome! Please see [HACKING.md](HACKING.md) for developer guidelines.
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests and ensure they pass
+5. Commit with descriptive messages (see [.kiro/context.md](.kiro/context.md))
+6. Push to your fork
+7. Create a pull request
 
 ## Implementation Status
 
-This project follows the implementation plan in `.kiro/specs/videopac-emulator/tasks.md`.
+This project follows the implementation plans in `.kiro/specs/`.
 
+### Videopac Emulator Core
 - [x] Task 1: Project setup and build system
-- [ ] Task 2: Core data types and utilities
-- [ ] Task 3: CPU emulation
-- [ ] Task 4: Memory system
-- [ ] Task 5: VDC emulation
-- [ ] Task 6: Input handling
-- [ ] Task 7: Emulator core
-- [ ] Task 8: Save states
-- [ ] Task 9: Disassembler
-- [ ] Task 10: Debugger
-- [ ] Task 11: SDL2 frontend
-- [ ] Task 12: libretro core
+- [x] Task 2: Core data types and utilities
+- [x] Task 3: CPU emulation
+- [x] Task 4: Memory system
+- [x] Task 5: Checkpoint - Core components functional
+- [x] Task 6: VDC emulation
+- [x] Task 7: Input handling
+- [x] Task 8: Emulator core orchestration
+- [x] Task 10: Save states
+- [x] Task 11: Disassembler
+- [x] Task 12: Debugger
+- [x] Task 13: Checkpoint - Debugging tools complete
+- [x] Task 14: SDL2 frontend (partial)
+- [ ] Task 15: libretro core
+- [ ] Task 16: Final integration and testing
+
+### Windows Build Support
+- [x] Task 1: CMake preset files
+- [x] Task 2: CMakeLists.txt updates (pending Linux testing)
+- [x] Task 3: Documentation (BUILDING.md, HACKING.md)
+- [ ] Task 4: Windows testing
+- [ ] Task 5: Binary distribution (optional)
+- [ ] Task 6: CI setup (optional)
+- [ ] Task 7: Final verification
 
 ## License
 

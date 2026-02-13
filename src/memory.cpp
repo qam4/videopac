@@ -12,9 +12,16 @@ namespace videopac {
 
 MemorySystem::MemorySystem() 
     : vdc_(nullptr), cpu_(nullptr) {
-    std::memset(&state_, 0, sizeof(state_));
+    // Initialize arrays to zero
+    std::memset(state_.bios_rom, 0, sizeof(state_.bios_rom));
+    std::memset(state_.external_ram, 0, sizeof(state_.external_ram));
+    
+    // Initialize scalar members
     state_.current_bank = 0;
     state_.num_banks = 1;
+    state_.rom_size_kb = 0;
+    
+    // cart_rom vector is already default-initialized to empty
 }
 
 Result<void> MemorySystem::load_bios(const std::string& path) {
