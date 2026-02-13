@@ -378,18 +378,26 @@ void SDLFrontend::update_texture() {
 }
 
 void SDLFrontend::process_audio() {
-    // Get audio sample from emulator
-    // For now, just get one sample per frame
-    // TODO: Generate proper number of samples based on frame rate
-    int16 sample = emulator_->get_vdc().get_audio_sample();
+    // Calculate how many audio samples we need per video frame
+    float frame_rate = (config_.video_standard == VideoStandard::NTSC) ? 60.0f : 50.0f;
+    int samples_per_frame = static_cast<int>(config_.sample_rate / frame_rate);
     
-    // Apply volume
-    sample = static_cast<int16>(sample * config_.master_volume);
+    // Use the emulator's audio buffer method to get properly generated samples
+    std::vector<int16> temp_buffer(samples_per_frame);
+    emulator_->get_audio_buffer(temp_buffer.data(), samples_per_frame);
     
-    // Add to buffer (circular buffer)
     SDL_LockAudioDevice(audio_device_);
-    audio_buffer_[audio_write_pos_] = sample;
-    audio_write_pos_ = (audio_write_pos_ + 1) % audio_buffer_.size();
+    
+    // Add samples to circular buffer
+    for (int i = 0; i < samples_per_frame; i++) {
+        // Apply volume
+        int16 sample = static_cast<int16>(temp_buffer[i] * config_.master_volume);
+        
+        // Add to buffer (circular buffer)
+        audio_buffer_[audio_write_pos_] = sample;
+        audio_write_pos_ = (audio_write_pos_ + 1) % audio_buffer_.size();
+    }
+    
     SDL_UnlockAudioDevice(audio_device_);
 }
 
