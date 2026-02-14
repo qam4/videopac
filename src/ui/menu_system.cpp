@@ -1,11 +1,14 @@
 #include "ui/menu_system.h"
 #include "ui/text_renderer.h"
+#include "ui/config_manager.h"
 
 MenuSystem::MenuSystem(SDL_Renderer* renderer, TextRenderer* text_renderer)
     : renderer_(renderer)
     , text_renderer_(text_renderer)
     , current_menu_(nullptr)
     , selected_index_(0)
+    , scroll_offset_(0)
+    , last_selected_slot_(-1)
     , visible_(false) {
     build_main_menu();
 }
@@ -17,6 +20,7 @@ void MenuSystem::show() {
     visible_ = true;
     current_menu_ = &main_menu_;
     selected_index_ = 0;
+    scroll_offset_ = 0;
     
     // Clear menu stack
     while (!menu_stack_.empty()) {
@@ -58,8 +62,52 @@ void MenuSystem::build_main_menu() {
     }
     main_menu_.push_back(load_state_menu);
 
+    // Video Settings submenu
+    MenuItem video_settings_menu("Video Settings", MenuAction::VideoSettings);
+    video_settings_menu.has_submenu = true;
+    
+    // Scaling Filter submenu
+    MenuItem scaling_filter_menu("Scaling Filter", MenuAction::None);
+    scaling_filter_menu.has_submenu = true;
+    scaling_filter_menu.submenu.push_back(MenuItem("Nearest", MenuAction::ScalingFilterNearest));
+    scaling_filter_menu.submenu.push_back(MenuItem("Linear", MenuAction::ScalingFilterLinear));
+    video_settings_menu.submenu.push_back(scaling_filter_menu);
+    
+    // Aspect Ratio submenu
+    MenuItem aspect_ratio_menu("Aspect Ratio", MenuAction::None);
+    aspect_ratio_menu.has_submenu = true;
+    aspect_ratio_menu.submenu.push_back(MenuItem("Original", MenuAction::AspectRatioOriginal));
+    aspect_ratio_menu.submenu.push_back(MenuItem("4:3", MenuAction::AspectRatio4_3));
+    aspect_ratio_menu.submenu.push_back(MenuItem("Stretch", MenuAction::AspectRatioStretch));
+    video_settings_menu.submenu.push_back(aspect_ratio_menu);
+    
+    // VSync toggle
+    video_settings_menu.submenu.push_back(MenuItem("VSync", MenuAction::ToggleVSync));
+    
+    // CRT Effects submenu
+    MenuItem crt_effects_menu("CRT Effects", MenuAction::None);
+    crt_effects_menu.has_submenu = true;
+    crt_effects_menu.submenu.push_back(MenuItem("None", MenuAction::CRTEffectNone));
+    crt_effects_menu.submenu.push_back(MenuItem("Light", MenuAction::CRTEffectLight));
+    crt_effects_menu.submenu.push_back(MenuItem("Medium", MenuAction::CRTEffectMedium));
+    crt_effects_menu.submenu.push_back(MenuItem("Heavy", MenuAction::CRTEffectHeavy));
+    video_settings_menu.submenu.push_back(crt_effects_menu);
+    
+    // Scanlines submenu
+    MenuItem scanlines_menu("Scanlines", MenuAction::None);
+    scanlines_menu.has_submenu = true;
+    scanlines_menu.submenu.push_back(MenuItem("Off", MenuAction::ScanlinesOff));
+    scanlines_menu.submenu.push_back(MenuItem("25%", MenuAction::Scanlines25));
+    scanlines_menu.submenu.push_back(MenuItem("50%", MenuAction::Scanlines50));
+    scanlines_menu.submenu.push_back(MenuItem("75%", MenuAction::Scanlines75));
+    video_settings_menu.submenu.push_back(scanlines_menu);
+    
+    main_menu_.push_back(video_settings_menu);
+
+    main_menu_.push_back(MenuItem("Display Info", MenuAction::DisplayInfo));
     main_menu_.push_back(MenuItem("Screenshot", MenuAction::Screenshot));
     main_menu_.push_back(MenuItem("Toggle Debugger", MenuAction::ToggleDebugger));
+    main_menu_.push_back(MenuItem("Toggle Fullscreen", MenuAction::ToggleFullscreen));
     main_menu_.push_back(MenuItem("Quit", MenuAction::Quit));
 
     current_menu_ = &main_menu_;
@@ -68,12 +116,33 @@ void MenuSystem::build_main_menu() {
 void MenuSystem::navigate_up() {
     if (selected_index_ > 0) {
         selected_index_--;
+        
+        // Adjust scroll offset if needed
+        if (selected_index_ < scroll_offset_) {
+            scroll_offset_ = selected_index_;
+        }
     }
 }
 
 void MenuSystem::navigate_down() {
     if (current_menu_ && selected_index_ < static_cast<int>(current_menu_->size()) - 1) {
         selected_index_++;
+        
+        // Adjust scroll offset if needed
+        // Calculate max visible items based on 320x240 logical size
+        const int screen_height = 240;
+        
+        int margin = screen_height / 24;
+        int menu_height = screen_height - (margin * 2);
+        int title_height = screen_height / 15;
+        int hint_height = screen_height / 20;
+        int available_height = menu_height - title_height - hint_height;
+        int line_height = screen_height / 25;
+        int max_visible_items = available_height / line_height;
+        
+        if (selected_index_ >= scroll_offset_ + max_visible_items) {
+            scroll_offset_ = selected_index_ - max_visible_items + 1;
+        }
     }
 }
 
@@ -93,6 +162,7 @@ void MenuSystem::select_current() {
         menu_stack_.push(current_menu_);
         current_menu_ = &item.submenu;
         selected_index_ = 0;
+        scroll_offset_ = 0;  // Reset scroll for new menu
     }
 }
 
@@ -101,6 +171,7 @@ void MenuSystem::go_back() {
         current_menu_ = menu_stack_.top();
         menu_stack_.pop();
         selected_index_ = 0;
+        scroll_offset_ = 0;  // Reset scroll when going back
     } else {
         hide();
     }
@@ -130,6 +201,8 @@ videopac::MenuAction MenuSystem::process_input(SDL_Keycode key) {
                     select_current();
                     return MenuAction::None;
                 } else {
+                    // Store the slot number before returning the action
+                    last_selected_slot_ = item.slot_number;
                     // Return the action
                     return item.action;
                 }
@@ -145,19 +218,18 @@ videopac::MenuAction MenuSystem::process_input(SDL_Keycode key) {
     }
 }
 
+int MenuSystem::get_selected_slot() const {
+    return last_selected_slot_;
+}
+
 void MenuSystem::render() {
     if (!visible_ || !current_menu_) {
         return;
     }
 
-    // Get renderer logical size (which may differ from window size)
-    int screen_width, screen_height;
-    SDL_RenderGetLogicalSize(renderer_, &screen_width, &screen_height);
-    
-    // If no logical size is set, fall back to output size
-    if (screen_width == 0 || screen_height == 0) {
-        SDL_GetRendererOutputSize(renderer_, &screen_width, &screen_height);
-    }
+    // Always use logical size (320x240) for consistent menu rendering
+    int screen_width = 320;
+    int screen_height = 240;
 
     // Semi-transparent overlay
     SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
@@ -165,11 +237,12 @@ void MenuSystem::render() {
     SDL_Rect overlay = { 0, 0, screen_width, screen_height };
     SDL_RenderFillRect(renderer_, &overlay);
 
-    // Menu box - scale to fit screen with margins
-    int menu_width = (screen_width * 3) / 4;  // 75% of screen width
-    int menu_height = (screen_height * 3) / 4; // 75% of screen height
-    int menu_x = (screen_width - menu_width) / 2;
-    int menu_y = (screen_height - menu_height) / 2;
+    // Menu box - use most of screen with reasonable margins
+    int margin = screen_height / 24;  // Scale margin with screen size
+    int menu_width = screen_width - (margin * 2);
+    int menu_height = screen_height - (margin * 2);
+    int menu_x = margin;
+    int menu_y = margin;
 
     SDL_SetRenderDrawColor(renderer_, 40, 40, 40, 255);
     SDL_Rect menu_box = { menu_x, menu_y, menu_width, menu_height };
@@ -178,47 +251,57 @@ void MenuSystem::render() {
     SDL_SetRenderDrawColor(renderer_, 200, 200, 200, 255);
     SDL_RenderDrawRect(renderer_, &menu_box);
 
-    // Title
+    // Title - use larger font at native resolution
     SDL_Color title_color = { 255, 255, 255, 255 };
     std::string title = menu_stack_.empty() ? "Main Menu" : "Menu";
-    text_renderer_->render_text(title, menu_x + 10, menu_y + 5,  // Reduced margins
+    int title_padding = screen_height / 80;  // Scale padding
+    text_renderer_->render_text(title, menu_x + title_padding, menu_y + title_padding,
                                 title_color, TextRenderer::FontSize::Large);
 
     // Menu items
     render_menu_list(*current_menu_, selected_index_);
 
-    // Hints
+    // Hints - at the very bottom
     SDL_Color hint_color = { 150, 150, 150, 255 };
     std::string hint = menu_stack_.empty() ? 
-        "Arrows: Move | Enter: Select | Esc: Close" :  // Shortened text
+        "Arrows: Move | Enter: Select | Esc: Close" :
         "Arrows: Move | Enter: Select | Esc: Back";
     
-    text_renderer_->render_text(hint, menu_x + 10, menu_y + menu_height - 15,  // Adjusted position
-                                hint_color, TextRenderer::FontSize::Small);
+    int hint_padding = screen_height / 60;
+    text_renderer_->render_text(hint, menu_x + hint_padding, menu_y + menu_height - hint_padding - 10,
+                                hint_color, TextRenderer::FontSize::Medium);
 }
 
 void MenuSystem::render_menu_list(const std::vector<MenuItem>& items, int selected_index) {
-    // Get renderer logical size (which may differ from window size)
-    int screen_width, screen_height;
-    SDL_RenderGetLogicalSize(renderer_, &screen_width, &screen_height);
+    // Always use logical size (320x240) for consistent rendering
+    int screen_width = 320;
+    int screen_height = 240;
+
+    int margin = screen_height / 24;
+    int menu_width = screen_width - (margin * 2);
+    int menu_height = screen_height - (margin * 2);
+    int menu_x = margin;
+    int menu_y = margin;
+
+    // Scale spacing based on screen height
+    int title_height = screen_height / 15;  // Space for title
+    int hint_height = screen_height / 20;   // Space for hints
+    int item_y = menu_y + title_height;
+    int line_height = screen_height / 25;   // Scale line height with screen
     
-    // If no logical size is set, fall back to output size
-    if (screen_width == 0 || screen_height == 0) {
-        SDL_GetRendererOutputSize(renderer_, &screen_width, &screen_height);
-    }
+    // Calculate how many items can fit
+    int available_height = menu_height - title_height - hint_height;
+    int max_visible_items = available_height / line_height;
+    
+    // Calculate which items to display
+    int start_index = scroll_offset_;
+    int end_index = std::min(start_index + max_visible_items, static_cast<int>(items.size()));
 
-    int menu_width = (screen_width * 3) / 4;  // 75% of screen width
-    int menu_height = (screen_height * 3) / 4; // 75% of screen height
-    int menu_x = (screen_width - menu_width) / 2;
-    int menu_y = (screen_height - menu_height) / 2;
-
-    int item_y = menu_y + 25;  // Reduced from 60 for smaller resolution
-    int line_height = 16;      // Reduced from 30 for smaller resolution
-
-    for (size_t i = 0; i < items.size(); i++) {
+    // Render visible items
+    for (int i = start_index; i < end_index; i++) {
         const MenuItem& item = items[i];
         
-        bool is_selected = (static_cast<int>(i) == selected_index);
+        bool is_selected = (i == selected_index);
         SDL_Color text_color;
         
         if (!item.enabled) {
@@ -233,10 +316,50 @@ void MenuSystem::render_menu_list(const std::vector<MenuItem>& items, int select
         if (item.has_submenu) {
             display_text += " >";
         }
+        
+        // Add value if present
+        if (!item.value.empty()) {
+            display_text += ": " + item.value;
+        }
 
-        text_renderer_->render_text(display_text, menu_x + 15, item_y,  // Reduced margin from 40 to 15
+        int item_padding = screen_height / 60;
+        text_renderer_->render_text(display_text, menu_x + item_padding, item_y,
                                     text_color, TextRenderer::FontSize::Medium);
 
         item_y += line_height;
+    }
+    
+    // Draw scroll indicators if needed
+    if (scroll_offset_ > 0) {
+        // Up arrow indicator
+        SDL_Color arrow_color = { 150, 150, 150, 255 };
+        text_renderer_->render_text("^", menu_x + menu_width - (screen_width / 40), menu_y + title_height,
+                                    arrow_color, TextRenderer::FontSize::Medium);
+    }
+    
+    if (end_index < static_cast<int>(items.size())) {
+        // Down arrow indicator
+        SDL_Color arrow_color = { 150, 150, 150, 255 };
+        text_renderer_->render_text("v", menu_x + menu_width - (screen_width / 40), 
+                                    menu_y + menu_height - hint_height - (screen_height / 40),
+                                    arrow_color, TextRenderer::FontSize::Medium);
+    }
+}
+
+void MenuSystem::update_menu_values(ConfigManager* config_manager) {
+    if (!config_manager) {
+        return;
+    }
+    
+    // Find Video Settings menu
+    for (auto& item : main_menu_) {
+        if (item.action == videopac::MenuAction::VideoSettings && item.has_submenu) {
+            // Update VSync value
+            for (auto& video_item : item.submenu) {
+                if (video_item.action == videopac::MenuAction::ToggleVSync) {
+                    video_item.value = config_manager->get_vsync_enabled() ? "On" : "Off";
+                }
+            }
+        }
     }
 }

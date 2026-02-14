@@ -5,6 +5,7 @@
 #include "emulator.h"
 #include "debugger.h"
 #include "debugger_ui.h"
+#include "ui/osd_renderer.h"  // Need full definition for OSDPosition enum
 #include <SDL2/SDL.h>
 #include <memory>
 #include <vector>
@@ -18,6 +19,7 @@ class ZIPHandler;
 class MessageDialog;
 class ProgressDialog;
 class RecentFilesList;
+class SaveStateManagerUI;
 
 namespace videopac {
 
@@ -68,6 +70,8 @@ private:
     std::unique_ptr<ProgressDialog> progress_dialog_;
     std::unique_ptr<RecentFilesList> recent_roms_;
     std::unique_ptr<RecentFilesList> recent_bios_;
+    std::unique_ptr<SaveStateManagerUI> save_state_manager_;
+    std::unique_ptr<OSDRenderer> osd_renderer_;
     
     // Configuration
     FrontendConfig config_;
@@ -79,6 +83,24 @@ private:
     uint32_t last_fps_time_;
     uint32_t fps_counter_;
     float current_fps_;
+    
+    // UI state
+    bool show_fps_;
+    OSDRenderer::OSDPosition fps_position_;  // Configurable FPS display position
+    bool audio_muted_;
+    bool turbo_mode_;
+    float normal_speed_;  // Normal emulation speed multiplier (1.0 = 100%)
+    
+    // Fullscreen state
+    bool is_fullscreen_;
+    int windowed_width_;
+    int windowed_height_;
+    int windowed_x_;
+    int windowed_y_;
+    
+    // Current file names
+    std::string current_rom_name_;
+    std::string current_bios_name_;
     
     // Audio buffer
     std::vector<int16> audio_buffer_;
@@ -95,10 +117,24 @@ private:
     void handle_keyboard_event(const SDL_KeyboardEvent& event);
     void handle_quit_event();
     
+    // Fullscreen helper
+    void toggle_fullscreen();
+    
+    // OSD helper
+    OSDRenderer::OSDPosition string_to_osd_position(const std::string& position) const;
+    
+    // Video rendering helpers
+    SDL_Rect calculate_viewport() const;
+    void render_crt_effects(const SDL_Rect& viewport);
+    void render_scanlines(const SDL_Rect& viewport);
+    
     // Menu action handlers
     void handle_menu_action(videopac::MenuAction action);
     void handle_load_bios();
     void handle_load_rom();
+    void handle_save_state(int slot);
+    void handle_load_state(int slot);
+    void handle_delete_state(int slot);
     void handle_reset();
     void handle_display_info();
     void handle_exit();

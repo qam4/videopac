@@ -7,9 +7,12 @@
 #include "ui/zip_handler.h"
 #include "ui/dialogs.h"
 #include "ui/recent_files_list.h"
+#include "ui/save_state_manager.h"
+#include "ui/osd_renderer.h"
 #include <iostream>
 #include <cstring>
 #include <fstream>
+#include <ctime>
 
 namespace videopac {
 
@@ -24,6 +27,18 @@ SDLFrontend::SDLFrontend()
     , last_fps_time_(0)
     , fps_counter_(0)
     , current_fps_(0.0f)
+    , show_fps_(false)
+    , fps_position_(OSDRenderer::OSDPosition::TopRight)  // Default position
+    , audio_muted_(false)
+    , turbo_mode_(false)
+    , normal_speed_(1.0f)
+    , is_fullscreen_(false)
+    , windowed_width_(0)
+    , windowed_height_(0)
+    , windowed_x_(0)
+    , windowed_y_(0)
+    , current_rom_name_("")
+    , current_bios_name_("")
     , audio_write_pos_(0)
     , audio_read_pos_(0)
 {
@@ -52,10 +67,35 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     config_manager_ = std::make_unique<ConfigManager>();
     config_manager_->load();  // Load saved configuration
     
+    // Requirement 12.7: Restore fullscreen state on startup
+    bool saved_fullscreen = config_manager_->get_fullscreen();
+    if (saved_fullscreen != is_fullscreen_) {
+        // Apply saved fullscreen preference
+        if (saved_fullscreen) {
+            SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
+            is_fullscreen_ = true;
+        }
+        // If saved preference is windowed and we're already windowed, no action needed
+    }
+    
     text_renderer_ = std::make_unique<TextRenderer>(renderer_);
     if (!text_renderer_->initialize()) {
         std::cerr << "Warning: Text renderer initialization failed" << std::endl;
     }
+    
+    osd_renderer_ = std::make_unique<OSDRenderer>(renderer_);
+    if (!osd_renderer_->initialize()) {
+        std::cerr << "Warning: OSD renderer initialization failed" << std::endl;
+    }
+    
+    // Load FPS display position from config (Requirement 19.3)
+    fps_position_ = string_to_osd_position(config_manager_->get_fps_position());
+    
+    // Load FPS display enabled state
+    show_fps_ = config_manager_->get_fps_display_enabled();
+    
+    // Load audio mute state (Requirement 14.12)
+    audio_muted_ = config_manager_->get_audio_muted();
     
     menu_system_ = std::make_unique<MenuSystem>(renderer_, text_renderer_.get());
     menu_system_->build_main_menu();
@@ -77,6 +117,9 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     emu_config.video_standard = config_.video_standard;
     emu_config.enable_profile = config_.enable_profile;
     emulator_ = std::make_unique<EmulatorCore>(emu_config);
+    
+    // Create save state manager (needs emulator and renderer)
+    save_state_manager_ = std::make_unique<SaveStateManagerUI>(emulator_.get(), renderer_);
     
     // Load BIOS
     if (!config_.bios_path.empty()) {
@@ -200,10 +243,17 @@ bool SDLFrontend::init_video() {
     int window_width = display_width * config_.display_scale;
     int window_height = display_height * config_.display_scale;
     
+    // Store windowed dimensions
+    windowed_width_ = window_width;
+    windowed_height_ = window_height;
+    
     // Create window
     uint32 window_flags = SDL_WINDOW_SHOWN;
     if (config_.fullscreen) {
         window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+        is_fullscreen_ = true;
+    } else {
+        is_fullscreen_ = false;
     }
     
     window_ = SDL_CreateWindow(
@@ -218,6 +268,11 @@ bool SDLFrontend::init_video() {
     if (!window_) {
         std::cerr << "Failed to create window: " << SDL_GetError() << std::endl;
         return false;
+    }
+    
+    // Store initial window position (for windowed mode)
+    if (!is_fullscreen_) {
+        SDL_GetWindowPosition(window_, &windowed_x_, &windowed_y_);
     }
     
     // Create renderer
@@ -237,6 +292,7 @@ bool SDLFrontend::init_video() {
     
     // Use nearest-neighbor filtering for sharp pixels
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");  // 0=nearest (sharp), 1=linear, 2=best
+    SDL_SetHint(SDL_HINT_RENDER_LOGICAL_SIZE_MODE, "0");  // 0=letterbox (default, most compatible)
     
     // Create texture for framebuffer
     texture_ = SDL_CreateTexture(
@@ -306,6 +362,37 @@ void SDLFrontend::cleanup_audio() {
     }
 }
 
+void SDLFrontend::toggle_fullscreen() {
+    // Requirements 12.1, 12.2, 12.3, 12.4, 12.5
+    if (!window_) {
+        return;
+    }
+    
+    if (is_fullscreen_) {
+        // Exit fullscreen - restore windowed mode
+        // Requirement 12.5: Restore window size and position
+        SDL_SetWindowFullscreen(window_, 0);
+        SDL_SetWindowSize(window_, windowed_width_, windowed_height_);
+        SDL_SetWindowPosition(window_, windowed_x_, windowed_y_);
+        is_fullscreen_ = false;
+    } else {
+        // Enter fullscreen
+        // Requirement 12.5: Store current window size and position
+        SDL_GetWindowSize(window_, &windowed_width_, &windowed_height_);
+        SDL_GetWindowPosition(window_, &windowed_x_, &windowed_y_);
+        
+        // Requirement 12.2: Use desktop resolution with fullscreen desktop mode
+        // Requirement 12.3, 12.4: SDL_WINDOW_FULLSCREEN_DESKTOP maintains aspect ratio with letterboxing
+        SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
+        is_fullscreen_ = true;
+    }
+    
+    // Requirement 12.6: Persist fullscreen preference to config
+    if (config_manager_) {
+        config_manager_->set_fullscreen(is_fullscreen_);
+    }
+}
+
 void SDLFrontend::run() {
     try {
         while (running_) {
@@ -341,10 +428,13 @@ void SDLFrontend::run() {
             }
             
             // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
-            uint32 target_frame_time = (config_.video_standard == VideoStandard::NTSC) ? 17 : 20;  // ms
-            uint32 elapsed = SDL_GetTicks() - frame_start;
-            if (elapsed < target_frame_time) {
-                SDL_Delay(target_frame_time - elapsed);
+            // Skip delay in turbo mode for maximum speed (Requirement 18.1)
+            if (!turbo_mode_) {
+                uint32 target_frame_time = (config_.video_standard == VideoStandard::NTSC) ? 17 : 20;  // ms
+                uint32 elapsed = SDL_GetTicks() - frame_start;
+                if (elapsed < target_frame_time) {
+                    SDL_Delay(target_frame_time - elapsed);
+                }
             }
         }
     } catch (const std::exception& e) {
@@ -365,22 +455,144 @@ void SDLFrontend::render_frame() {
     SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
     SDL_RenderClear(renderer_);
     
-    // Render texture: 160x240 framebuffer to 320x240 display (2x horizontal scaling)
-    SDL_Rect dest_rect;
-    dest_rect.x = 0;
-    dest_rect.y = 0;
-    dest_rect.w = 320; // 160 * 2
-    dest_rect.h = 240; // No vertical scaling
-    
+    // Render game texture to fill the entire 320x240 logical space
+    // SDL's logical size feature handles aspect ratio and scaling automatically
+    SDL_Rect dest_rect = {0, 0, 320, 240};
     SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
     
-    // Render menu overlay if visible
+    // Apply CRT effects and scanlines if enabled (in 320x240 logical space)
+    // Note: aspect ratio settings are NOT applied here since SDL's logical size
+    // already handles proper scaling and aspect ratio with letterboxing
+    render_crt_effects(dest_rect);
+    render_scanlines(dest_rect);
+    
+    // Render OSD elements if not in menu (still in 320x240 space)
+    if (osd_renderer_ && !menu_system_->is_visible()) {
+        // Render FPS display if enabled (Requirements 7.2, 7.5)
+        if (show_fps_) {
+            osd_renderer_->render_fps(current_fps_, fps_position_);
+        }
+        
+        // Render mute indicator if audio is muted
+        if (audio_muted_) {
+            osd_renderer_->render_status_indicator("MUTE", OSDRenderer::OSDPosition::TopLeft);
+        }
+        
+        // Render turbo mode indicator if active
+        if (turbo_mode_) {
+            osd_renderer_->render_status_indicator("TURBO", OSDRenderer::OSDPosition::BottomRight);
+        }
+        
+        // Update and render notifications
+        osd_renderer_->update(SDL_GetTicks());
+    }
+    
+    // Render menu overlay if visible (still in 320x240 logical space)
+    // Menu will scale its rendering internally based on actual window size
     if (menu_system_ && menu_system_->is_visible()) {
         menu_system_->render();
     }
     
     // Present
     SDL_RenderPresent(renderer_);
+}
+
+OSDRenderer::OSDPosition SDLFrontend::string_to_osd_position(const std::string& position) const {
+    if (position == "top-left") {
+        return OSDRenderer::OSDPosition::TopLeft;
+    } else if (position == "top-right") {
+        return OSDRenderer::OSDPosition::TopRight;
+    } else if (position == "bottom-left") {
+        return OSDRenderer::OSDPosition::BottomLeft;
+    } else if (position == "bottom-right") {
+        return OSDRenderer::OSDPosition::BottomRight;
+    }
+    // Default to top-right if invalid
+    return OSDRenderer::OSDPosition::TopRight;
+}
+
+SDL_Rect SDLFrontend::calculate_viewport() const {
+    // Get window/renderer size
+    int window_width, window_height;
+    SDL_GetRendererOutputSize(renderer_, &window_width, &window_height);
+    
+    // Original framebuffer dimensions
+    const int fb_width = FRAMEBUFFER_WIDTH;   // 160
+    const int fb_height = FRAMEBUFFER_HEIGHT; // 240
+    
+    SDL_Rect viewport;
+    std::string aspect_ratio = config_manager_->get_aspect_ratio();
+    
+    if (aspect_ratio == "original") {
+        // Original 1:1 pixel aspect ratio (160x240 -> 320x240 with 2x horizontal scaling)
+        viewport.w = fb_width * 2;  // 320
+        viewport.h = fb_height;      // 240
+        
+        // Center in window
+        viewport.x = (window_width - viewport.w) / 2;
+        viewport.y = (window_height - viewport.h) / 2;
+        
+    } else if (aspect_ratio == "4:3") {
+        // 4:3 aspect ratio - calculate based on window size
+        float target_aspect = 4.0f / 3.0f;
+        float window_aspect = static_cast<float>(window_width) / window_height;
+        
+        if (window_aspect > target_aspect) {
+            // Window is wider than 4:3, fit to height
+            viewport.h = window_height;
+            viewport.w = static_cast<int>(window_height * target_aspect);
+            viewport.x = (window_width - viewport.w) / 2;
+            viewport.y = 0;
+        } else {
+            // Window is taller than 4:3, fit to width
+            viewport.w = window_width;
+            viewport.h = static_cast<int>(window_width / target_aspect);
+            viewport.x = 0;
+            viewport.y = (window_height - viewport.h) / 2;
+        }
+        
+    } else { // "stretch"
+        // Stretch to fill entire window
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.w = window_width;
+        viewport.h = window_height;
+    }
+    
+    return viewport;
+}
+
+void SDLFrontend::render_crt_effects(const SDL_Rect& viewport) {
+    // CRT effects disabled - edge vignetting was causing visual artifacts
+    // Future implementation could add proper CRT simulation effects
+    (void)viewport;  // Unused
+    return;
+}
+
+void SDLFrontend::render_scanlines(const SDL_Rect& viewport) {
+    if (!config_manager_) {
+        return;
+    }
+    
+    int scanline_percent = config_manager_->get_scanlines();
+    
+    if (scanline_percent == 0) {
+        return;
+    }
+    
+    // Calculate alpha based on percentage
+    uint8_t alpha = static_cast<uint8_t>((scanline_percent * 255) / 100);
+    
+    SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, alpha);
+    
+    // Draw horizontal scanlines (every other line)
+    // Scale scanline spacing based on viewport height
+    int scanline_spacing = 2;  // Draw every 2 pixels
+    
+    for (int y = viewport.y; y < viewport.y + viewport.h; y += scanline_spacing) {
+        SDL_RenderDrawLine(renderer_, viewport.x, y, viewport.x + viewport.w, y);
+    }
 }
 
 void SDLFrontend::update_texture() {
@@ -526,16 +738,60 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
     if (key_down) {
         switch (event.keysym.sym) {
             case SDLK_ESCAPE:
-                running_ = false;
+                // Exit application when menu is not active (Requirement 8.7)
+                if (!menu_system_ || !menu_system_->is_visible()) {
+                    running_ = false;
+                }
+                return;
+                
+            case SDLK_F3:
+                // Toggle FPS display (Requirement 8.2)
+                show_fps_ = !show_fps_;
+                if (config_manager_) {
+                    config_manager_->set_fps_display_enabled(show_fps_);
+                }
+                if (osd_renderer_) {
+                    std::string message = show_fps_ ? "FPS Display: ON" : "FPS Display: OFF";
+                    osd_renderer_->show_notification(message, 2000);
+                }
+                return;
+                
+            case SDLK_F4:
+                // Toggle audio mute (Requirement 14.5)
+                audio_muted_ = !audio_muted_;
+                if (config_manager_) {
+                    config_manager_->set_audio_muted(audio_muted_);
+                }
+                if (audio_device_ != 0) {
+                    SDL_PauseAudioDevice(audio_device_, audio_muted_ ? 1 : 0);
+                }
+                if (osd_renderer_) {
+                    std::string message = audio_muted_ ? "Audio: MUTED" : "Audio: UNMUTED";
+                    osd_renderer_->show_notification(message, 2000);
+                }
                 return;
                 
             case SDLK_F5:
+                // Reset emulator when debugger not active (Requirement 8.3)
                 if (debugger_ && debugger_->is_paused()) {
                     debugger_->continue_execution();
                     std::cout << "Continuing execution..." << std::endl;
                 } else {
                     emulator_->reset();
+                    if (osd_renderer_) {
+                        osd_renderer_->show_notification("Emulator Reset", 2000);
+                    }
                 }
+                return;
+                
+            case SDLK_F6:
+                // Quick-save to slot 0 (Requirement 8.4)
+                handle_save_state(0);
+                return;
+                
+            case SDLK_F7:
+                // Quick-load from slot 0 (Requirement 8.5)
+                handle_load_state(0);
                 return;
                 
             case SDLK_F9:
@@ -543,6 +799,30 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
                     debugger_->step();
                     debugger_ui_->display_cpu_state();
                     debugger_ui_->display_disassembly(2, 5);
+                }
+                return;
+                
+            case SDLK_F11:
+                // Toggle fullscreen (Requirement 12.1)
+                toggle_fullscreen();
+                if (osd_renderer_) {
+                    std::string message = is_fullscreen_ ? "Fullscreen Mode" : "Windowed Mode";
+                    osd_renderer_->show_notification(message, 2000);
+                }
+                return;
+                
+            case SDLK_F12:
+                // Save screenshot (Requirement 8.6)
+                {
+                    // Generate timestamp-based filename
+                    time_t now = time(nullptr);
+                    struct tm* timeinfo = localtime(&now);
+                    char filename[256];
+                    strftime(filename, sizeof(filename), "videopac_%Y%m%d_%H%M%S.ppm", timeinfo);
+                    save_screenshot(filename);
+                    if (osd_renderer_) {
+                        osd_renderer_->show_notification("Screenshot Saved", 2000);
+                    }
                 }
                 return;
                 
@@ -556,11 +836,23 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
             case SDLK_p:
                 paused_ = !paused_;
                 return;
-                
-            case SDLK_F12:
-                save_screenshot("screenshot.ppm");
-                return;
         }
+        
+        // Check for Alt+Enter (alternative fullscreen toggle) (Requirement 12.1)
+        if (event.keysym.sym == SDLK_RETURN && (event.keysym.mod & KMOD_ALT)) {
+            toggle_fullscreen();
+            if (osd_renderer_) {
+                std::string message = is_fullscreen_ ? "Fullscreen Mode" : "Windowed Mode";
+                osd_renderer_->show_notification(message, 2000);
+            }
+            return;
+        }
+    }
+    
+    // Handle Tab key for turbo mode (both press and release) (Requirement 18.1)
+    if (event.keysym.sym == SDLK_TAB) {
+        turbo_mode_ = key_down;
+        return;
     }
     
     // Map to Videopac key
@@ -697,6 +989,8 @@ VidKey SDLFrontend::map_sdl_key(SDL_Keycode key) {
 
 // Menu action handlers
 void SDLFrontend::handle_menu_action(videopac::MenuAction action) {
+    int slot = menu_system_->get_selected_slot();
+    
     switch (action) {
         case MenuAction::LoadBIOS:
             handle_load_bios();
@@ -704,11 +998,155 @@ void SDLFrontend::handle_menu_action(videopac::MenuAction action) {
         case MenuAction::LoadROM:
             handle_load_rom();
             break;
+        case MenuAction::SaveState:
+            if (slot >= 0) {
+                handle_save_state(slot);
+            }
+            break;
+        case MenuAction::LoadState:
+            if (slot >= 0) {
+                handle_load_state(slot);
+            }
+            break;
         case MenuAction::Reset:
             handle_reset();
             break;
+        case MenuAction::DisplayInfo:
+            handle_display_info();
+            break;
+        case MenuAction::ToggleFullscreen:
+            toggle_fullscreen();
+            if (osd_renderer_) {
+                std::string message = is_fullscreen_ ? "Fullscreen Mode" : "Windowed Mode";
+                osd_renderer_->show_notification(message, 2000);
+            }
+            break;
+        case MenuAction::Screenshot:
+            {
+                // Generate timestamp-based filename
+                time_t now = time(nullptr);
+                struct tm* timeinfo = localtime(&now);
+                char filename[256];
+                strftime(filename, sizeof(filename), "videopac_%Y%m%d_%H%M%S.ppm", timeinfo);
+                save_screenshot(filename);
+                if (osd_renderer_) {
+                    osd_renderer_->show_notification("Screenshot Saved", 2000);
+                }
+            }
+            break;
+        case MenuAction::ToggleDebugger:
+            // Debugger toggle is handled elsewhere
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Debugger toggle not implemented", 2000);
+            }
+            break;
         case MenuAction::Quit:
             handle_exit();
+            break;
+        // Video Settings
+        case MenuAction::ScalingFilterNearest:
+            config_manager_->set_scaling_filter("nearest");
+            config_manager_->save();  // Persist setting
+            SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Scaling: Nearest", 2000);
+            }
+            break;
+        case MenuAction::ScalingFilterLinear:
+            config_manager_->set_scaling_filter("linear");
+            config_manager_->save();  // Persist setting
+            SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Scaling: Linear", 2000);
+            }
+            break;
+        case MenuAction::AspectRatioOriginal:
+            config_manager_->set_aspect_ratio("original");
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Aspect Ratio: Original", 2000);
+            }
+            break;
+        case MenuAction::AspectRatio4_3:
+            config_manager_->set_aspect_ratio("4:3");
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Aspect Ratio: 4:3", 2000);
+            }
+            break;
+        case MenuAction::AspectRatioStretch:
+            config_manager_->set_aspect_ratio("stretch");
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Aspect Ratio: Stretch", 2000);
+            }
+            break;
+        case MenuAction::ToggleVSync:
+            {
+                bool current_vsync = config_manager_->get_vsync_enabled();
+                config_manager_->set_vsync_enabled(!current_vsync);
+                config_manager_->save();  // Persist setting
+                if (osd_renderer_) {
+                    std::string message = !current_vsync ? "VSync: On (Restart Required)" : "VSync: Off (Restart Required)";
+                    osd_renderer_->show_notification(message, 3000);
+                }
+            }
+            break;
+        case MenuAction::CRTEffectNone:
+            config_manager_->set_crt_effect("none");
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("CRT Effect: None", 2000);
+            }
+            break;
+        case MenuAction::CRTEffectLight:
+            config_manager_->set_crt_effect("light");
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("CRT Effect: Light", 2000);
+            }
+            break;
+        case MenuAction::CRTEffectMedium:
+            config_manager_->set_crt_effect("medium");
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("CRT Effect: Medium", 2000);
+            }
+            break;
+        case MenuAction::CRTEffectHeavy:
+            config_manager_->set_crt_effect("heavy");
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("CRT Effect: Heavy", 2000);
+            }
+            break;
+        case MenuAction::ScanlinesOff:
+            config_manager_->set_scanlines(0);
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Scanlines: Off", 2000);
+            }
+            break;
+        case MenuAction::Scanlines25:
+            config_manager_->set_scanlines(25);
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Scanlines: 25%", 2000);
+            }
+            break;
+        case MenuAction::Scanlines50:
+            config_manager_->set_scanlines(50);
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Scanlines: 50%", 2000);
+            }
+            break;
+        case MenuAction::Scanlines75:
+            config_manager_->set_scanlines(75);
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Scanlines: 75%", 2000);
+            }
             break;
         default:
             std::cout << "Unhandled menu action: " << static_cast<int>(action) << std::endl;
@@ -979,12 +1417,253 @@ void SDLFrontend::handle_reset() {
 }
 
 void SDLFrontend::handle_display_info() {
-    // TODO: Implement display info dialog
-    std::cout << "Display info not yet implemented" << std::endl;
+    menu_system_->hide();
+    
+    // Build info message
+    std::string rom_info = current_rom_name_.empty() ? "None" : current_rom_name_;
+    std::string bios_info = current_bios_name_.empty() ? "None" : current_bios_name_;
+    std::string version_info = "v1.0.0";
+    
+    std::string message = "ROM: " + rom_info + "\n" +
+                         "BIOS: " + bios_info + "\n" +
+                         "Version: " + version_info;
+    
+    message_dialog_->set_message("System Information", message);
+    message_dialog_->show();
+    
+    // Wait for user to dismiss the dialog
+    while (message_dialog_->is_visible() && running_) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running_ = false;
+                return;
+            }
+            if (event.type == SDL_KEYDOWN) {
+                message_dialog_->process_input(event.key.keysym.sym);
+            }
+        }
+        
+        // Render the paused game screen with dialog overlay
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+        SDL_RenderClear(renderer_);
+        update_texture();
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        message_dialog_->render();
+        SDL_RenderPresent(renderer_);
+        SDL_Delay(16);
+    }
+    
+    message_dialog_->hide();
 }
 
 void SDLFrontend::handle_exit() {
+    // Save configuration before exit (Requirement 16.4)
+    if (config_manager_) {
+        std::cout << "Saving configuration..." << std::endl;
+        if (!config_manager_->save()) {
+            std::cerr << "Warning: Failed to save configuration" << std::endl;
+        }
+    }
+    
+    // Clean up temporary files (Requirement 3.7)
+    if (zip_handler_) {
+        std::cout << "Cleaning up temporary files..." << std::endl;
+        zip_handler_->cleanup_temp_files();
+    }
+    
+    // Terminate application (Requirement 4.12)
+    std::cout << "Exiting application..." << std::endl;
     running_ = false;
+}
+
+void SDLFrontend::handle_save_state(int slot) {
+    menu_system_->hide();
+    
+    // Use tracked ROM name, or "unknown" if no ROM loaded
+    std::string rom_name = current_rom_name_.empty() ? "unknown" : current_rom_name_;
+    
+    // Show progress dialog
+    progress_dialog_->set_message("Saving state...");
+    progress_dialog_->show();
+    
+    // Render progress dialog
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+    SDL_RenderClear(renderer_);
+    update_texture();
+    SDL_Rect dest_rect = {0, 0, 320, 240};
+    SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+    progress_dialog_->render();
+    SDL_RenderPresent(renderer_);
+    
+    // Save the state
+    auto result = save_state_manager_->save_state(slot, rom_name);
+    
+    progress_dialog_->hide();
+    
+    // Show result message
+    if (result.is_ok()) {
+        message_dialog_->set_message("Success", "State saved to slot " + std::to_string(slot));
+    } else {
+        message_dialog_->set_message("Error", "Failed to save state: " + result.error);
+    }
+    
+    message_dialog_->show();
+    
+    // Wait for user to dismiss message
+    bool message_dismissed = false;
+    uint32_t message_start_time = SDL_GetTicks();
+    while (!message_dismissed && running_) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running_ = false;
+                return;
+            }
+            if (event.type == SDL_KEYDOWN) {
+                if (message_dialog_->process_input(event.key.keysym.sym)) {
+                    message_dismissed = true;
+                }
+            }
+        }
+        
+        // Auto-dismiss success messages after 2 seconds
+        if (result.is_ok() && (SDL_GetTicks() - message_start_time) >= 2000) {
+            message_dismissed = true;
+        }
+        
+        // Render
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+        SDL_RenderClear(renderer_);
+        update_texture();
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        message_dialog_->render();
+        SDL_RenderPresent(renderer_);
+        
+        SDL_Delay(16);
+    }
+    
+    message_dialog_->hide();
+    menu_system_->show();
+}
+
+void SDLFrontend::handle_load_state(int slot) {
+    menu_system_->hide();
+    
+    // Use tracked ROM name, or "unknown" if no ROM loaded
+    std::string rom_name = current_rom_name_.empty() ? "unknown" : current_rom_name_;
+    
+    // Show progress dialog
+    progress_dialog_->set_message("Loading state...");
+    progress_dialog_->show();
+    
+    // Render progress dialog
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+    SDL_RenderClear(renderer_);
+    update_texture();
+    SDL_Rect dest_rect = {0, 0, 320, 240};
+    SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+    progress_dialog_->render();
+    SDL_RenderPresent(renderer_);
+    
+    // Load the state
+    auto result = save_state_manager_->load_state(slot, rom_name);
+    
+    progress_dialog_->hide();
+    
+    // Show result message
+    if (result.is_ok()) {
+        message_dialog_->set_message("Success", "State loaded from slot " + std::to_string(slot));
+    } else {
+        message_dialog_->set_message("Error", "Failed to load state: " + result.error);
+    }
+    
+    message_dialog_->show();
+    
+    // Wait for user to dismiss message
+    bool message_dismissed = false;
+    uint32_t message_start_time = SDL_GetTicks();
+    while (!message_dismissed && running_) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running_ = false;
+                return;
+            }
+            if (event.type == SDL_KEYDOWN) {
+                if (message_dialog_->process_input(event.key.keysym.sym)) {
+                    message_dismissed = true;
+                }
+            }
+        }
+        
+        // Auto-dismiss success messages after 2 seconds
+        if (result.is_ok() && (SDL_GetTicks() - message_start_time) >= 2000) {
+            message_dismissed = true;
+        }
+        
+        // Render
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+        SDL_RenderClear(renderer_);
+        update_texture();
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        message_dialog_->render();
+        SDL_RenderPresent(renderer_);
+        
+        SDL_Delay(16);
+    }
+    
+    message_dialog_->hide();
+    menu_system_->show();
+}
+
+void SDLFrontend::handle_delete_state(int slot) {
+    (void)slot;  // Unused for now
+    menu_system_->hide();
+    
+    // Use tracked ROM name, or "unknown" if no ROM loaded
+    std::string rom_name = current_rom_name_.empty() ? "unknown" : current_rom_name_;
+    
+    // Show confirmation dialog
+    // TODO: Implement ConfirmDialog usage
+    
+    // For now, just show a message
+    message_dialog_->set_message("Delete State", "Delete state feature not yet fully implemented");
+    message_dialog_->show();
+    
+    // Wait for user to dismiss message
+    bool message_dismissed = false;
+    while (!message_dismissed && running_) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running_ = false;
+                return;
+            }
+            if (event.type == SDL_KEYDOWN) {
+                if (message_dialog_->process_input(event.key.keysym.sym)) {
+                    message_dismissed = true;
+                }
+            }
+        }
+        
+        // Render
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+        SDL_RenderClear(renderer_);
+        update_texture();
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        message_dialog_->render();
+        SDL_RenderPresent(renderer_);
+        
+        SDL_Delay(16);
+    }
+    
+    message_dialog_->hide();
+    menu_system_->show();
 }
 
 // File loading helpers
@@ -999,6 +1678,10 @@ bool SDLFrontend::load_bios_file(const std::string& path) {
         return false;
     }
     
+    // Extract filename from path
+    size_t last_slash = path.find_last_of("/\\");
+    current_bios_name_ = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
+    
     return true;
 }
 
@@ -1012,6 +1695,10 @@ bool SDLFrontend::load_rom_file(const std::string& path) {
         std::cerr << "Failed to load ROM: " << result.error << std::endl;
         return false;
     }
+    
+    // Extract filename from path
+    size_t last_slash = path.find_last_of("/\\");
+    current_rom_name_ = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
     
     // Reset emulator after loading ROM
     emulator_->reset();

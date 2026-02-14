@@ -233,6 +233,7 @@ if(BUILD_TESTS)
         tests/test_input_mapper.cpp
         tests/test_recent_files_list.cpp
         tests/test_config_manager.cpp
+        tests/test_reset_functionality.cpp
         tests/property_tests.cpp
         # Include UI sources for testing
         ${UI_SOURCES}

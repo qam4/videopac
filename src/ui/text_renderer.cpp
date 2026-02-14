@@ -41,11 +41,12 @@ bool TextRenderer::initialize() {
     };
     
     // Try each font path until one succeeds
-    // Font sizes adjusted for 320x240 logical resolution
+    // Font sizes for crisp rendering at 2x scale (640x480 window)
+    // These will be scaled down by logical size for sharp text
     for (int i = 0; font_paths[i] != nullptr; i++) {
-        font_small_ = TTF_OpenFont(font_paths[i], 8);   // Was 12
-        font_medium_ = TTF_OpenFont(font_paths[i], 10); // Was 16
-        font_large_ = TTF_OpenFont(font_paths[i], 14);  // Was 24
+        font_small_ = TTF_OpenFont(font_paths[i], 16);  // 2x of 8
+        font_medium_ = TTF_OpenFont(font_paths[i], 20); // 2x of 10
+        font_large_ = TTF_OpenFont(font_paths[i], 28);  // 2x of 14
         
         if (font_small_ && font_medium_ && font_large_) {
             // Enable hinting for better rendering at small sizes
@@ -125,7 +126,9 @@ bool TextRenderer::render_text_ttf(const std::string& text, int x, int y,
         return false;
     }
 
-    SDL_Rect dest_rect = { x, y, surface->w, surface->h };
+    // Scale down by 2x to match logical resolution
+    // Fonts are rendered at 2x size for crispness, then scaled to logical size
+    SDL_Rect dest_rect = { x, y, surface->w / 2, surface->h / 2 };
     SDL_RenderCopy(renderer_, texture, nullptr, &dest_rect);
 
     SDL_DestroyTexture(texture);

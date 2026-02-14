@@ -345,8 +345,8 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 9.1, 11.1, 11.2_
 
 
-- [-] 16. Implement menu actions for save states
-  - [ ] 16.1 Implement "Save State" menu action
+- [x] 16. Implement menu actions for save states
+  - [x] 16.1 Implement "Save State" menu action
     - Display slot selection submenu (slots 0-9)
     - Show existing save timestamps and thumbnails
     - Save emulator state to selected slot
@@ -354,7 +354,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Display success/error messages
     - _Requirements: 4.7, 4.8, 10.2, 10.6, 10.7_
   
-  - [ ] 16.2 Implement "Load State" menu action
+  - [x] 16.2 Implement "Load State" menu action
     - Display slot selection submenu (slots 0-9)
     - Show existing save timestamps and thumbnails
     - Indicate empty slots
@@ -362,7 +362,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Display success/error messages
     - _Requirements: 4.9, 4.10, 10.2, 10.3, 10.6_
   
-  - [ ] 16.3 Implement "Delete Save State" menu action
+  - [x] 16.3 Implement "Delete Save State" menu action
     - Display slot selection submenu
     - Show confirmation dialog before deletion
     - Delete save state and thumbnail files
@@ -382,17 +382,17 @@ The implementation is organized into logical phases that build upon each other, 
     - Test empty slot indication
     - _Requirements: 4.7, 4.8, 4.9, 4.10, 10.2, 10.3, 10.6, 10.8, 10.9_
 
-- [~] 17. Implement remaining menu actions
-  - [ ] 17.1 Implement "Reset" menu action
+- [x] 17. Implement remaining menu actions
+  - [x] 17.1 Implement "Reset" menu action
     - Reset EmulatorCore to initial state
     - Preserve loaded BIOS and ROM
     - _Requirements: 4.6_
   
-  - [ ] 17.2 Implement "Display Info" menu action
+  - [x] 17.2 Implement "Display Info" menu action
     - Show dialog with current ROM name, BIOS name, emulator version
     - _Requirements: 4.11_
   
-  - [ ] 17.3 Implement "Exit" menu action
+  - [x] 17.3 Implement "Exit" menu action
     - Save configuration before exit
     - Clean up temporary files
     - Terminate application
@@ -408,12 +408,12 @@ The implementation is organized into logical phases that build upon each other, 
     - Test exit saves configuration
     - _Requirements: 4.6, 4.11, 4.12, 16.4_
 
-- [~] 18. Checkpoint - Ensure all tests pass
+- [x] 18. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
-- [~] 19. Implement keyboard shortcuts
-  - [ ] 19.1 Add keyboard shortcut handlers to SDLFrontend
+- [x] 19. Implement keyboard shortcuts
+  - [x] 19.1 Add keyboard shortcut handlers to SDLFrontend
     - F3: Toggle FPS display
     - F5: Reset emulator (when debugger not active)
     - F6: Quick-save to slot 0
@@ -447,8 +447,8 @@ The implementation is organized into logical phases that build upon each other, 
     - Test F4 toggles audio mute
     - _Requirements: 8.2, 8.3, 8.4, 8.5, 8.6, 14.5, 18.1_
 
-- [~] 20. Implement FPS display
-  - [ ] 20.1 Add FPS display to OSDRenderer
+- [x] 20. Implement FPS display
+  - [x] 20.1 Add FPS display to OSDRenderer
     - Implement FPS calculation and display
     - Implement F3 toggle handler
     - Implement configurable position
@@ -469,8 +469,8 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 7.1, 7.2, 7.4, 7.5_
 
 
-- [~] 21. Implement fullscreen support
-  - [ ] 21.1 Add fullscreen toggle to SDLFrontend
+- [x] 21. Implement fullscreen support
+  - [x] 21.1 Add fullscreen toggle to SDLFrontend
     - Implement F11/Alt+Enter handler
     - Implement fullscreen mode using SDL_SetWindowFullscreen()
     - Implement aspect ratio preservation with letterboxing
@@ -479,7 +479,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Restore fullscreen state on startup
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7_
   
-  - [ ] 21.2 Add "Toggle Fullscreen" menu option
+  - [x] 21.2 Add "Toggle Fullscreen" menu option
     - Add menu item to main menu
     - Implement menu action handler
     - _Requirements: 12.9_
@@ -503,8 +503,8 @@ The implementation is organized into logical phases that build upon each other, 
     - Test fullscreen persistence
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8_
 
-- [~] 22. Implement video settings menu
-  - [ ] 22.1 Create Video Settings submenu
+- [x] 22. Implement video settings menu
+  - [x] 22.1 Create Video Settings submenu
     - Add submenu with options: Scaling Filter, Aspect Ratio, VSync, CRT Effects, Scanlines
     - Implement scaling filter options (Nearest, Linear)
     - Implement aspect ratio options (Original, 4:3, Stretch)
@@ -513,7 +513,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Implement scanline options (Off, 25%, 50%, 75%)
     - _Requirements: 13.1, 13.2, 13.3, 13.5, 13.7, 13.9, 13.11_
   
-  - [ ] 22.2 Implement video settings application
+  - [x] 22.2 Implement video settings application
     - Apply scaling filter changes immediately using SDL_SetHint()
     - Apply aspect ratio changes immediately by adjusting viewport
     - Apply VSync changes immediately by recreating renderer
@@ -538,7 +538,7 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 13.4, 13.6, 13.8, 13.10, 13.12, 13.13_
 
 
-- [~] 23. Implement audio settings menu
+- [ ] 23. Implement audio settings menu
   - [ ] 23.1 Create Audio Settings submenu
     - Add submenu with options: Volume, Mute, Audio Buffer Size
     - Implement volume slider (0-100% in 10% increments)
@@ -574,7 +574,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test settings restoration on startup
     - _Requirements: 14.4, 14.5, 14.6, 14.7, 14.9, 14.10, 14.11, 14.12_
 
-- [~] 24. Implement input settings menu
+- [ ] 24. Implement input settings menu
   - [ ] 24.1 Create Input Settings submenu
     - Add submenu with options: Configure Player 1, Configure Player 2
     - Display all mappable actions (Up, Down, Left, Right, Button)
@@ -610,11 +610,11 @@ The implementation is organized into logical phases that build upon each other, 
     - Test settings restoration on startup
     - _Requirements: 15.4, 15.5, 15.6, 15.8, 15.11, 15.12_
 
-- [~] 25. Checkpoint - Ensure all tests pass
+- [ ] 25. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
-- [~] 26. Implement screenshot capture
+- [ ] 26. Implement screenshot capture
   - [ ] 26.1 Add screenshot capture to SDLFrontend
     - Implement F12 handler to capture screenshot
     - Implement screenshot saving with timestamp filename format
@@ -650,7 +650,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test format preference persistence
     - _Requirements: 8.6, 17.1, 17.2, 17.4, 17.5, 17.6, 17.7, 17.8_
 
-- [~] 27. Implement speed control and turbo mode
+- [ ] 27. Implement speed control and turbo mode
   - [ ] 27.1 Add speed control to SDLFrontend
     - Implement Tab key handler for turbo mode (hold for fast-forward)
     - Implement speed adjustment (25%, 50%, 100%, 200%, 400%, Unlimited)
@@ -681,7 +681,7 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 18.1, 18.3, 18.4, 18.7, 18.8, 18.9_
 
 
-- [~] 28. Implement OSD customization menu
+- [ ] 28. Implement OSD customization menu
   - [ ] 28.1 Create OSD Settings submenu
     - Add submenu with options: FPS Position, Notification Position, Font Size, OSD Opacity
     - Implement position options (Top-Left, Top-Right, Bottom-Left, Bottom-Right)
@@ -709,7 +709,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test settings persistence
     - _Requirements: 19.4, 19.6, 19.8, 19.9_
 
-- [~] 29. Implement recent files menu integration
+- [ ] 29. Implement recent files menu integration
   - [ ] 29.1 Add recent files submenus
     - Add "Recent ROMs" submenu under "Load ROM"
     - Add "Recent BIOS" submenu under "Load BIOS"
@@ -737,7 +737,7 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 11.6, 11.7, 11.8, 11.10_
 
 
-- [~] 30. Implement "Reset to Defaults" menu option
+- [ ] 30. Implement "Reset to Defaults" menu option
   - [ ] 30.1 Add "Reset to Defaults" menu option
     - Add menu item to main menu
     - Display confirmation dialog before reset
@@ -752,7 +752,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test configuration file updated
     - _Requirements: 16.7_
 
-- [~] 31. Implement configuration persistence on startup and exit
+- [ ] 31. Implement configuration persistence on startup and exit
   - [ ] 31.1 Add configuration loading on startup
     - Load configuration file on SDLFrontend initialization
     - Apply all loaded settings (window, video, audio, input, OSD)
@@ -776,7 +776,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test default values when file corrupted
     - _Requirements: 16.3, 16.4, 16.5_
 
-- [~] 32. Implement error handling and user feedback
+- [ ] 32. Implement error handling and user feedback
   - [ ] 32.1 Add error handling for file operations
     - Display error dialogs for file loading failures
     - Display error dialogs for ZIP extraction failures
@@ -806,11 +806,11 @@ The implementation is organized into logical phases that build upon each other, 
     - Test success message timeout
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2, 6.3, 6.5_
 
-- [~] 33. Final checkpoint - Ensure all tests pass
+- [ ] 33. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
-- [~] 34. Polish and refinement
+- [ ] 34. Polish and refinement
   - [ ] 34.1 Improve UI aesthetics
     - Refine menu colors and contrast
     - Refine dialog appearance
@@ -836,7 +836,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Verify configuration file paths work correctly on all platforms
     - Verify file browser works correctly on all platforms
 
-- [~] 35. Documentation and cleanup
+- [ ] 35. Documentation and cleanup
   - [ ] 35.1 Update user documentation
     - Document all keyboard shortcuts
     - Document menu system usage

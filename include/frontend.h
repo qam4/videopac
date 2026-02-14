@@ -78,7 +78,25 @@ enum class MenuAction {
     LoadState,
     Screenshot,
     ToggleDebugger,
-    Quit
+    ToggleFullscreen,
+    DisplayInfo,
+    Quit,
+    // Video Settings submenu
+    VideoSettings,
+    ScalingFilterNearest,
+    ScalingFilterLinear,
+    AspectRatioOriginal,
+    AspectRatio4_3,
+    AspectRatioStretch,
+    ToggleVSync,
+    CRTEffectNone,
+    CRTEffectLight,
+    CRTEffectMedium,
+    CRTEffectHeavy,
+    ScanlinesOff,
+    Scanlines25,
+    Scanlines50,
+    Scanlines75
 };
 
 // Abstract frontend interface

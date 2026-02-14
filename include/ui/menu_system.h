@@ -18,9 +18,10 @@ struct MenuItem {
     bool enabled;
     bool has_submenu;
     int slot_number;  // For save/load state slots
+    std::string value;  // For displaying current setting values
 
     MenuItem(const std::string& lbl, videopac::MenuAction act = videopac::MenuAction::None, bool en = true)
-        : label(lbl), action(act), enabled(en), has_submenu(false), slot_number(-1) {}
+        : label(lbl), action(act), enabled(en), has_submenu(false), slot_number(-1), value("") {}
 };
 
 // Menu system for in-game overlay menu
@@ -41,12 +42,18 @@ public:
     // Process keyboard input
     // Returns the selected action (None if no action selected)
     videopac::MenuAction process_input(SDL_Keycode key);
+    
+    // Get the slot number of the last selected menu item
+    int get_selected_slot() const;
 
     // Render the menu
     void render();
 
     // Build the main menu structure
     void build_main_menu();
+    
+    // Update menu items with current configuration values
+    void update_menu_values(class ConfigManager* config_manager);
 
 private:
     // Navigation methods
@@ -66,6 +73,8 @@ private:
     std::stack<std::vector<MenuItem>*> menu_stack_;
 
     int selected_index_;
+    int scroll_offset_;  // For scrolling long menus
+    int last_selected_slot_;  // Track the slot number of last selected item
     bool visible_;
 };
 
