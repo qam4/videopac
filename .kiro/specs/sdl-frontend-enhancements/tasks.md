@@ -8,7 +8,7 @@ The implementation is organized into logical phases that build upon each other, 
 
 ## Tasks
 
-- [ ] 1. Set up project infrastructure and dependencies
+- [x] 1. Set up project infrastructure and dependencies
   - Add miniz library for ZIP support (single-header library)
   - Add SDL_ttf for text rendering (or implement bitmap font fallback)
   - Add stb_image_write for screenshot/thumbnail saving (single-header library)
@@ -16,8 +16,8 @@ The implementation is organized into logical phases that build upon each other, 
   - Create directory structure: `src/ui/`, `include/ui/`
   - _Requirements: 3.8, 17.2_
 
-- [ ] 2. Implement configuration management system
-  - [ ] 2.1 Create ConfigManager class with INI file parsing
+- [x] 2. Implement configuration management system
+  - [x] 2.1 Create ConfigManager class with INI file parsing
     - Implement INI file parser (simple key=value format with sections)
     - Implement configuration getters and setters for all settings
     - Implement default values for all configuration options
@@ -37,8 +37,8 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 16.3, 16.4, 16.5_
 
 
-- [ ] 3. Implement ZIP file handling
-  - [ ] 3.1 Create ZIPHandler class using miniz
+- [x] 3. Implement ZIP file handling
+  - [x] 3.1 Create ZIPHandler class using miniz
     - Implement ZIP archive opening and enumeration
     - Implement file extraction to temporary directory
     - Implement ROM file filtering (.bin, .rom extensions)
@@ -62,8 +62,8 @@ The implementation is organized into logical phases that build upon each other, 
     - Test temp file cleanup on destruction
     - _Requirements: 3.3, 3.4, 3.5, 3.7_
 
-- [ ] 4. Implement text rendering system
-  - [ ] 4.1 Create TextRenderer class
+- [x] 4. Implement text rendering system
+  - [x] 4.1 Create TextRenderer class
     - Implement SDL_ttf initialization and font loading
     - Implement text rendering with color and position
     - Implement text measurement (width/height calculation)
@@ -78,21 +78,21 @@ The implementation is organized into logical phases that build upon each other, 
     - Test fallback rendering
     - _Requirements: 1.5_
 
-- [ ] 5. Implement dialog system
-  - [ ] 5.1 Create MessageDialog class
+- [x] 5. Implement dialog system
+  - [x] 5.1 Create MessageDialog class
     - Implement modal dialog rendering with title and message
     - Implement semi-transparent background overlay
     - Implement keyboard input handling (Enter/Escape to dismiss)
     - Implement text wrapping for long messages
     - _Requirements: 5.5, 6.1, 6.4_
   
-  - [ ] 5.2 Create ConfirmDialog class
+  - [x] 5.2 Create ConfirmDialog class
     - Implement confirmation dialog with Yes/No options
     - Implement keyboard navigation (arrow keys, Enter, Escape)
     - Return true for confirmation, false for cancellation
     - _Requirements: 10.9_
   
-  - [ ] 5.3 Create ProgressDialog class
+  - [x] 5.3 Create ProgressDialog class
     - Implement progress message display
     - Implement show/hide methods
     - _Requirements: 5.1, 5.2, 5.3_
@@ -107,12 +107,12 @@ The implementation is organized into logical phases that build upon each other, 
     - Test ProgressDialog show/hide
     - _Requirements: 5.5, 6.4, 10.9_
 
-- [ ] 6. Checkpoint - Ensure all tests pass
+- [x] 6. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
-- [ ] 7. Implement file browser component
-  - [ ] 7.1 Create FileBrowser class
+- [x] 7. Implement file browser component
+  - [x] 7.1 Create FileBrowser class
     - Implement directory scanning using std::filesystem
     - Implement file filtering by extension (case-insensitive)
     - Implement file entry display with name and size
@@ -121,7 +121,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Implement parent directory navigation (..)
     - _Requirements: 2.1, 2.4, 2.5, 2.6, 2.7, 2.8_
   
-  - [ ] 7.2 Integrate FileBrowser with ConfigManager for directory memory
+  - [x] 7.2 Integrate FileBrowser with ConfigManager for directory memory
     - Load last used directory from config on open
     - Save directory to config when file is selected
     - Fall back to current working directory if last directory doesn't exist
@@ -148,8 +148,8 @@ The implementation is organized into logical phases that build upon each other, 
     - Test cancellation (Escape key)
     - _Requirements: 2.1, 2.5, 2.7, 2.8_
 
-- [ ] 8. Implement menu system
-  - [ ] 8.1 Create MenuItem structure and MenuSystem class
+- [x] 8. Implement menu system
+  - [x] 8.1 Create MenuItem structure and MenuSystem class
     - Implement menu item structure with label, action, submenu, enabled state
     - Implement menu stack for submenu navigation
     - Implement keyboard navigation (arrow keys, Enter, Escape)
@@ -157,7 +157,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Implement submenu indicators (">")
     - _Requirements: 1.1, 1.6, 1.7_
   
-  - [ ] 8.2 Build main menu structure
+  - [x] 8.2 Build main menu structure
     - Create main menu with all required options
     - Create submenus for Video Settings, Audio Settings, Input Settings, etc.
     - Implement menu action enumeration
@@ -175,8 +175,8 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 1.6, 1.7_
 
 
-- [ ] 9. Implement OSD (On-Screen Display) renderer
-  - [ ] 9.1 Create OSDRenderer class
+- [x] 9. Implement OSD (On-Screen Display) renderer
+  - [x] 9.1 Create OSDRenderer class
     - Implement FPS display rendering
     - Implement notification display with timeout
     - Implement status indicator rendering
@@ -197,8 +197,8 @@ The implementation is organized into logical phases that build upon each other, 
     - Test opacity changes
     - _Requirements: 7.2, 7.4, 19.4, 19.6, 19.8_
 
-- [ ] 10. Implement save state manager with thumbnails
-  - [ ] 10.1 Create SaveStateManager class
+- [x] 10. Implement save state manager with thumbnails
+  - [x] 10.1 Create SaveStateManager class
     - Implement save state file naming ({rom_name}.state{slot})
     - Implement save state directory management (saves/)
     - Implement thumbnail capture using current framebuffer
@@ -228,12 +228,12 @@ The implementation is organized into logical phases that build upon each other, 
     - Test listing save states with timestamps
     - _Requirements: 4.8, 4.10, 10.1, 10.2, 10.3, 10.4, 10.5, 10.7, 10.9_
 
-- [ ] 11. Checkpoint - Ensure all tests pass
+- [x] 11. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
-- [ ] 12. Implement input mapper for keyboard and joystick configuration
-  - [ ] 12.1 Create InputMapper class
+- [x] 12. Implement input mapper for keyboard and joystick configuration
+  - [x] 12.1 Create InputMapper class
     - Implement keyboard mapping storage and retrieval
     - Implement joystick mapping storage and retrieval
     - Implement joystick detection using SDL_NumJoysticks()
@@ -250,7 +250,7 @@ The implementation is organized into logical phases that build upon each other, 
     - **Property 71: Joystick detection on startup**
     - **Validates: Requirements 15.7**
   
-  - [ ]* 12.4 Write unit tests for InputMapper
+  - [x]* 12.4 Write unit tests for InputMapper
     - Test keyboard mapping
     - Test joystick mapping
     - Test joystick detection
@@ -258,8 +258,8 @@ The implementation is organized into logical phases that build upon each other, 
     - Test configuration persistence
     - _Requirements: 15.4, 15.5, 15.6, 15.7, 15.8, 15.11, 15.12_
 
-- [ ] 13. Implement recent files list management
-  - [ ] 13.1 Create RecentFilesList class
+- [x] 13. Implement recent files list management
+  - [x] 13.1 Create RecentFilesList class
     - Implement list storage with maximum size of 10
     - Implement add operation with oldest entry eviction
     - Implement separate lists for ROMs and BIOS
@@ -285,8 +285,8 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.9, 11.10_
 
 
-- [ ] 14. Integrate menu system with SDLFrontend
-  - [ ] 14.1 Add menu system to SDLFrontend class
+- [x] 14. Integrate menu system with SDLFrontend
+  - [x] 14.1 Add menu system to SDLFrontend class
     - Add MenuSystem member to SDLFrontend
     - Implement F10 key handler to show/hide menu
     - Implement menu rendering in render_frame()
@@ -307,8 +307,8 @@ The implementation is organized into logical phases that build upon each other, 
     - Test menu renders over game display
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.7_
 
-- [ ] 15. Implement menu actions for file loading
-  - [ ] 15.1 Implement "Load BIOS" menu action
+- [x] 15. Implement menu actions for file loading
+  - [x] 15.1 Implement "Load BIOS" menu action
     - Open FileBrowser with BIOS file filter
     - Handle ZIP files (extract and select)
     - Load BIOS into EmulatorCore
@@ -316,7 +316,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Update recent BIOS list
     - _Requirements: 4.2, 4.3, 5.1, 5.4, 5.5, 11.2_
   
-  - [ ] 15.2 Implement "Load ROM" menu action
+  - [x] 15.2 Implement "Load ROM" menu action
     - Open FileBrowser with ROM and ZIP file filter
     - Handle ZIP files (extract and select)
     - Load ROM into EmulatorCore
@@ -345,7 +345,7 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 9.1, 11.1, 11.2_
 
 
-- [ ] 16. Implement menu actions for save states
+- [-] 16. Implement menu actions for save states
   - [ ] 16.1 Implement "Save State" menu action
     - Display slot selection submenu (slots 0-9)
     - Show existing save timestamps and thumbnails
@@ -382,7 +382,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test empty slot indication
     - _Requirements: 4.7, 4.8, 4.9, 4.10, 10.2, 10.3, 10.6, 10.8, 10.9_
 
-- [ ] 17. Implement remaining menu actions
+- [~] 17. Implement remaining menu actions
   - [ ] 17.1 Implement "Reset" menu action
     - Reset EmulatorCore to initial state
     - Preserve loaded BIOS and ROM
@@ -408,11 +408,11 @@ The implementation is organized into logical phases that build upon each other, 
     - Test exit saves configuration
     - _Requirements: 4.6, 4.11, 4.12, 16.4_
 
-- [ ] 18. Checkpoint - Ensure all tests pass
+- [~] 18. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
-- [ ] 19. Implement keyboard shortcuts
+- [~] 19. Implement keyboard shortcuts
   - [ ] 19.1 Add keyboard shortcut handlers to SDLFrontend
     - F3: Toggle FPS display
     - F5: Reset emulator (when debugger not active)
@@ -447,7 +447,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test F4 toggles audio mute
     - _Requirements: 8.2, 8.3, 8.4, 8.5, 8.6, 14.5, 18.1_
 
-- [ ] 20. Implement FPS display
+- [~] 20. Implement FPS display
   - [ ] 20.1 Add FPS display to OSDRenderer
     - Implement FPS calculation and display
     - Implement F3 toggle handler
@@ -469,7 +469,7 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 7.1, 7.2, 7.4, 7.5_
 
 
-- [ ] 21. Implement fullscreen support
+- [~] 21. Implement fullscreen support
   - [ ] 21.1 Add fullscreen toggle to SDLFrontend
     - Implement F11/Alt+Enter handler
     - Implement fullscreen mode using SDL_SetWindowFullscreen()
@@ -503,7 +503,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test fullscreen persistence
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8_
 
-- [ ] 22. Implement video settings menu
+- [~] 22. Implement video settings menu
   - [ ] 22.1 Create Video Settings submenu
     - Add submenu with options: Scaling Filter, Aspect Ratio, VSync, CRT Effects, Scanlines
     - Implement scaling filter options (Nearest, Linear)
@@ -538,7 +538,7 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 13.4, 13.6, 13.8, 13.10, 13.12, 13.13_
 
 
-- [ ] 23. Implement audio settings menu
+- [~] 23. Implement audio settings menu
   - [ ] 23.1 Create Audio Settings submenu
     - Add submenu with options: Volume, Mute, Audio Buffer Size
     - Implement volume slider (0-100% in 10% increments)
@@ -574,7 +574,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test settings restoration on startup
     - _Requirements: 14.4, 14.5, 14.6, 14.7, 14.9, 14.10, 14.11, 14.12_
 
-- [ ] 24. Implement input settings menu
+- [~] 24. Implement input settings menu
   - [ ] 24.1 Create Input Settings submenu
     - Add submenu with options: Configure Player 1, Configure Player 2
     - Display all mappable actions (Up, Down, Left, Right, Button)
@@ -610,11 +610,11 @@ The implementation is organized into logical phases that build upon each other, 
     - Test settings restoration on startup
     - _Requirements: 15.4, 15.5, 15.6, 15.8, 15.11, 15.12_
 
-- [ ] 25. Checkpoint - Ensure all tests pass
+- [~] 25. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
-- [ ] 26. Implement screenshot capture
+- [~] 26. Implement screenshot capture
   - [ ] 26.1 Add screenshot capture to SDLFrontend
     - Implement F12 handler to capture screenshot
     - Implement screenshot saving with timestamp filename format
@@ -650,7 +650,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test format preference persistence
     - _Requirements: 8.6, 17.1, 17.2, 17.4, 17.5, 17.6, 17.7, 17.8_
 
-- [ ] 27. Implement speed control and turbo mode
+- [~] 27. Implement speed control and turbo mode
   - [ ] 27.1 Add speed control to SDLFrontend
     - Implement Tab key handler for turbo mode (hold for fast-forward)
     - Implement speed adjustment (25%, 50%, 100%, 200%, 400%, Unlimited)
@@ -681,7 +681,7 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 18.1, 18.3, 18.4, 18.7, 18.8, 18.9_
 
 
-- [ ] 28. Implement OSD customization menu
+- [~] 28. Implement OSD customization menu
   - [ ] 28.1 Create OSD Settings submenu
     - Add submenu with options: FPS Position, Notification Position, Font Size, OSD Opacity
     - Implement position options (Top-Left, Top-Right, Bottom-Left, Bottom-Right)
@@ -709,7 +709,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test settings persistence
     - _Requirements: 19.4, 19.6, 19.8, 19.9_
 
-- [ ] 29. Implement recent files menu integration
+- [~] 29. Implement recent files menu integration
   - [ ] 29.1 Add recent files submenus
     - Add "Recent ROMs" submenu under "Load ROM"
     - Add "Recent BIOS" submenu under "Load BIOS"
@@ -737,7 +737,7 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 11.6, 11.7, 11.8, 11.10_
 
 
-- [ ] 30. Implement "Reset to Defaults" menu option
+- [~] 30. Implement "Reset to Defaults" menu option
   - [ ] 30.1 Add "Reset to Defaults" menu option
     - Add menu item to main menu
     - Display confirmation dialog before reset
@@ -752,7 +752,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test configuration file updated
     - _Requirements: 16.7_
 
-- [ ] 31. Implement configuration persistence on startup and exit
+- [~] 31. Implement configuration persistence on startup and exit
   - [ ] 31.1 Add configuration loading on startup
     - Load configuration file on SDLFrontend initialization
     - Apply all loaded settings (window, video, audio, input, OSD)
@@ -776,7 +776,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Test default values when file corrupted
     - _Requirements: 16.3, 16.4, 16.5_
 
-- [ ] 32. Implement error handling and user feedback
+- [~] 32. Implement error handling and user feedback
   - [ ] 32.1 Add error handling for file operations
     - Display error dialogs for file loading failures
     - Display error dialogs for ZIP extraction failures
@@ -806,11 +806,11 @@ The implementation is organized into logical phases that build upon each other, 
     - Test success message timeout
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2, 6.3, 6.5_
 
-- [ ] 33. Final checkpoint - Ensure all tests pass
+- [~] 33. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
-- [ ] 34. Polish and refinement
+- [~] 34. Polish and refinement
   - [ ] 34.1 Improve UI aesthetics
     - Refine menu colors and contrast
     - Refine dialog appearance
@@ -836,7 +836,7 @@ The implementation is organized into logical phases that build upon each other, 
     - Verify configuration file paths work correctly on all platforms
     - Verify file browser works correctly on all platforms
 
-- [ ] 35. Documentation and cleanup
+- [~] 35. Documentation and cleanup
   - [ ] 35.1 Update user documentation
     - Document all keyboard shortcuts
     - Document menu system usage

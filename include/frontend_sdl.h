@@ -9,6 +9,16 @@
 #include <memory>
 #include <vector>
 
+// Forward declarations for UI components
+class TextRenderer;
+class MenuSystem;
+class ConfigManager;
+class FileBrowser;
+class ZIPHandler;
+class MessageDialog;
+class ProgressDialog;
+class RecentFilesList;
+
 namespace videopac {
 
 class SDLFrontend : public Frontend {
@@ -48,6 +58,17 @@ private:
     std::unique_ptr<Debugger> debugger_;
     std::unique_ptr<DebuggerUI> debugger_ui_;
     
+    // UI components
+    std::unique_ptr<TextRenderer> text_renderer_;
+    std::unique_ptr<MenuSystem> menu_system_;
+    std::unique_ptr<ConfigManager> config_manager_;
+    std::unique_ptr<FileBrowser> file_browser_;
+    std::unique_ptr<ZIPHandler> zip_handler_;
+    std::unique_ptr<MessageDialog> message_dialog_;
+    std::unique_ptr<ProgressDialog> progress_dialog_;
+    std::unique_ptr<RecentFilesList> recent_roms_;
+    std::unique_ptr<RecentFilesList> recent_bios_;
+    
     // Configuration
     FrontendConfig config_;
     
@@ -73,6 +94,19 @@ private:
     void update_texture();
     void handle_keyboard_event(const SDL_KeyboardEvent& event);
     void handle_quit_event();
+    
+    // Menu action handlers
+    void handle_menu_action(videopac::MenuAction action);
+    void handle_load_bios();
+    void handle_load_rom();
+    void handle_reset();
+    void handle_display_info();
+    void handle_exit();
+    
+    // File loading helpers
+    bool load_bios_file(const std::string& path);
+    bool load_rom_file(const std::string& path);
+    std::string handle_zip_file(const std::string& zip_path);
     
     static void audio_callback(void* userdata, uint8* stream, int len);
     

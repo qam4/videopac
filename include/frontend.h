@@ -69,6 +69,7 @@ struct FrontendConfig {
 // Menu actions
 enum class MenuAction {
     None,
+    LoadBIOS,
     LoadROM,
     Reset,
     Pause,

@@ -4,8 +4,15 @@
 #include "emulator.h"
 #include <cstdio>
 #include <fstream>
+#include <filesystem>
 
 using namespace videopac;
+
+// Helper function to get a temporary file path
+static std::string get_temp_file(const std::string& filename) {
+    auto temp_dir = std::filesystem::temp_directory_path();
+    return (temp_dir / filename).string();
+}
 
 TEST(SaveStateTest, SerializationRoundTrip) {
     // Create a save state with known values
@@ -31,7 +38,7 @@ TEST(SaveStateTest, SerializationRoundTrip) {
     state.input_state.joystick1[0] = true;
     
     // Save to file
-    const std::string test_file = "/tmp/test_savestate.sav";
+    const std::string test_file = get_temp_file("test_savestate.sav");
     auto save_result = SaveStateManager::save(test_file, state);
     ASSERT_TRUE(save_result.is_ok()) << "Save failed: " << save_result.error;
     
@@ -63,7 +70,7 @@ TEST(SaveStateTest, ChecksumValidation) {
     state.frame_count = 100;
     state.cpu_state.pc = 0x500;
     
-    const std::string test_file = "/tmp/test_checksum.sav";
+    const std::string test_file = get_temp_file("test_checksum.sav");
     auto save_result = SaveStateManager::save(test_file, state);
     ASSERT_TRUE(save_result.is_ok());
     
@@ -80,7 +87,7 @@ TEST(SaveStateTest, CorruptedFileDetection) {
     state.version = 1;
     state.frame_count = 200;
     
-    const std::string test_file = "/tmp/test_corrupted.sav";
+    const std::string test_file = get_temp_file("test_corrupted.sav");
     auto save_result = SaveStateManager::save(test_file, state);
     ASSERT_TRUE(save_result.is_ok());
     

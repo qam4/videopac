@@ -1,5 +1,12 @@
 #include "frontend_sdl.h"
 #include "types.h"
+#include "ui/text_renderer.h"
+#include "ui/menu_system.h"
+#include "ui/config_manager.h"
+#include "ui/file_browser.h"
+#include "ui/zip_handler.h"
+#include "ui/dialogs.h"
+#include "ui/recent_files_list.h"
 #include <iostream>
 #include <cstring>
 #include <fstream>
@@ -40,6 +47,25 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
         shutdown();
         return false;
     }
+    
+    // Initialize UI components
+    config_manager_ = std::make_unique<ConfigManager>();
+    config_manager_->load();  // Load saved configuration
+    
+    text_renderer_ = std::make_unique<TextRenderer>(renderer_);
+    if (!text_renderer_->initialize()) {
+        std::cerr << "Warning: Text renderer initialization failed" << std::endl;
+    }
+    
+    menu_system_ = std::make_unique<MenuSystem>(renderer_, text_renderer_.get());
+    menu_system_->build_main_menu();
+    
+    file_browser_ = std::make_unique<FileBrowser>(renderer_, text_renderer_.get(), config_manager_.get());
+    zip_handler_ = std::make_unique<ZIPHandler>();
+    message_dialog_ = std::make_unique<MessageDialog>(renderer_, text_renderer_.get());
+    progress_dialog_ = std::make_unique<ProgressDialog>(renderer_, text_renderer_.get());
+    recent_roms_ = std::make_unique<RecentFilesList>(10);
+    recent_bios_ = std::make_unique<RecentFilesList>(10);
     
     // Initialize audio
     if (config_.audio_enabled && !init_audio()) {
@@ -117,6 +143,16 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
 
 void SDLFrontend::shutdown() {
     std::cout << "SDLFrontend::shutdown() called" << std::endl;
+    
+    // Clean up temporary ZIP files
+    if (zip_handler_) {
+        zip_handler_->cleanup_temp_files();
+    }
+    
+    // Save configuration
+    if (config_manager_) {
+        config_manager_->save();
+    }
     
     // Write trace log if debugger is active
     if (debugger_) {
@@ -278,9 +314,11 @@ void SDLFrontend::run() {
             // Process input
             process_input();
             
-            // Run emulator frame if not paused
+            // Run emulator frame if not paused and menu is not active
             bool emulator_paused = debugger_ && debugger_->is_paused();
-            if (!paused_ && !emulator_paused) {
+            bool menu_active = menu_system_ && menu_system_->is_visible();
+            
+            if (!paused_ && !emulator_paused && !menu_active) {
                 emulator_->run_frame();
                 frame_count_++;
             }
@@ -288,8 +326,8 @@ void SDLFrontend::run() {
             // Render
             render_frame();
             
-            // Process audio
-            if (config_.audio_enabled) {
+            // Process audio (only if not paused)
+            if (config_.audio_enabled && !menu_active) {
                 process_audio();
             }
             
@@ -300,15 +338,6 @@ void SDLFrontend::run() {
                 current_fps_ = fps_counter_ * 1000.0f / (current_time - last_fps_time_);
                 fps_counter_ = 0;
                 last_fps_time_ = current_time;
-                
-                if (config_.show_fps) {
-                    std::cout << "FPS: " << current_fps_ << std::endl;
-                }
-                
-                // Debug: Dump VDC registers every second
-                // if (frame_count_ > 60) {  // After initial frames
-                //     emulator_->get_vdc().dump_registers();
-                // }
             }
             
             // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
@@ -344,6 +373,11 @@ void SDLFrontend::render_frame() {
     dest_rect.h = 240; // No vertical scaling
     
     SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+    
+    // Render menu overlay if visible
+    if (menu_system_ && menu_system_->is_visible()) {
+        menu_system_->render();
+    }
     
     // Present
     SDL_RenderPresent(renderer_);
@@ -422,6 +456,32 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
     
     // Ignore key repeat events (when holding a key down)
     if (event.repeat != 0) {
+        return;
+    }
+    
+    // If menu is active, route input to menu system
+    if (menu_system_ && menu_system_->is_visible() && key_down) {
+        MenuAction action = menu_system_->process_input(event.keysym.sym);
+        
+        // Handle menu actions
+        if (action != MenuAction::None) {
+            handle_menu_action(action);
+        }
+        return;
+    }
+    
+    // Check for menu toggle keys (only on key down)
+    // F10, F1, or backtick (`) to toggle menu
+    if (key_down && (event.keysym.sym == SDLK_F10 || 
+                     event.keysym.sym == SDLK_F1 ||
+                     event.keysym.sym == SDLK_BACKQUOTE)) {
+        if (menu_system_) {
+            if (menu_system_->is_visible()) {
+                menu_system_->hide();
+            } else {
+                menu_system_->show();
+            }
+        }
         return;
     }
     
@@ -530,7 +590,10 @@ void SDLFrontend::audio_callback(void* userdata, uint8* stream, int len) {
 }
 
 MenuAction SDLFrontend::process_menu() {
-    // TODO: Implement menu system
+    if (menu_system_ && menu_system_->is_visible()) {
+        // Menu is being processed in handle_keyboard_event
+        return MenuAction::None;
+    }
     return MenuAction::None;
 }
 
@@ -630,6 +693,463 @@ VidKey SDLFrontend::map_sdl_key(SDL_Keycode key) {
             // The caller will check if the key is valid
             return static_cast<VidKey>(0xFF);
     }
+}
+
+// Menu action handlers
+void SDLFrontend::handle_menu_action(videopac::MenuAction action) {
+    switch (action) {
+        case MenuAction::LoadBIOS:
+            handle_load_bios();
+            break;
+        case MenuAction::LoadROM:
+            handle_load_rom();
+            break;
+        case MenuAction::Reset:
+            handle_reset();
+            break;
+        case MenuAction::Quit:
+            handle_exit();
+            break;
+        default:
+            std::cout << "Unhandled menu action: " << static_cast<int>(action) << std::endl;
+            break;
+    }
+}
+
+void SDLFrontend::handle_load_bios() {
+    // Hide menu temporarily
+    menu_system_->hide();
+    
+    // Open file browser for BIOS files
+    file_browser_->open(".bin,.rom", FileBrowser::FileType::BIOS);
+    
+    // Process file browser until closed
+    while (file_browser_->is_open() && running_) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running_ = false;
+                file_browser_->close();
+                return;
+            }
+            if (event.type == SDL_KEYDOWN) {
+                file_browser_->process_input(event.key.keysym.sym);
+            }
+        }
+        
+        // Render
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+        SDL_RenderClear(renderer_);
+        update_texture();
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        file_browser_->render();
+        SDL_RenderPresent(renderer_);
+        
+        SDL_Delay(16);  // ~60 FPS
+    }
+    
+    // Check if a file was selected
+    if (file_browser_->was_file_selected()) {
+        std::string file_path = file_browser_->get_selected_file();
+        
+        // Show progress dialog
+        progress_dialog_->set_message("Loading BIOS...");
+        progress_dialog_->show();
+        
+        // Render progress dialog
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+        SDL_RenderClear(renderer_);
+        update_texture();
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        progress_dialog_->render();
+        SDL_RenderPresent(renderer_);
+        
+        // Load the BIOS file
+        bool success = load_bios_file(file_path);
+        
+        progress_dialog_->hide();
+        
+        // Show result message
+        if (success) {
+            message_dialog_->set_message("Success", "BIOS loaded successfully");
+            recent_bios_->add(file_path);
+            config_manager_->save();  // Save updated recent files
+        } else {
+            message_dialog_->set_message("Error", "Failed to load BIOS file");
+        }
+        
+        message_dialog_->show();
+        
+        // Wait for user to dismiss message
+        bool message_dismissed = false;
+        uint32_t message_start_time = SDL_GetTicks();
+        while (!message_dismissed && running_) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_QUIT) {
+                    running_ = false;
+                    return;
+                }
+                if (event.type == SDL_KEYDOWN) {
+                    if (message_dialog_->process_input(event.key.keysym.sym)) {
+                        message_dismissed = true;
+                    }
+                }
+            }
+            
+            // Auto-dismiss success messages after 2 seconds
+            if (success && (SDL_GetTicks() - message_start_time) >= 2000) {
+                message_dismissed = true;
+            }
+            
+            // Render
+            SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+            SDL_RenderClear(renderer_);
+            update_texture();
+            SDL_Rect dest_rect = {0, 0, 320, 240};
+            SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+            message_dialog_->render();
+            SDL_RenderPresent(renderer_);
+            
+            SDL_Delay(16);
+        }
+        
+        message_dialog_->hide();
+    }
+    
+    // Show menu again
+    menu_system_->show();
+}
+
+void SDLFrontend::handle_load_rom() {
+    // Hide menu temporarily
+    menu_system_->hide();
+    
+    // Open file browser for ROM files (including ZIP)
+    file_browser_->open(".bin,.rom,.zip", FileBrowser::FileType::ROM);
+    
+    // Process file browser until closed
+    while (file_browser_->is_open() && running_) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running_ = false;
+                file_browser_->close();
+                return;
+            }
+            if (event.type == SDL_KEYDOWN) {
+                file_browser_->process_input(event.key.keysym.sym);
+            }
+        }
+        
+        // Render
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+        SDL_RenderClear(renderer_);
+        update_texture();
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        file_browser_->render();
+        SDL_RenderPresent(renderer_);
+        
+        SDL_Delay(16);  // ~60 FPS
+    }
+    
+    // Check if a file was selected
+    if (file_browser_->was_file_selected()) {
+        std::string file_path = file_browser_->get_selected_file();
+        
+        // Check if it's a ZIP file
+        if (file_path.size() >= 4 && file_path.substr(file_path.size() - 4) == ".zip") {
+            file_path = handle_zip_file(file_path);
+            if (file_path.empty()) {
+                // ZIP handling failed or was cancelled
+                menu_system_->show();
+                return;
+            }
+        }
+        
+        // Show progress dialog
+        progress_dialog_->set_message("Loading ROM...");
+        progress_dialog_->show();
+        
+        // Render progress dialog
+        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+        SDL_RenderClear(renderer_);
+        update_texture();
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        progress_dialog_->render();
+        SDL_RenderPresent(renderer_);
+        
+        // Load the ROM file
+        bool success = load_rom_file(file_path);
+        
+        progress_dialog_->hide();
+        
+        // Show result message
+        if (success) {
+            message_dialog_->set_message("Success", "ROM loaded successfully");
+            recent_roms_->add(file_path);
+            config_manager_->save();  // Save updated recent files
+        } else {
+            message_dialog_->set_message("Error", "Failed to load ROM file");
+        }
+        
+        message_dialog_->show();
+        
+        // Wait for user to dismiss message
+        bool message_dismissed = false;
+        uint32_t message_start_time = SDL_GetTicks();
+        while (!message_dismissed && running_) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_QUIT) {
+                    running_ = false;
+                    return;
+                }
+                if (event.type == SDL_KEYDOWN) {
+                    if (message_dialog_->process_input(event.key.keysym.sym)) {
+                        message_dismissed = true;
+                    }
+                }
+            }
+            
+            // Auto-dismiss success messages after 2 seconds
+            if (success && (SDL_GetTicks() - message_start_time) >= 2000) {
+                message_dismissed = true;
+            }
+            
+            // Render
+            SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+            SDL_RenderClear(renderer_);
+            update_texture();
+            SDL_Rect dest_rect = {0, 0, 320, 240};
+            SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+            message_dialog_->render();
+            SDL_RenderPresent(renderer_);
+            
+            SDL_Delay(16);
+        }
+        
+        message_dialog_->hide();
+    }
+    
+    // Show menu again
+    menu_system_->show();
+}
+
+void SDLFrontend::handle_reset() {
+    if (emulator_) {
+        emulator_->reset();
+        message_dialog_->set_message("Reset", "Emulator reset successfully");
+        message_dialog_->show();
+        
+        // Auto-dismiss after 2 seconds
+        uint32_t start_time = SDL_GetTicks();
+        while (message_dialog_->is_visible() && running_) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_QUIT) {
+                    running_ = false;
+                    return;
+                }
+                if (event.type == SDL_KEYDOWN) {
+                    message_dialog_->process_input(event.key.keysym.sym);
+                }
+            }
+            
+            if ((SDL_GetTicks() - start_time) >= 2000) {
+                message_dialog_->hide();
+            }
+            
+            // Render
+            SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+            SDL_RenderClear(renderer_);
+            update_texture();
+            SDL_Rect dest_rect = {0, 0, 320, 240};
+            SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+            message_dialog_->render();
+            SDL_RenderPresent(renderer_);
+            
+            SDL_Delay(16);
+        }
+    }
+}
+
+void SDLFrontend::handle_display_info() {
+    // TODO: Implement display info dialog
+    std::cout << "Display info not yet implemented" << std::endl;
+}
+
+void SDLFrontend::handle_exit() {
+    running_ = false;
+}
+
+// File loading helpers
+bool SDLFrontend::load_bios_file(const std::string& path) {
+    if (!emulator_) {
+        return false;
+    }
+    
+    auto result = emulator_->load_bios(path);
+    if (result.is_err()) {
+        std::cerr << "Failed to load BIOS: " << result.error << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+bool SDLFrontend::load_rom_file(const std::string& path) {
+    if (!emulator_) {
+        return false;
+    }
+    
+    auto result = emulator_->load_rom(path);
+    if (result.is_err()) {
+        std::cerr << "Failed to load ROM: " << result.error << std::endl;
+        return false;
+    }
+    
+    // Reset emulator after loading ROM
+    emulator_->reset();
+    
+    return true;
+}
+
+std::string SDLFrontend::handle_zip_file(const std::string& zip_path) {
+    // Show progress dialog
+    progress_dialog_->set_message("Extracting ZIP...");
+    progress_dialog_->show();
+    
+    // Render progress dialog
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+    SDL_RenderClear(renderer_);
+    update_texture();
+    SDL_Rect dest_rect = {0, 0, 320, 240};
+    SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+    progress_dialog_->render();
+    SDL_RenderPresent(renderer_);
+    
+    // Open ZIP file
+    if (!zip_handler_->open(zip_path)) {
+        progress_dialog_->hide();
+        message_dialog_->set_message("Error", "Failed to open ZIP file");
+        message_dialog_->show();
+        
+        // Wait for dismissal
+        while (message_dialog_->is_visible() && running_) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_QUIT) {
+                    running_ = false;
+                    return "";
+                }
+                if (event.type == SDL_KEYDOWN) {
+                    message_dialog_->process_input(event.key.keysym.sym);
+                }
+            }
+            
+            SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+            SDL_RenderClear(renderer_);
+            update_texture();
+            SDL_Rect dest_rect = {0, 0, 320, 240};
+            SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+            message_dialog_->render();
+            SDL_RenderPresent(renderer_);
+            SDL_Delay(16);
+        }
+        
+        message_dialog_->hide();
+        return "";
+    }
+    
+    // Get list of ROM files
+    std::vector<std::string> rom_files = zip_handler_->get_rom_files();
+    
+    progress_dialog_->hide();
+    
+    if (rom_files.empty()) {
+        message_dialog_->set_message("Error", "No ROM files found in ZIP archive");
+        message_dialog_->show();
+        
+        // Wait for dismissal
+        while (message_dialog_->is_visible() && running_) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_QUIT) {
+                    running_ = false;
+                    return "";
+                }
+                if (event.type == SDL_KEYDOWN) {
+                    message_dialog_->process_input(event.key.keysym.sym);
+                }
+            }
+            
+            SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+            SDL_RenderClear(renderer_);
+            update_texture();
+            SDL_Rect dest_rect = {0, 0, 320, 240};
+            SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+            message_dialog_->render();
+            SDL_RenderPresent(renderer_);
+            SDL_Delay(16);
+        }
+        
+        message_dialog_->hide();
+        zip_handler_->close();
+        return "";
+    }
+    
+    // If only one ROM file, extract it automatically
+    std::string selected_file;
+    if (rom_files.size() == 1) {
+        selected_file = rom_files[0];
+    } else {
+        // TODO: Show selection dialog for multiple ROMs
+        // For now, just use the first one
+        selected_file = rom_files[0];
+        std::cout << "Multiple ROMs found in ZIP, using first: " << selected_file << std::endl;
+    }
+    
+    // Extract the selected file
+    std::string extracted_path = zip_handler_->extract_file(selected_file);
+    zip_handler_->close();
+    
+    if (extracted_path.empty()) {
+        message_dialog_->set_message("Error", "Failed to extract ROM from ZIP");
+        message_dialog_->show();
+        
+        // Wait for dismissal
+        while (message_dialog_->is_visible() && running_) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_QUIT) {
+                    running_ = false;
+                    return "";
+                }
+                if (event.type == SDL_KEYDOWN) {
+                    message_dialog_->process_input(event.key.keysym.sym);
+                }
+            }
+            
+            SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+            SDL_RenderClear(renderer_);
+            update_texture();
+            SDL_Rect dest_rect = {0, 0, 320, 240};
+            SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+            message_dialog_->render();
+            SDL_RenderPresent(renderer_);
+            SDL_Delay(16);
+        }
+        
+        message_dialog_->hide();
+        return "";
+    }
+    
+    return extracted_path;
 }
 
 } // namespace videopac

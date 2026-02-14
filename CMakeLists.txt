@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(videopac_emulator VERSION 1.0.0 LANGUAGES CXX)
+project(videopac_emulator VERSION 1.0.0 LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -33,6 +33,7 @@ option(ENABLE_SDL "Enable SDL2 frontend (requires SDL2)" ON)
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/third_party)
 
 # Source files for core emulator library
 set(CORE_SOURCES
@@ -49,9 +50,33 @@ set(CORE_SOURCES
     src/frontend_headless.cpp
 )
 
+# UI source files
+set(UI_SOURCES
+    src/ui/config_manager.cpp
+    src/ui/zip_handler.cpp
+    src/ui/text_renderer.cpp
+    src/ui/dialogs.cpp
+    src/ui/file_browser.cpp
+    src/ui/menu_system.cpp
+    src/ui/osd_renderer.cpp
+    src/ui/save_state_manager.cpp
+    src/ui/input_mapper.cpp
+    src/ui/recent_files_list.cpp
+)
+
 # Core emulator library
 add_library(videopac_core STATIC ${CORE_SOURCES})
 target_include_directories(videopac_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
+
+# Find miniz for ZIP support
+find_package(miniz CONFIG QUIET)
+if(miniz_FOUND)
+    target_link_libraries(videopac_core PUBLIC miniz::miniz)
+    target_compile_definitions(videopac_core PUBLIC HAVE_MINIZ)
+    message(STATUS "Building with miniz support for ZIP files")
+else()
+    message(WARNING "miniz not found. ZIP file support will be disabled.")
+endif()
 
 # Standalone executable
 if(BUILD_STANDALONE)
@@ -64,14 +89,19 @@ if(BUILD_STANDALONE)
                 # Fall back to FindSDL2.cmake module
                 find_package(SDL2 MODULE)
             endif()
+            
+            # Try to find SDL2_ttf (optional for text rendering)
+            find_package(SDL2_ttf CONFIG QUIET)
         else()
             find_package(SDL2)
+            find_package(SDL2_ttf QUIET)
         endif()
         
         if(SDL2_FOUND)
             add_executable(videopac
                 src/main.cpp
                 src/frontend_sdl.cpp
+                ${UI_SOURCES}
             )
             
             # Handle both vcpkg (SDL2::SDL2) and manual installation (${SDL2_LIBRARIES})
@@ -89,6 +119,16 @@ if(BUILD_STANDALONE)
                         SDL2::SDL2
                     )
                 endif()
+                
+                # Link SDL2_ttf if available
+                if(TARGET SDL2_ttf::SDL2_ttf)
+                    target_link_libraries(videopac SDL2_ttf::SDL2_ttf)
+                    target_compile_definitions(videopac PRIVATE HAVE_SDL_TTF)
+                    message(STATUS "Building with SDL2_ttf support")
+                else()
+                    message(STATUS "SDL2_ttf not found, using fallback text rendering")
+                endif()
+                
                 message(STATUS "Building with SDL2 support (vcpkg)")
             else()
                 target_include_directories(videopac PRIVATE ${SDL2_INCLUDE_DIRS})
@@ -187,7 +227,15 @@ if(BUILD_TESTS)
         tests/test_utils.cpp
         tests/test_master_clock.cpp
         tests/test_character_rendering.cpp
+        tests/test_file_browser.cpp
+        tests/test_osd_renderer.cpp
+        tests/test_save_state_manager_ui.cpp
+        tests/test_input_mapper.cpp
+        tests/test_recent_files_list.cpp
+        tests/test_config_manager.cpp
         tests/property_tests.cpp
+        # Include UI sources for testing
+        ${UI_SOURCES}
     )
     
     target_link_libraries(videopac_tests
@@ -195,6 +243,20 @@ if(BUILD_TESTS)
         gtest_main
         rapidcheck
     )
+    
+    # Link SDL2 for UI tests
+    if(TARGET SDL2::SDL2)
+        target_link_libraries(videopac_tests SDL2::SDL2)
+        if(TARGET SDL2_ttf::SDL2_ttf)
+            target_link_libraries(videopac_tests SDL2_ttf::SDL2_ttf)
+        endif()
+    elseif(SDL2_FOUND)
+        target_include_directories(videopac_tests PRIVATE ${SDL2_INCLUDE_DIRS})
+        target_link_libraries(videopac_tests ${SDL2_LIBRARIES})
+        if(SDL2_ttf_FOUND)
+            target_link_libraries(videopac_tests ${SDL2_TTF_LIBRARIES})
+        endif()
+    endif()
     
     include(GoogleTest)
     gtest_discover_tests(videopac_tests)
