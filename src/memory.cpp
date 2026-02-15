@@ -83,10 +83,24 @@ uint8 MemorySystem::read_program(uint16 address) {
         return state_.bios_rom[address];
     }
     
-    // Cartridge ROM: 0x400-0xFFF (with banking)
+    // Cartridge ROM: 0x400-0xFFF (with banking and A10 mirroring)
     if (address >= 0x400 && !state_.cart_rom.empty()) {
-        // Calculate ROM offset (address - 0x400)
-        uint16 rom_offset = address - 0x400;
+        // A10 is not connected to the cartridge (doc/o2doc.md section 2.0)
+        // "leaving off A10 will map this address to the first byte in the cartridge"
+        // The cartridge only sees A0-A9 and A11 (11 bits total, not 12)
+        //
+        // Address bits:    A11 A10 A9 A8 A7 A6 A5 A4 A3 A2 A1 A0
+        // Cartridge sees:  A11  -  A9 A8 A7 A6 A5 A4 A3 A2 A1 A0
+        // 
+        // For 2KB ROM (0x800 bytes):
+        // CPU 0x400-0x7FF (A11=0, A10=x): Cartridge sees 0x000-0x3FF → ROM[0x000-0x3FF]
+        // CPU 0x800-0xBFF (A11=1, A10=0): Cartridge sees 0x400-0x7FF → ROM[0x400-0x7FF]
+        // CPU 0xC00-0xFFF (A11=1, A10=1): Cartridge sees 0x400-0x7FF → ROM[0x400-0x7FF] (mirror)
+        //
+        // Implementation: Cartridge address = (A11 ? 0x400 : 0x000) | (A9-A0)
+        // Formula: rom_offset = ((address & 0x800) >> 1) | (address & 0x3FF)
+        //          Shift A11 right by 1 to get 0x400 when A11=1, then OR with A9-A0
+        uint16 rom_offset = ((address & 0x800) >> 1) | (address & 0x3FF);
         
         // Apply banking
         if (state_.num_banks > 1) {
@@ -96,7 +110,6 @@ uint8 MemorySystem::read_program(uint16 address) {
         // Check if accessing beyond ROM size
         if (rom_offset >= state_.cart_rom.size()) {
             // Return 0xFF for unmapped memory (NOP in 8048)
-            // This allows execution to continue gracefully
             return 0xFF;
         }
         
