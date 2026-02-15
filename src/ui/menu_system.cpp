@@ -106,6 +106,39 @@ void MenuSystem::build_main_menu() {
     
     main_menu_.push_back(video_settings_menu);
 
+    // Audio Settings submenu
+    MenuItem audio_settings_menu("Audio Settings", MenuAction::AudioSettings);
+    audio_settings_menu.has_submenu = true;
+    
+    // Volume submenu
+    MenuItem volume_menu("Volume", MenuAction::None);
+    volume_menu.has_submenu = true;
+    volume_menu.submenu.push_back(MenuItem("0%", MenuAction::Volume0));
+    volume_menu.submenu.push_back(MenuItem("10%", MenuAction::Volume10));
+    volume_menu.submenu.push_back(MenuItem("20%", MenuAction::Volume20));
+    volume_menu.submenu.push_back(MenuItem("30%", MenuAction::Volume30));
+    volume_menu.submenu.push_back(MenuItem("40%", MenuAction::Volume40));
+    volume_menu.submenu.push_back(MenuItem("50%", MenuAction::Volume50));
+    volume_menu.submenu.push_back(MenuItem("60%", MenuAction::Volume60));
+    volume_menu.submenu.push_back(MenuItem("70%", MenuAction::Volume70));
+    volume_menu.submenu.push_back(MenuItem("80%", MenuAction::Volume80));
+    volume_menu.submenu.push_back(MenuItem("90%", MenuAction::Volume90));
+    volume_menu.submenu.push_back(MenuItem("100%", MenuAction::Volume100));
+    audio_settings_menu.submenu.push_back(volume_menu);
+    
+    // Mute toggle
+    audio_settings_menu.submenu.push_back(MenuItem("Mute", MenuAction::ToggleMute));
+    
+    // Audio Buffer Size submenu
+    MenuItem buffer_size_menu("Buffer Size", MenuAction::None);
+    buffer_size_menu.has_submenu = true;
+    buffer_size_menu.submenu.push_back(MenuItem("Small (512)", MenuAction::AudioBufferSmall));
+    buffer_size_menu.submenu.push_back(MenuItem("Medium (1024)", MenuAction::AudioBufferMedium));
+    buffer_size_menu.submenu.push_back(MenuItem("Large (2048)", MenuAction::AudioBufferLarge));
+    audio_settings_menu.submenu.push_back(buffer_size_menu);
+    
+    main_menu_.push_back(audio_settings_menu);
+
     main_menu_.push_back(MenuItem("Display Info", MenuAction::DisplayInfo));
     main_menu_.push_back(MenuItem("Screenshot", MenuAction::Screenshot));
     main_menu_.push_back(MenuItem("Toggle Debugger", MenuAction::ToggleDebugger));
@@ -360,6 +393,36 @@ void MenuSystem::update_menu_values(ConfigManager* config_manager) {
             for (auto& video_item : item.submenu) {
                 if (video_item.action == videopac::MenuAction::ToggleVSync) {
                     video_item.value = config_manager->get_vsync_enabled() ? "On" : "Off";
+                }
+            }
+        }
+        
+        // Find Audio Settings menu
+        if (item.action == videopac::MenuAction::AudioSettings && item.has_submenu) {
+            for (auto& audio_item : item.submenu) {
+                // Update Volume submenu value
+                if (audio_item.label == "Volume" && audio_item.has_submenu) {
+                    int volume = config_manager->get_volume();
+                    audio_item.value = std::to_string(volume) + "%";
+                }
+                // Update Mute value
+                if (audio_item.action == videopac::MenuAction::ToggleMute) {
+                    audio_item.value = config_manager->get_audio_muted() ? "On" : "Off";
+                }
+                // Update Buffer Size submenu value
+                if (audio_item.label == "Buffer Size" && audio_item.has_submenu) {
+                    int buffer_size = config_manager->get_audio_buffer_size();
+                    std::string size_str;
+                    if (buffer_size == 512) {
+                        size_str = "Small";
+                    } else if (buffer_size == 1024) {
+                        size_str = "Medium";
+                    } else if (buffer_size == 2048) {
+                        size_str = "Large";
+                    } else {
+                        size_str = std::to_string(buffer_size);
+                    }
+                    audio_item.value = size_str;
                 }
             }
         }

@@ -538,15 +538,15 @@ The implementation is organized into logical phases that build upon each other, 
     - _Requirements: 13.4, 13.6, 13.8, 13.10, 13.12, 13.13_
 
 
-- [ ] 23. Implement audio settings menu
-  - [ ] 23.1 Create Audio Settings submenu
+- [x] 23. Implement audio settings menu
+  - [x] 23.1 Create Audio Settings submenu
     - Add submenu with options: Volume, Mute, Audio Buffer Size
     - Implement volume slider (0-100% in 10% increments)
     - Implement mute toggle
     - Implement buffer size options (Small/512, Medium/1024, Large/2048)
     - _Requirements: 14.1, 14.2, 14.3, 14.8_
   
-  - [ ] 23.2 Implement audio settings application
+  - [x] 23.2 Implement audio settings application
     - Apply volume changes immediately
     - Apply mute toggle immediately (stop output, continue processing)
     - Display mute indicator when muted

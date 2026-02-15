@@ -696,6 +696,8 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
             if (menu_system_->is_visible()) {
                 menu_system_->hide();
             } else {
+                // Update menu values before showing menu
+                menu_system_->update_menu_values(config_manager_.get());
                 // Update save state slot information before showing menu
                 menu_system_->update_save_state_slots(save_state_manager_.get(), current_rom_name_);
                 menu_system_->show();
@@ -1154,6 +1156,98 @@ void SDLFrontend::handle_menu_action(videopac::MenuAction action) {
             if (osd_renderer_) {
                 osd_renderer_->show_notification("Scanlines: 75%", 2000);
             }
+            break;
+        // Audio Settings
+        case MenuAction::Volume0:
+        case MenuAction::Volume10:
+        case MenuAction::Volume20:
+        case MenuAction::Volume30:
+        case MenuAction::Volume40:
+        case MenuAction::Volume50:
+        case MenuAction::Volume60:
+        case MenuAction::Volume70:
+        case MenuAction::Volume80:
+        case MenuAction::Volume90:
+        case MenuAction::Volume100:
+            {
+                // Map action to volume value
+                int volume = 0;
+                switch (action) {
+                    case MenuAction::Volume0: volume = 0; break;
+                    case MenuAction::Volume10: volume = 10; break;
+                    case MenuAction::Volume20: volume = 20; break;
+                    case MenuAction::Volume30: volume = 30; break;
+                    case MenuAction::Volume40: volume = 40; break;
+                    case MenuAction::Volume50: volume = 50; break;
+                    case MenuAction::Volume60: volume = 60; break;
+                    case MenuAction::Volume70: volume = 70; break;
+                    case MenuAction::Volume80: volume = 80; break;
+                    case MenuAction::Volume90: volume = 90; break;
+                    case MenuAction::Volume100: volume = 100; break;
+                    default: volume = 70; break;
+                }
+                
+                config_manager_->set_volume(volume);
+                config_manager_->save();  // Persist setting
+                
+                // Update master volume in config
+                config_.master_volume = volume / 100.0f;
+                
+                if (osd_renderer_) {
+                    osd_renderer_->show_notification("Volume: " + std::to_string(volume) + "%", 2000);
+                }
+                
+                // Update menu values to reflect change
+                menu_system_->update_menu_values(config_manager_.get());
+            }
+            break;
+        case MenuAction::ToggleMute:
+            {
+                bool current_mute = config_manager_->get_audio_muted();
+                audio_muted_ = !current_mute;
+                config_manager_->set_audio_muted(audio_muted_);
+                config_manager_->save();  // Persist setting
+                
+                // Apply mute immediately
+                if (audio_device_ != 0) {
+                    SDL_PauseAudioDevice(audio_device_, audio_muted_ ? 1 : 0);
+                }
+                
+                if (osd_renderer_) {
+                    std::string message = audio_muted_ ? "Audio: MUTED" : "Audio: UNMUTED";
+                    osd_renderer_->show_notification(message, 2000);
+                }
+                
+                // Update menu values to reflect change
+                menu_system_->update_menu_values(config_manager_.get());
+            }
+            break;
+        case MenuAction::AudioBufferSmall:
+            config_manager_->set_audio_buffer_size(512);
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Buffer: Small (Restart Required)", 3000);
+            }
+            // Update menu values to reflect change
+            menu_system_->update_menu_values(config_manager_.get());
+            break;
+        case MenuAction::AudioBufferMedium:
+            config_manager_->set_audio_buffer_size(1024);
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Buffer: Medium (Restart Required)", 3000);
+            }
+            // Update menu values to reflect change
+            menu_system_->update_menu_values(config_manager_.get());
+            break;
+        case MenuAction::AudioBufferLarge:
+            config_manager_->set_audio_buffer_size(2048);
+            config_manager_->save();  // Persist setting
+            if (osd_renderer_) {
+                osd_renderer_->show_notification("Buffer: Large (Restart Required)", 3000);
+            }
+            // Update menu values to reflect change
+            menu_system_->update_menu_values(config_manager_.get());
             break;
         default:
             std::cout << "Unhandled menu action: " << static_cast<int>(action) << std::endl;

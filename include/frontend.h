@@ -96,7 +96,26 @@ enum class MenuAction {
     ScanlinesOff,
     Scanlines25,
     Scanlines50,
-    Scanlines75
+    Scanlines75,
+    // Audio Settings submenu
+    AudioSettings,
+    VolumeDown,
+    VolumeUp,
+    Volume0,
+    Volume10,
+    Volume20,
+    Volume30,
+    Volume40,
+    Volume50,
+    Volume60,
+    Volume70,
+    Volume80,
+    Volume90,
+    Volume100,
+    ToggleMute,
+    AudioBufferSmall,
+    AudioBufferMedium,
+    AudioBufferLarge
 };
 
 // Abstract frontend interface
