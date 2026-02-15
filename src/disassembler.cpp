@@ -255,13 +255,13 @@ Instruction Disassembler::disassemble_instruction(uint16 address, const uint8* m
             instr.operand = memory[1];
             
             // Format operand based on instruction type
-            std::stringstream ss;
+            char operand_buf[16];
             
             // Check if it's a jump/call instruction (needs address calculation)
             if (instr.mnemonic.find("JMP") == 0 || instr.mnemonic.find("CALL") == 0) {
                 // JMP and CALL use bits 5-7 of opcode for address bits 8-10
                 uint16 target = ((instr.opcode & 0xE0) << 3) | instr.operand;
-                ss << "0x" << std::hex << std::setw(3) << std::setfill('0') << target;
+                snprintf(operand_buf, sizeof(operand_buf), "0x%03x", target);
             } else if (instr.mnemonic.find("JB") == 0 || instr.mnemonic.find("JC") == 0 ||
                        instr.mnemonic.find("JNC") == 0 || instr.mnemonic.find("JZ") == 0 ||
                        instr.mnemonic.find("JNZ") == 0 || instr.mnemonic.find("JT") == 0 ||
@@ -269,20 +269,20 @@ Instruction Disassembler::disassemble_instruction(uint16 address, const uint8* m
                        instr.mnemonic.find("JNI") == 0 || instr.mnemonic.find("DJNZ") == 0) {
                 // Conditional jumps use current page (bits 8-11 of PC after increment)
                 uint16 target = ((address + 2) & 0xF00) | instr.operand;
-                ss << "0x" << std::hex << std::setw(3) << std::setfill('0') << target;
+                snprintf(operand_buf, sizeof(operand_buf), "0x%03x", target);
             } else {
                 // Immediate value
-                ss << "#0x" << std::hex << std::setw(2) << std::setfill('0') << (int)instr.operand;
+                snprintf(operand_buf, sizeof(operand_buf), "#0x%02x", instr.operand);
             }
             
-            instr.operand_text = ss.str();
+            instr.operand_text = operand_buf;
         }
     } else {
         // Unknown opcode
         instr.mnemonic = "DB";
-        std::stringstream ss;
-        ss << "0x" << std::hex << std::setw(2) << std::setfill('0') << (int)instr.opcode;
-        instr.operand_text = ss.str();
+        char operand_buf[16];
+        snprintf(operand_buf, sizeof(operand_buf), "0x%02x", instr.opcode);
+        instr.operand_text = operand_buf;
     }
     
     return instr;
@@ -317,28 +317,20 @@ std::vector<Instruction> Disassembler::disassemble_rom(const uint8* rom, size_t 
 }
 
 std::string Disassembler::format_instruction(const Instruction& instr) {
-    std::stringstream ss;
+    char buffer[64];
     
-    // Address
-    ss << "0x" << std::hex << std::setw(3) << std::setfill('0') << instr.address << ": ";
-    
-    // Opcode bytes
-    ss << std::hex << std::setw(2) << std::setfill('0') << (int)instr.opcode;
+    // Address and opcode bytes
     if (instr.has_operand && instr.size == 2) {
-        ss << " " << std::setw(2) << std::setfill('0') << (int)instr.operand;
+        snprintf(buffer, sizeof(buffer), "0x%03x: %02x %02x  %s%s",
+                instr.address, instr.opcode, instr.operand,
+                instr.mnemonic.c_str(), instr.operand_text.c_str());
     } else {
-        ss << "   ";  // Padding for alignment
+        snprintf(buffer, sizeof(buffer), "0x%03x: %02x     %s%s",
+                instr.address, instr.opcode,
+                instr.mnemonic.c_str(), instr.operand_text.c_str());
     }
     
-    ss << "  ";
-    
-    // Mnemonic and operand
-    ss << instr.mnemonic;
-    if (!instr.operand_text.empty()) {
-        ss << instr.operand_text;
-    }
-    
-    return ss.str();
+    return std::string(buffer);
 }
 
 std::string Disassembler::get_label_name(uint16 address) {
