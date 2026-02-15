@@ -9,9 +9,14 @@ using namespace videopac;
 
 void print_usage(const char* program_name) {
     std::cout << "Videopac Emulator v1.0.0" << std::endl;
-    std::cout << "Usage: " << program_name << " [options] <rom_file>" << std::endl;
+    std::cout << "Usage: " << program_name << " [options] [rom_file]" << std::endl;
+    std::cout << "\nArguments:" << std::endl;
+    std::cout << "  rom_file            ROM file to load (optional)" << std::endl;
+    std::cout << "\nIf no ROM file is specified, the emulator will:" << std::endl;
+    std::cout << "  1. Auto-load the last used BIOS and ROM (if available)" << std::endl;
+    std::cout << "  2. Otherwise, start with the menu (press F10)" << std::endl;
     std::cout << "\nOptions:" << std::endl;
-    std::cout << "  --bios <file>       Load BIOS from file" << std::endl;
+    std::cout << "  --bios <file>       Load BIOS from file (optional)" << std::endl;
     std::cout << "  --pal               Use PAL timing (default: NTSC)" << std::endl;
     std::cout << "  --headless          Run without display (for testing)" << std::endl;
     std::cout << "  --frames <n>        Run for N frames then exit (headless mode)" << std::endl;
@@ -32,9 +37,10 @@ void print_usage(const char* program_name) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
+    // Allow running without arguments - will use menu to load files
+    if (argc >= 2 && strcmp(argv[1], "--help") == 0) {
         print_usage(argv[0]);
-        return 1;
+        return 0;
     }
     
     // Parse command line arguments
@@ -108,13 +114,11 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    if (rom_path.empty()) {
-        std::cerr << "Error: No ROM file specified" << std::endl;
-        print_usage(argv[0]);
-        return 1;
+    // ROM path is optional - if not provided, emulator will start with menu
+    // or auto-load last files if configured
+    if (!rom_path.empty()) {
+        config.rom_path = rom_path;
     }
-    
-    config.rom_path = rom_path;
     config.enable_trace = enable_trace;
     config.enable_profile = enable_profile;
     config.breakpoints = breakpoints;

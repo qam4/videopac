@@ -33,6 +33,15 @@ public:
     std::string get_last_bios_directory() const;
     void set_last_bios_directory(const std::string& path);
 
+    std::string get_last_rom_path() const;
+    void set_last_rom_path(const std::string& path);
+
+    std::string get_last_bios_path() const;
+    void set_last_bios_path(const std::string& path);
+
+    bool get_auto_load_last_files() const;
+    void set_auto_load_last_files(bool enabled);
+
     // Video settings
     std::string get_scaling_filter() const;  // "nearest" or "linear"
     void set_scaling_filter(const std::string& filter);

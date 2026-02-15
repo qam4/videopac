@@ -133,21 +133,98 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
             shutdown();
             return false;
         }
+        current_bios_name_ = config_.bios_path;
+        std::cout << "Loaded BIOS: " << config_.bios_path << std::endl;
+    } else if (config_manager_->get_auto_load_last_files()) {
+        // Auto-load last BIOS if no command line arg provided
+        std::string last_bios = config_manager_->get_last_bios_path();
+        if (!last_bios.empty()) {
+            auto result = emulator_->load_bios(last_bios);
+            if (result.is_ok()) {
+                std::cout << "Auto-loaded last BIOS: " << last_bios << std::endl;
+                current_bios_name_ = last_bios;
+            } else {
+                std::cerr << "Failed to auto-load last BIOS (" << last_bios << "): " << result.error << std::endl;
+                std::cout << "Use F10 to open menu and load BIOS manually" << std::endl;
+            }
+        } else {
+            std::cout << "No previous BIOS found. Use F10 to open menu and load BIOS" << std::endl;
+        }
+    } else {
+        std::cout << "Auto-load disabled. Use F10 to open menu and load BIOS" << std::endl;
     }
     
     // Load ROM
     if (!config_.rom_path.empty()) {
-        auto result = emulator_->load_rom(config_.rom_path);
-        if (result.is_err()) {
-            std::cerr << "Failed to load ROM: " << result.error << std::endl;
-            shutdown();
-            return false;
+        std::string rom_path = config_.rom_path;
+        
+        // Check if it's a ZIP file that needs extraction
+        bool is_zip = (rom_path.size() >= 4 && rom_path.substr(rom_path.size() - 4) == ".zip");
+        if (is_zip) {
+            // Extract ZIP to temp file
+            if (zip_handler_->open(rom_path)) {
+                auto rom_files = zip_handler_->get_rom_files();
+                if (!rom_files.empty()) {
+                    rom_path = zip_handler_->extract_file(rom_files[0]);
+                }
+                zip_handler_->close();
+            }
         }
         
-        // Extract filename from path for save state tracking
-        size_t last_slash = config_.rom_path.find_last_of("/\\");
-        current_rom_name_ = (last_slash != std::string::npos) ? 
-            config_.rom_path.substr(last_slash + 1) : config_.rom_path;
+        if (!rom_path.empty()) {
+            auto result = emulator_->load_rom(rom_path);
+            if (result.is_err()) {
+                std::cerr << "Failed to load ROM: " << result.error << std::endl;
+                shutdown();
+                return false;
+            }
+            
+            // Extract filename from path for save state tracking
+            size_t last_slash = config_.rom_path.find_last_of("/\\");
+            current_rom_name_ = (last_slash != std::string::npos) ? 
+                config_.rom_path.substr(last_slash + 1) : config_.rom_path;
+            std::cout << "Loaded ROM: " << config_.rom_path << std::endl;
+        }
+    } else if (config_manager_->get_auto_load_last_files()) {
+        // Auto-load last ROM if no command line arg provided
+        std::string last_rom = config_manager_->get_last_rom_path();
+        if (!last_rom.empty()) {
+            std::string rom_path = last_rom;
+            
+            // Check if it's a ZIP file that needs extraction
+            bool is_zip = (rom_path.size() >= 4 && rom_path.substr(rom_path.size() - 4) == ".zip");
+            if (is_zip) {
+                // Extract ZIP to temp file
+                if (zip_handler_->open(rom_path)) {
+                    auto rom_files = zip_handler_->get_rom_files();
+                    if (!rom_files.empty()) {
+                        rom_path = zip_handler_->extract_file(rom_files[0]);
+                    }
+                    zip_handler_->close();
+                }
+            }
+            
+            if (!rom_path.empty()) {
+                auto result = emulator_->load_rom(rom_path);
+                if (result.is_ok()) {
+                    std::cout << "Auto-loaded last ROM: " << last_rom << std::endl;
+                    // Extract filename from path for save state tracking
+                    size_t last_slash = last_rom.find_last_of("/\\");
+                    current_rom_name_ = (last_slash != std::string::npos) ? 
+                        last_rom.substr(last_slash + 1) : last_rom;
+                } else {
+                    std::cerr << "Failed to auto-load last ROM (" << last_rom << "): " << result.error << std::endl;
+                    std::cout << "Use F10 to open menu and load ROM manually" << std::endl;
+                }
+            } else {
+                std::cerr << "Failed to extract ROM from ZIP: " << last_rom << std::endl;
+                std::cout << "Use F10 to open menu and load ROM manually" << std::endl;
+            }
+        } else {
+            std::cout << "No previous ROM found. Use F10 to open menu and load ROM" << std::endl;
+        }
+    } else {
+        std::cout << "Auto-load disabled. Use F10 to open menu and load ROM" << std::endl;
     }
     
     // Reset emulator
@@ -737,8 +814,11 @@ void SDLFrontend::process_input() {
                 } else {
                     if (debugger_) {
                         debugger_->pause();
+                        // Force immediate pause by stepping once
+                        debugger_->step();
                     }
                     imgui_debugger_ui_->show();
+                    std::cout << "Debugger opened - PC: 0x" << std::hex << emulator_->get_cpu_state().pc << std::dec << std::endl;
                 }
             }
             continue;  // Skip further processing of this event
@@ -1439,7 +1519,9 @@ void SDLFrontend::handle_load_bios() {
         if (success) {
             message_dialog_->set_message("Success", "BIOS loaded successfully");
             recent_bios_->add(file_path);
-            config_manager_->save();  // Save updated recent files
+            config_manager_->set_last_bios_path(file_path);  // Save last BIOS path
+            config_manager_->save();  // Save updated recent files and last path
+            current_bios_name_ = file_path;
         } else {
             message_dialog_->set_message("Error", "Failed to load BIOS file");
         }
@@ -1522,10 +1604,12 @@ void SDLFrontend::handle_load_rom() {
     
     // Check if a file was selected
     if (file_browser_->was_file_selected()) {
-        std::string file_path = file_browser_->get_selected_file();
+        std::string original_file_path = file_browser_->get_selected_file();
+        std::string file_path = original_file_path;
         
         // Check if it's a ZIP file
-        if (file_path.size() >= 4 && file_path.substr(file_path.size() - 4) == ".zip") {
+        bool is_zip = (file_path.size() >= 4 && file_path.substr(file_path.size() - 4) == ".zip");
+        if (is_zip) {
             file_path = handle_zip_file(file_path);
             if (file_path.empty()) {
                 // ZIP handling failed or was cancelled
@@ -1555,8 +1639,10 @@ void SDLFrontend::handle_load_rom() {
         // Show result message
         if (success) {
             message_dialog_->set_message("Success", "ROM loaded successfully");
-            recent_roms_->add(file_path);
-            config_manager_->save();  // Save updated recent files
+            // Save the original ZIP path, not the extracted temp file
+            recent_roms_->add(original_file_path);
+            config_manager_->set_last_rom_path(original_file_path);
+            config_manager_->save();  // Save updated recent files and last path
         } else {
             message_dialog_->set_message("Error", "Failed to load ROM file");
         }

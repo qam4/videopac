@@ -175,6 +175,30 @@ void ConfigManager::set_last_bios_directory(const std::string& path) {
     set_value("General", "last_bios_directory", path);
 }
 
+std::string ConfigManager::get_last_rom_path() const {
+    return get_value("General", "last_rom_path", "");
+}
+
+void ConfigManager::set_last_rom_path(const std::string& path) {
+    set_value("General", "last_rom_path", path);
+}
+
+std::string ConfigManager::get_last_bios_path() const {
+    return get_value("General", "last_bios_path", "");
+}
+
+void ConfigManager::set_last_bios_path(const std::string& path) {
+    set_value("General", "last_bios_path", path);
+}
+
+bool ConfigManager::get_auto_load_last_files() const {
+    return get_value_bool("General", "auto_load_last_files", true);
+}
+
+void ConfigManager::set_auto_load_last_files(bool enabled) {
+    set_value_bool("General", "auto_load_last_files", enabled);
+}
+
 // Video settings
 std::string ConfigManager::get_scaling_filter() const {
     return get_value("Video", "scaling_filter", "nearest");
