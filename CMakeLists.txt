@@ -208,8 +208,13 @@ option(BUILD_TOOLS "Build development tools" ON)
 if(BUILD_TOOLS)
     add_executable(disasm_tool
         tools/disasm_tool.cpp
+        src/ui/zip_handler.cpp
     )
     target_link_libraries(disasm_tool videopac_core)
+    if(miniz_FOUND)
+        target_link_libraries(disasm_tool miniz::miniz)
+        target_compile_definitions(disasm_tool PRIVATE HAVE_MINIZ)
+    endif()
 endif()
 
 # Libretro core

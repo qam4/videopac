@@ -333,10 +333,10 @@ std::string Disassembler::format_instruction(const Instruction& instr) {
     return std::string(buffer);
 }
 
-std::string Disassembler::get_label_name(uint16 address) {
+std::string Disassembler::get_label_name(uint16 address, bool add_prefix) {
     // Known BIOS and cartridge routine addresses with meaningful label names
     static const std::map<uint16, std::string> known_labels = {
-        // BIOS ROM Routine Addresses
+        // BIOS ROM Routine Addresses (0x000-0x3FF)
         {0x000, "cold_boot"},
         {0x003, "external_t0_interrupt"},
         {0x007, "timer_clock_interrupt"},
@@ -374,7 +374,7 @@ std::string Disassembler::get_label_name(uint16 address) {
         {0x3B1, "unknown_03b1"},
         {0x3CF, "unknown_03cf"},
         {0x3EA, "character_write"},
-        // Vectors in Odyssey II ROM Cartridges
+        // Vectors in Odyssey II ROM Cartridges (0x400-0x40A)
         {0x400, "restart"},
         {0x402, "vblank_external_interrupt"},
         {0x404, "timer_clock_interrupt_cart"},
@@ -385,6 +385,14 @@ std::string Disassembler::get_label_name(uint16 address) {
     
     auto it = known_labels.find(address);
     if (it != known_labels.end()) {
+        // Add prefix based on address range (only if requested)
+        if (add_prefix) {
+            if (address < 0x400) {
+                return "bios:" + it->second;
+            } else {
+                return "rom:" + it->second;
+            }
+        }
         return it->second;
     }
     

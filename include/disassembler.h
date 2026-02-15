@@ -32,7 +32,7 @@ public:
     
     // Formatting
     std::string format_instruction(const Instruction& instr);
-    std::string get_label_name(uint16 address);  // Get label name for known addresses
+    std::string get_label_name(uint16 address, bool add_prefix = false);  // Get label name for known addresses
 };
 
 } // namespace videopac
