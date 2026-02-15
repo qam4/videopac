@@ -129,10 +129,8 @@ TEST(SaveStateTest, VersionCompatibility) {
     std::remove(test_file.c_str());
 }
 
-// NOTE: This test is disabled because MemoryState contains std::vector
-// which cannot be serialized with simple binary write.
-// TODO: Implement proper serialization for non-POD types
-TEST(SaveStateTest, DISABLED_EmulatorIntegration) {
+// Test emulator integration with save/load
+TEST(SaveStateTest, EmulatorIntegration) {
     Configuration config;
     EmulatorCore emulator(config);
     
@@ -154,9 +152,9 @@ TEST(SaveStateTest, DISABLED_EmulatorIntegration) {
     uint16 pc_before = emulator.get_cpu().get_pc();
     
     // Save state
-    const std::string test_file = "/tmp/test_emulator.sav";
+    const std::string test_file = "test_emulator.sav";  // Use current directory on Windows
     auto save_result = emulator.save_state(test_file);
-    ASSERT_TRUE(save_result.is_ok());
+    ASSERT_TRUE(save_result.is_ok()) << "Save failed: " << save_result.error;
     
     // Run more frames
     for (int i = 0; i < 5; i++) {
