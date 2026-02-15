@@ -54,6 +54,9 @@ public:
     
     // Update menu items with current configuration values
     void update_menu_values(class ConfigManager* config_manager);
+    
+    // Update save state slot information
+    void update_save_state_slots(class SaveStateManagerUI* save_state_manager, const std::string& rom_name);
 
 private:
     // Navigation methods

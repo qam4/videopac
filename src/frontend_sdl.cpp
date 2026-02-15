@@ -139,6 +139,11 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
             shutdown();
             return false;
         }
+        
+        // Extract filename from path for save state tracking
+        size_t last_slash = config_.rom_path.find_last_of("/\\");
+        current_rom_name_ = (last_slash != std::string::npos) ? 
+            config_.rom_path.substr(last_slash + 1) : config_.rom_path;
     }
     
     // Reset emulator
@@ -691,6 +696,8 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
             if (menu_system_->is_visible()) {
                 menu_system_->hide();
             } else {
+                // Update save state slot information before showing menu
+                menu_system_->update_save_state_slots(save_state_manager_.get(), current_rom_name_);
                 menu_system_->show();
             }
         }

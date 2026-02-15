@@ -1,6 +1,8 @@
 #include "ui/menu_system.h"
 #include "ui/text_renderer.h"
 #include "ui/config_manager.h"
+#include "ui/save_state_manager.h"
+#include <ctime>
 
 MenuSystem::MenuSystem(SDL_Renderer* renderer, TextRenderer* text_renderer)
     : renderer_(renderer)
@@ -358,6 +360,67 @@ void MenuSystem::update_menu_values(ConfigManager* config_manager) {
             for (auto& video_item : item.submenu) {
                 if (video_item.action == videopac::MenuAction::ToggleVSync) {
                     video_item.value = config_manager->get_vsync_enabled() ? "On" : "Off";
+                }
+            }
+        }
+    }
+}
+
+void MenuSystem::update_save_state_slots(SaveStateManagerUI* save_state_manager, const std::string& rom_name) {
+    if (!save_state_manager) {
+        return;
+    }
+    
+    // If no ROM name, use "unknown"
+    std::string actual_rom_name = rom_name.empty() ? "unknown" : rom_name;
+    
+    // Extract just the filename without extension for display
+    std::string display_name = actual_rom_name;
+    size_t last_dot = display_name.find_last_of('.');
+    if (last_dot != std::string::npos) {
+        display_name = display_name.substr(0, last_dot);
+    }
+    // Truncate if too long (keep first 15 chars)
+    if (display_name.length() > 15) {
+        display_name = display_name.substr(0, 15) + "...";
+    }
+    
+    // Get list of save states for this ROM
+    auto states = save_state_manager->list_states(actual_rom_name);
+    
+    // Find Save State menu
+    for (auto& item : main_menu_) {
+        if (item.label == "Save State" && item.has_submenu) {
+            // Update each slot
+            for (size_t i = 0; i < item.submenu.size() && i < states.size(); ++i) {
+                if (states[i].exists) {
+                    // Format: ROM - timestamp
+                    time_t timestamp = states[i].timestamp;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    char time_str[32];
+                    strftime(time_str, sizeof(time_str), "%m/%d %H:%M", timeinfo);
+                    item.submenu[i].value = display_name + " - " + std::string(time_str);
+                } else {
+                    item.submenu[i].value = "[Empty]";
+                }
+            }
+        }
+        
+        // Find Load State menu
+        if (item.label == "Load State" && item.has_submenu) {
+            // Update each slot
+            for (size_t i = 0; i < item.submenu.size() && i < states.size(); ++i) {
+                if (states[i].exists) {
+                    // Format: ROM - timestamp
+                    time_t timestamp = states[i].timestamp;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    char time_str[32];
+                    strftime(time_str, sizeof(time_str), "%m/%d %H:%M", timeinfo);
+                    item.submenu[i].value = display_name + " - " + std::string(time_str);
+                    item.submenu[i].enabled = true;
+                } else {
+                    item.submenu[i].value = "[Empty]";
+                    item.submenu[i].enabled = false;  // Disable empty slots
                 }
             }
         }

@@ -202,38 +202,75 @@ videopac::Result<void> SaveStateManagerUI::capture_thumbnail(const std::string& 
     }
     
     // Get the current framebuffer from the emulator
-    const videopac::uint8* framebuffer = emulator_->get_framebuffer();
+    const videopac::uint8* framebuffer = nullptr;
+    try {
+        framebuffer = emulator_->get_framebuffer();
+    } catch (...) {
+        return videopac::Result<void>::err("Exception getting framebuffer");
+    }
+    
     if (!framebuffer) {
         return videopac::Result<void>::err("Failed to get framebuffer");
     }
     
-    // Videopac display is 320x240 (NTSC) or 320x288 (PAL)
-    // We'll assume 320x240 for now and scale down to 160x120
-    const int src_width = 320;
-    const int thumb_width = 160;
-    const int thumb_height = 120;
+    // Videopac framebuffer is 160x200 pixels with palette indices (0-7)
+    const int src_width = 160;
+    const int src_height = 200;
+    const int thumb_width = 160;  // Keep original width
+    const int thumb_height = 120; // Scale down height
+    
+    // Videopac palette (bright colors)
+    const videopac::uint8 palette[8][3] = {
+        {0, 0, 0},       // 0: Black
+        {0, 0, 255},     // 1: Blue
+        {0, 255, 0},     // 2: Green
+        {0, 255, 255},   // 3: Cyan
+        {255, 0, 0},     // 4: Red
+        {255, 0, 255},   // 5: Magenta
+        {255, 255, 0},   // 6: Yellow
+        {255, 255, 255}  // 7: White
+    };
     
     // Allocate buffer for thumbnail (RGB24 format)
     std::vector<videopac::uint8> thumbnail(thumb_width * thumb_height * 3);
     
-    // Simple nearest-neighbor downscaling (2x2 -> 1x1)
-    for (int y = 0; y < thumb_height; ++y) {
-        for (int x = 0; x < thumb_width; ++x) {
-            int src_x = x * 2;
-            int src_y = y * 2;
-            int src_idx = (src_y * src_width + src_x) * 4;  // Assuming RGBA format
-            int dst_idx = (y * thumb_width + x) * 3;
-            
-            // Copy RGB, skip alpha
-            thumbnail[dst_idx + 0] = framebuffer[src_idx + 0];  // R
-            thumbnail[dst_idx + 1] = framebuffer[src_idx + 1];  // G
-            thumbnail[dst_idx + 2] = framebuffer[src_idx + 2];  // B
+    // Scale down height (200 -> 120) while keeping width (160)
+    // Use simple nearest-neighbor sampling
+    try {
+        for (int y = 0; y < thumb_height; ++y) {
+            for (int x = 0; x < thumb_width; ++x) {
+                // Map thumbnail coordinates to source coordinates
+                int src_x = x;  // Width stays the same
+                int src_y = (y * src_height) / thumb_height;  // Scale height
+                
+                // Bounds check
+                if (src_x >= src_width || src_y >= src_height) {
+                    continue;
+                }
+                
+                // Get palette index from framebuffer
+                int src_idx = src_y * src_width + src_x;
+                videopac::uint8 palette_index = framebuffer[src_idx] % 8;
+                
+                // Convert to RGB using palette
+                int dst_idx = (y * thumb_width + x) * 3;
+                thumbnail[dst_idx + 0] = palette[palette_index][0];  // R
+                thumbnail[dst_idx + 1] = palette[palette_index][1];  // G
+                thumbnail[dst_idx + 2] = palette[palette_index][2];  // B
+            }
         }
+    } catch (...) {
+        return videopac::Result<void>::err("Exception during thumbnail capture");
     }
     
     // Save as PNG using stb_image_write
-    int result = stbi_write_png(filename.c_str(), thumb_width, thumb_height, 3, 
-                                 thumbnail.data(), thumb_width * 3);
+    int result = 0;
+    try {
+        result = stbi_write_png(filename.c_str(), thumb_width, thumb_height, 3, 
+                                     thumbnail.data(), thumb_width * 3);
+    } catch (...) {
+        return videopac::Result<void>::err("Exception writing thumbnail PNG");
+    }
     
     if (result == 0) {
         return videopac::Result<void>::err("Failed to write thumbnail PNG");
