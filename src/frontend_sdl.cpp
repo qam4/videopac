@@ -826,38 +826,38 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
     
     // Handle joystick keys (both press and release)
     switch (event.keysym.sym) {
-        // Arrow keys + Space for joystick 1
+        // Arrow keys + Space for joystick 2 (most games use this as primary)
         case SDLK_UP:
-            emulator_->get_input_handler().set_joystick_state(0, Direction::Up, key_down);
-            return;
-        case SDLK_DOWN:
-            emulator_->get_input_handler().set_joystick_state(0, Direction::Down, key_down);
-            return;
-        case SDLK_LEFT:
-            emulator_->get_input_handler().set_joystick_state(0, Direction::Left, key_down);
-            return;
-        case SDLK_RIGHT:
-            emulator_->get_input_handler().set_joystick_state(0, Direction::Right, key_down);
-            return;
-        case SDLK_SPACE:
-            emulator_->get_input_handler().set_joystick_button(0, key_down);
-            return;
-            
-        // WASD + Left Shift for joystick 2
-        case SDLK_w:
             emulator_->get_input_handler().set_joystick_state(1, Direction::Up, key_down);
             return;
-        case SDLK_s:
+        case SDLK_DOWN:
             emulator_->get_input_handler().set_joystick_state(1, Direction::Down, key_down);
             return;
-        case SDLK_a:
+        case SDLK_LEFT:
             emulator_->get_input_handler().set_joystick_state(1, Direction::Left, key_down);
             return;
-        case SDLK_d:
+        case SDLK_RIGHT:
             emulator_->get_input_handler().set_joystick_state(1, Direction::Right, key_down);
             return;
-        case SDLK_LSHIFT:
+        case SDLK_SPACE:
             emulator_->get_input_handler().set_joystick_button(1, key_down);
+            return;
+            
+        // Numpad keys + Numpad 0 for joystick 1
+        case SDLK_KP_8:
+            emulator_->get_input_handler().set_joystick_state(0, Direction::Up, key_down);
+            return;
+        case SDLK_KP_5:
+            emulator_->get_input_handler().set_joystick_state(0, Direction::Down, key_down);
+            return;
+        case SDLK_KP_4:
+            emulator_->get_input_handler().set_joystick_state(0, Direction::Left, key_down);
+            return;
+        case SDLK_KP_6:
+            emulator_->get_input_handler().set_joystick_state(0, Direction::Right, key_down);
+            return;
+        case SDLK_KP_0:
+            emulator_->get_input_handler().set_joystick_button(0, key_down);
             return;
     }
     
