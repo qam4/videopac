@@ -96,7 +96,7 @@ TEST_F(SaveStateManagerUITest, SavesDirectoryAutoCreation) {
 }
 
 // Test: Save state creation
-TEST_F(SaveStateManagerUITest, DISABLED_SaveStateCreation) {
+TEST_F(SaveStateManagerUITest, SaveStateCreation) {
     const std::string rom_name = "test_rom";
     const int slot = 1;
     
@@ -114,7 +114,7 @@ TEST_F(SaveStateManagerUITest, DISABLED_SaveStateCreation) {
 }
 
 // Test: Save state loading
-TEST_F(SaveStateManagerUITest, DISABLED_SaveStateLoading) {
+TEST_F(SaveStateManagerUITest, SaveStateLoading) {
     const std::string rom_name = "test_rom";
     const int slot = 2;
     
@@ -138,7 +138,7 @@ TEST_F(SaveStateManagerUITest, LoadNonExistentState) {
 }
 
 // Test: Thumbnail capture
-TEST_F(SaveStateManagerUITest, DISABLED_ThumbnailCapture) {
+TEST_F(SaveStateManagerUITest, ThumbnailCapture) {
     const std::string rom_name = "test_rom";
     const int slot = 3;
     
@@ -156,7 +156,7 @@ TEST_F(SaveStateManagerUITest, DISABLED_ThumbnailCapture) {
 }
 
 // Test: Save state deletion
-TEST_F(SaveStateManagerUITest, DISABLED_SaveStateDeletion) {
+TEST_F(SaveStateManagerUITest, SaveStateDeletion) {
     const std::string rom_name = "test_rom";
     const int slot = 4;
     
@@ -190,7 +190,7 @@ TEST_F(SaveStateManagerUITest, DeleteNonExistentState) {
 }
 
 // Test: Listing save states with timestamps
-TEST_F(SaveStateManagerUITest, DISABLED_ListSaveStatesWithTimestamps) {
+TEST_F(SaveStateManagerUITest, ListSaveStatesWithTimestamps) {
     const std::string rom_name = "test_rom";
     
     // Save states in slots 0, 2, and 5
@@ -237,7 +237,7 @@ TEST_F(SaveStateManagerUITest, EmptySaveSlots) {
 }
 
 // Test: Save state file naming format
-TEST_F(SaveStateManagerUITest, DISABLED_SaveStateFileNaming) {
+TEST_F(SaveStateManagerUITest, SaveStateFileNaming) {
     const std::string rom_name = "my_game.bin";
     const int slot = 6;
     
@@ -258,7 +258,7 @@ TEST_F(SaveStateManagerUITest, DISABLED_SaveStateFileNaming) {
 }
 
 // Test: ROM name with path is handled correctly
-TEST_F(SaveStateManagerUITest, DISABLED_RomNameWithPath) {
+TEST_F(SaveStateManagerUITest, RomNameWithPath) {
     const std::string rom_name = "/path/to/roms/game.bin";
     const int slot = 7;
     
