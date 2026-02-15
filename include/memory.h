@@ -58,6 +58,7 @@ private:
     MemoryState state_;
     VDC* vdc_;
     CPU* cpu_;  // For reading Port 1 control signals
+    uint8 test_port1_;  // Port 1 value for testing (when cpu_ is nullptr)
     
     // Port 1 bit masks (from BIOS naming convention)
     // Reference: doc/french_bios_annotated.txt

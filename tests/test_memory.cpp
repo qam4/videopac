@@ -207,7 +207,7 @@ TEST(MemoryTest, ExternalRAMAccess) {
 // 1. Create a mock CPU with controllable Port 1 state, or
 // 2. Test the memory system through the CPU interface
 
-TEST(MemoryTest, DISABLED_ExternalRAMDisabled) {
+TEST(MemoryTest, ExternalRAMDisabled) {
     MemorySystem memory;
     
     // Disable external RAM via Port 1 (P14 = 1)
@@ -223,7 +223,7 @@ TEST(MemoryTest, DISABLED_ExternalRAMDisabled) {
 
 // ========== MEMORY ACCESS CONTROL TESTS ==========
 
-TEST(MemoryTest, DISABLED_Port1ControlSignals) {
+TEST(MemoryTest, Port1ControlSignals) {
     MemorySystem memory;
     
     // Test P13 (VDC enable) - bit 3
@@ -303,7 +303,7 @@ TEST(MemoryTest, GetSetState) {
 // ========== VDC INTEGRATION TESTS ==========
 
 // TODO: This test needs to be updated to work with CPU-based Port 1 architecture
-TEST(MemoryTest, DISABLED_VDCReadWithVariousPort1Values) {
+TEST(MemoryTest, VDCReadWithVariousPort1Values) {
     MemorySystem memory;
     VDC vdc;
     memory.set_vdc(&vdc);

@@ -11,7 +11,7 @@
 namespace videopac {
 
 MemorySystem::MemorySystem() 
-    : vdc_(nullptr), cpu_(nullptr) {
+    : vdc_(nullptr), cpu_(nullptr), test_port1_(0x08) {  // Default: P13=1, P14=0 (RAM enabled)
     // Initialize arrays to zero
     std::memset(state_.bios_rom, 0, sizeof(state_.bios_rom));
     std::memset(state_.external_ram, 0, sizeof(state_.external_ram));
@@ -180,8 +180,8 @@ void MemorySystem::set_cpu(CPU* cpu) {
 
 uint8 MemorySystem::get_port1() const {
     if (!cpu_) {
-        // Default for testing: P13=1, P14=0 (RAM enabled, VDC disabled)
-        return 0x08;  // Only bit 3 (P13) set
+        // Use test value when no CPU is connected (for unit testing)
+        return test_port1_;
     }
     return cpu_->get_state().port1;
 }
@@ -199,6 +199,9 @@ bool MemorySystem::copy_mode() const {
 }
 
 void MemorySystem::update_control_signals(uint8 port1_value) {
+    // Store Port 1 value for testing (when no CPU is connected)
+    test_port1_ = port1_value;
+    
     // Bank switching: P10 and P11
     if (state_.num_banks > 1) {
         uint8 bank = 0;
