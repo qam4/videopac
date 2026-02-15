@@ -32,21 +32,21 @@ bool TextRenderer::initialize() {
     ttf_initialized_ = true;
 
     // Try to load Windows system fonts
-    // Common locations for fonts on Windows
+    // Use monospace fonts similar to ImGui's default ProggyClean font
     const char* font_paths[] = {
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/consola.ttf",
-        "C:/Windows/Fonts/cour.ttf",
+        "C:/Windows/Fonts/consola.ttf",  // Consolas - clean monospace, try first
+        "C:/Windows/Fonts/cour.ttf",     // Courier New - fallback
+        "C:/Windows/Fonts/arial.ttf",    // Arial - last resort
         nullptr
     };
     
     // Try each font path until one succeeds
-    // Font sizes for crisp rendering at 2x scale (640x480 window)
-    // These will be scaled down by logical size for sharp text
+    // Font sizes matching ImGui's default (13px)
+    // Small: 11px, Medium: 13px, Large: 16px
     for (int i = 0; font_paths[i] != nullptr; i++) {
-        font_small_ = TTF_OpenFont(font_paths[i], 16);  // 2x of 8
-        font_medium_ = TTF_OpenFont(font_paths[i], 20); // 2x of 10
-        font_large_ = TTF_OpenFont(font_paths[i], 28);  // 2x of 14
+        font_small_ = TTF_OpenFont(font_paths[i], 11);
+        font_medium_ = TTF_OpenFont(font_paths[i], 13);
+        font_large_ = TTF_OpenFont(font_paths[i], 16);
         
         if (font_small_ && font_medium_ && font_large_) {
             // Enable hinting for better rendering at small sizes
@@ -126,9 +126,8 @@ bool TextRenderer::render_text_ttf(const std::string& text, int x, int y,
         return false;
     }
 
-    // Scale down by 2x to match logical resolution
-    // Fonts are rendered at 2x size for crispness, then scaled to logical size
-    SDL_Rect dest_rect = { x, y, surface->w / 2, surface->h / 2 };
+    // Render at full size for actual window coordinates
+    SDL_Rect dest_rect = { x, y, surface->w, surface->h };
     SDL_RenderCopy(renderer_, texture, nullptr, &dest_rect);
 
     SDL_DestroyTexture(texture);

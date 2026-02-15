@@ -62,6 +62,7 @@ set(UI_SOURCES
     src/ui/save_state_manager.cpp
     src/ui/input_mapper.cpp
     src/ui/recent_files_list.cpp
+    src/ui/imgui_debugger_ui.cpp
 )
 
 # Core emulator library
@@ -76,6 +77,32 @@ if(miniz_FOUND)
     message(STATUS "Building with miniz support for ZIP files")
 else()
     message(WARNING "miniz not found. ZIP file support will be disabled.")
+endif()
+
+# Dear ImGui (for debugger UI) - must be before videopac executable
+include(FetchContent)
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.90.1
+)
+FetchContent_MakeAvailable(imgui)
+
+# ImGui source files
+set(IMGUI_SOURCES
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
+)
+
+# Disable strict-aliasing warnings for ImGui (it has some type-punning)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(${IMGUI_SOURCES} PROPERTIES
+        COMPILE_FLAGS "-Wno-error=strict-aliasing"
+    )
 endif()
 
 # Standalone executable
@@ -102,6 +129,13 @@ if(BUILD_STANDALONE)
                 src/main.cpp
                 src/frontend_sdl.cpp
                 ${UI_SOURCES}
+            )
+            
+            # Add ImGui sources to videopac target
+            target_sources(videopac PRIVATE ${IMGUI_SOURCES})
+            target_include_directories(videopac PRIVATE 
+                ${imgui_SOURCE_DIR} 
+                ${imgui_SOURCE_DIR}/backends
             )
             
             # Handle both vcpkg (SDL2::SDL2) and manual installation (${SDL2_LIBRARIES})
@@ -198,7 +232,6 @@ if(BUILD_TESTS)
     enable_testing()
     
     # Google Test
-    include(FetchContent)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
@@ -234,9 +267,18 @@ if(BUILD_TESTS)
         tests/test_recent_files_list.cpp
         tests/test_config_manager.cpp
         tests/test_reset_functionality.cpp
+        tests/test_watch_expression.cpp
+        tests/test_imgui_debugger_ui.cpp
         tests/property_tests.cpp
         # Include UI sources for testing
         ${UI_SOURCES}
+    )
+    
+    # Add ImGui sources and includes to test target
+    target_sources(videopac_tests PRIVATE ${IMGUI_SOURCES})
+    target_include_directories(videopac_tests PRIVATE 
+        ${imgui_SOURCE_DIR} 
+        ${imgui_SOURCE_DIR}/backends
     )
     
     target_link_libraries(videopac_tests

@@ -59,7 +59,7 @@ struct FrontendConfig {
         , master_volume(0.7f)
         , audio_enabled(true)
         , show_fps(true)
-        , enable_debugger(false)
+        , enable_debugger(true)  // Enable by default for ImGui debugger UI
         , enable_trace(false)
         , enable_profile(false)
         , screenshot_path("screenshots")
@@ -78,6 +78,7 @@ enum class MenuAction {
     LoadState,
     Screenshot,
     ToggleDebugger,
+    OpenDebugger,
     ToggleFullscreen,
     DisplayInfo,
     Quit,

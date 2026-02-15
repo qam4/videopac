@@ -6,6 +6,7 @@
 #include "debugger.h"
 #include "debugger_ui.h"
 #include "ui/osd_renderer.h"  // Need full definition for OSDPosition enum
+#include "ui/imgui_debugger_ui.h"
 #include <SDL2/SDL.h>
 #include <memory>
 #include <vector>
@@ -59,6 +60,7 @@ private:
     // Debugger
     std::unique_ptr<Debugger> debugger_;
     std::unique_ptr<DebuggerUI> debugger_ui_;
+    std::unique_ptr<ImGuiDebuggerUI> imgui_debugger_ui_;
     
     // UI components
     std::unique_ptr<TextRenderer> text_renderer_;

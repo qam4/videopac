@@ -141,7 +141,7 @@ void MenuSystem::build_main_menu() {
 
     main_menu_.push_back(MenuItem("Display Info", MenuAction::DisplayInfo));
     main_menu_.push_back(MenuItem("Screenshot", MenuAction::Screenshot));
-    main_menu_.push_back(MenuItem("Toggle Debugger", MenuAction::ToggleDebugger));
+    main_menu_.push_back(MenuItem("Toggle Debugger (F12)", MenuAction::ToggleDebugger));
     main_menu_.push_back(MenuItem("Toggle Fullscreen", MenuAction::ToggleFullscreen));
     main_menu_.push_back(MenuItem("Quit", MenuAction::Quit));
 
@@ -262,9 +262,9 @@ void MenuSystem::render() {
         return;
     }
 
-    // Always use logical size (320x240) for consistent menu rendering
-    int screen_width = 320;
-    int screen_height = 240;
+    // Get actual window size (not logical size)
+    int screen_width, screen_height;
+    SDL_GetRendererOutputSize(renderer_, &screen_width, &screen_height);
 
     // Semi-transparent overlay
     SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
@@ -308,9 +308,9 @@ void MenuSystem::render() {
 }
 
 void MenuSystem::render_menu_list(const std::vector<MenuItem>& items, int selected_index) {
-    // Always use logical size (320x240) for consistent rendering
-    int screen_width = 320;
-    int screen_height = 240;
+    // Get actual window size (not logical size)
+    int screen_width, screen_height;
+    SDL_GetRendererOutputSize(renderer_, &screen_width, &screen_height);
 
     int margin = screen_height / 24;
     int menu_width = screen_width - (margin * 2);

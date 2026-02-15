@@ -9,6 +9,10 @@
 #include "ui/recent_files_list.h"
 #include "ui/save_state_manager.h"
 #include "ui/osd_renderer.h"
+#include "ui/imgui_debugger_ui.h"
+#include <imgui.h>
+#include <imgui_impl_sdl2.h>
+#include <imgui_impl_sdlrenderer2.h>
 #include <iostream>
 #include <cstring>
 #include <fstream>
@@ -154,6 +158,18 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
         debugger_ = std::make_unique<Debugger>(emulator_.get());
         debugger_ui_ = std::make_unique<DebuggerUI>(debugger_.get());
         emulator_->set_debugger(debugger_.get());
+        
+        // Initialize ImGui debugger UI
+        imgui_debugger_ui_ = std::make_unique<ImGuiDebuggerUI>(
+            debugger_.get(), 
+            emulator_.get(), 
+            window_, 
+            renderer_
+        );
+        if (!imgui_debugger_ui_->initialize()) {
+            std::cerr << "Warning: ImGui debugger UI initialization failed" << std::endl;
+            imgui_debugger_ui_.reset();  // Clean up on failure
+        }
         
         // Enable trace if requested (very expensive!)
         if (config_.enable_trace) {
@@ -460,43 +476,94 @@ void SDLFrontend::render_frame() {
     SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
     SDL_RenderClear(renderer_);
     
-    // Render game texture to fill the entire 320x240 logical space
-    // SDL's logical size feature handles aspect ratio and scaling automatically
-    SDL_Rect dest_rect = {0, 0, 320, 240};
-    SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+    // === GAME RENDERING ===
+    // Determine if we're in split screen mode
+    bool split_screen = imgui_debugger_ui_ && imgui_debugger_ui_->is_visible() && 
+                        imgui_debugger_ui_->get_display_mode() == DisplayMode::SplitScreen;
     
-    // Apply CRT effects and scanlines if enabled (in 320x240 logical space)
-    // Note: aspect ratio settings are NOT applied here since SDL's logical size
-    // already handles proper scaling and aspect ratio with letterboxing
-    render_crt_effects(dest_rect);
-    render_scanlines(dest_rect);
-    
-    // Render OSD elements if not in menu (still in 320x240 space)
-    if (osd_renderer_ && !menu_system_->is_visible()) {
-        // Render FPS display if enabled (Requirements 7.2, 7.5)
-        if (show_fps_) {
-            osd_renderer_->render_fps(current_fps_, fps_position_);
-        }
+    if (split_screen) {
+        // Split Screen mode: disable logical size and render game to left half
+        SDL_RenderSetLogicalSize(renderer_, 0, 0);
         
-        // Render mute indicator if audio is muted
-        if (audio_muted_) {
-            osd_renderer_->render_status_indicator("MUTE", OSDRenderer::OSDPosition::TopLeft);
-        }
+        // Get actual window size
+        int window_width, window_height;
+        SDL_GetRendererOutputSize(renderer_, &window_width, &window_height);
         
-        // Render turbo mode indicator if active
-        if (turbo_mode_) {
-            osd_renderer_->render_status_indicator("TURBO", OSDRenderer::OSDPosition::BottomRight);
-        }
+        // Game uses left half of window
+        SDL_Rect dest_rect = {0, 0, window_width / 2, window_height};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
         
-        // Update and render notifications
-        osd_renderer_->update(SDL_GetTicks());
+        // Apply CRT effects and scanlines if enabled (in actual window coordinates)
+        render_crt_effects(dest_rect);
+        render_scanlines(dest_rect);
+        
+        // Render OSD elements if not in menu (in actual window coordinates)
+        if (osd_renderer_ && !menu_system_->is_visible()) {
+            // Note: OSD rendering would need to be adjusted for actual coordinates
+            // For now, skip OSD in split screen mode to avoid coordinate issues
+        }
+    } else {
+        // Overlay mode: use logical size 320x240
+        SDL_RenderSetLogicalSize(renderer_, 320, 240);
+        
+        SDL_Rect dest_rect = {0, 0, 320, 240};
+        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
+        
+        // Apply CRT effects and scanlines if enabled (in 320x240 logical space)
+        render_crt_effects(dest_rect);
+        render_scanlines(dest_rect);
+        
+        // Render OSD elements if not in menu (still in 320x240 space)
+        if (osd_renderer_ && !menu_system_->is_visible()) {
+            // Render FPS display if enabled (Requirements 7.2, 7.5)
+            if (show_fps_) {
+                osd_renderer_->render_fps(current_fps_, fps_position_);
+            }
+            
+            // Render mute indicator if audio is muted
+            if (audio_muted_) {
+                osd_renderer_->render_status_indicator("MUTE", OSDRenderer::OSDPosition::TopLeft);
+            }
+            
+            // Render turbo mode indicator if active
+            if (turbo_mode_) {
+                osd_renderer_->render_status_indicator("TURBO", OSDRenderer::OSDPosition::BottomRight);
+            }
+            
+            // Update and render notifications
+            osd_renderer_->update(SDL_GetTicks());
+        }
     }
     
-    // Render menu overlay if visible (still in 320x240 logical space)
-    // Menu will scale its rendering internally based on actual window size
+    // === UI RENDERING (disable logical size for all UI) ===
+    // Disable logical rendering for UI elements (menu and ImGui)
+    SDL_RenderSetLogicalSize(renderer_, 0, 0);
+    
+    // Render menu overlay if visible (now in actual window coordinates)
     if (menu_system_ && menu_system_->is_visible()) {
         menu_system_->render();
     }
+    
+    // Start and render ImGui frame if debugger UI exists
+    if (imgui_debugger_ui_) {
+        // CRITICAL: Set ImGui context BEFORE starting the frame
+        ImGui::SetCurrentContext(imgui_debugger_ui_->get_context());
+        ImGui_ImplSDLRenderer2_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
+        
+        // Only render panels if visible
+        if (imgui_debugger_ui_->is_visible()) {
+            imgui_debugger_ui_->render();
+        }
+        
+        // Always finish the ImGui frame if we started one
+        ImGui::Render();
+        ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
+    }
+    
+    // Restore logical rendering for next frame's game rendering
+    SDL_RenderSetLogicalSize(renderer_, 320, 240);
     
     // Present
     SDL_RenderPresent(renderer_);
@@ -653,8 +720,56 @@ void SDLFrontend::process_audio() {
 }
 
 void SDLFrontend::process_input() {
+    // Temporarily disable logical size so mouse coordinates are in actual window space
+    // This ensures ImGui gets correct mouse positions
+    SDL_RenderSetLogicalSize(renderer_, 0, 0);
+    
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        // Handle F12 (debugger toggle) BEFORE ImGui to prevent double-processing
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F12 && event.key.repeat == 0) {
+            if (imgui_debugger_ui_) {
+                if (imgui_debugger_ui_->is_visible()) {
+                    imgui_debugger_ui_->hide();
+                    if (debugger_) {
+                        debugger_->continue_execution();
+                    }
+                } else {
+                    if (debugger_) {
+                        debugger_->pause();
+                    }
+                    imgui_debugger_ui_->show();
+                }
+            }
+            continue;  // Skip further processing of this event
+        }
+        
+        // Forward events to ImGui debugger UI if visible
+        if (imgui_debugger_ui_ && imgui_debugger_ui_->is_visible()) {
+            // Set ImGui context before accessing ImGui functions
+            ImGui::SetCurrentContext(imgui_debugger_ui_->get_context());
+            
+            imgui_debugger_ui_->process_event(event);
+            
+            // Check if ImGui wants to capture input
+            ImGuiIO& io = ImGui::GetIO();
+            bool imgui_wants_keyboard = io.WantCaptureKeyboard;
+            bool imgui_wants_mouse = io.WantCaptureMouse;
+            
+            // Skip processing keyboard events if ImGui wants them
+            if (imgui_wants_keyboard && (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)) {
+                continue;
+            }
+            
+            // Skip processing mouse events if ImGui wants them
+            if (imgui_wants_mouse && (event.type == SDL_MOUSEBUTTONDOWN || 
+                                      event.type == SDL_MOUSEBUTTONUP || 
+                                      event.type == SDL_MOUSEMOTION || 
+                                      event.type == SDL_MOUSEWHEEL)) {
+                continue;
+            }
+        }
+        
         switch (event.type) {
             case SDL_QUIT:
                 handle_quit_event();
@@ -666,6 +781,9 @@ void SDLFrontend::process_input() {
                 break;
         }
     }
+    
+    // Restore logical size for game rendering
+    SDL_RenderSetLogicalSize(renderer_, 320, 240);
 }
 
 void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
@@ -817,21 +935,6 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
                 if (osd_renderer_) {
                     std::string message = is_fullscreen_ ? "Fullscreen Mode" : "Windowed Mode";
                     osd_renderer_->show_notification(message, 2000);
-                }
-                return;
-                
-            case SDLK_F12:
-                // Save screenshot (Requirement 8.6)
-                {
-                    // Generate timestamp-based filename
-                    time_t now = time(nullptr);
-                    struct tm* timeinfo = localtime(&now);
-                    char filename[256];
-                    strftime(filename, sizeof(filename), "videopac_%Y%m%d_%H%M%S.ppm", timeinfo);
-                    save_screenshot(filename);
-                    if (osd_renderer_) {
-                        osd_renderer_->show_notification("Screenshot Saved", 2000);
-                    }
                 }
                 return;
                 
@@ -1044,9 +1147,31 @@ void SDLFrontend::handle_menu_action(videopac::MenuAction action) {
             }
             break;
         case MenuAction::ToggleDebugger:
-            // Debugger toggle is handled elsewhere
-            if (osd_renderer_) {
-                osd_renderer_->show_notification("Debugger toggle not implemented", 2000);
+            if (imgui_debugger_ui_) {
+                if (imgui_debugger_ui_->is_visible()) {
+                    imgui_debugger_ui_->hide();
+                    if (debugger_) {
+                        debugger_->continue_execution();
+                    }
+                } else {
+                    imgui_debugger_ui_->show();
+                    if (debugger_) {
+                        debugger_->pause();
+                    }
+                }
+                menu_system_->hide();
+            } else if (osd_renderer_) {
+                osd_renderer_->show_notification("Debugger not available", 2000);
+            }
+            break;
+            if (imgui_debugger_ui_) {
+                imgui_debugger_ui_->show();
+                if (debugger_) {
+                    debugger_->pause();
+                }
+                menu_system_->hide();
+            } else if (osd_renderer_) {
+                osd_renderer_->show_notification("Debugger not available", 2000);
             }
             break;
         case MenuAction::Quit:
