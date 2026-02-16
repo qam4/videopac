@@ -144,6 +144,7 @@ private:
     // File loading helpers
     bool load_bios_file(const std::string& path);
     bool load_rom_file(const std::string& path);
+    std::string extract_if_zip(const std::string& path);  // Helper to extract ZIP files
     std::string handle_zip_file(const std::string& zip_path);
     
     static void audio_callback(void* userdata, uint8* stream, int len);

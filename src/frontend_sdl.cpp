@@ -123,6 +123,11 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
         std::cerr << "Warning: Audio initialization failed, continuing without audio" << std::endl;
     }
     
+    // Apply saved mute state to audio device
+    if (audio_device_ != 0 && audio_muted_) {
+        SDL_PauseAudioDevice(audio_device_, 1);
+    }
+    
     // Create emulator
     Configuration emu_config;
     emu_config.video_standard = config_.video_standard;
@@ -146,12 +151,19 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
         // Auto-load last BIOS if no command line arg provided
         std::string last_bios = config_manager_->get_last_bios_path();
         if (!last_bios.empty()) {
-            auto result = emulator_->load_bios(last_bios);
-            if (result.is_ok()) {
-                std::cout << "Auto-loaded last BIOS: " << last_bios << std::endl;
-                current_bios_name_ = last_bios;
+            std::string bios_path = extract_if_zip(last_bios);
+            
+            if (!bios_path.empty()) {
+                auto result = emulator_->load_bios(bios_path);
+                if (result.is_ok()) {
+                    std::cout << "Auto-loaded last BIOS: " << last_bios << std::endl;
+                    current_bios_name_ = last_bios;
+                } else {
+                    std::cerr << "Failed to auto-load last BIOS (" << last_bios << "): " << result.error << std::endl;
+                    std::cout << "Use F10 to open menu and load BIOS manually" << std::endl;
+                }
             } else {
-                std::cerr << "Failed to auto-load last BIOS (" << last_bios << "): " << result.error << std::endl;
+                std::cerr << "Failed to extract BIOS from ZIP: " << last_bios << std::endl;
                 std::cout << "Use F10 to open menu and load BIOS manually" << std::endl;
             }
         } else {
@@ -163,20 +175,7 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     
     // Load ROM
     if (!config_.rom_path.empty()) {
-        std::string rom_path = config_.rom_path;
-        
-        // Check if it's a ZIP file that needs extraction
-        bool is_zip = (rom_path.size() >= 4 && rom_path.substr(rom_path.size() - 4) == ".zip");
-        if (is_zip) {
-            // Extract ZIP to temp file
-            if (zip_handler_->open(rom_path)) {
-                auto rom_files = zip_handler_->get_rom_files();
-                if (!rom_files.empty()) {
-                    rom_path = zip_handler_->extract_file(rom_files[0]);
-                }
-                zip_handler_->close();
-            }
-        }
+        std::string rom_path = extract_if_zip(config_.rom_path);
         
         if (!rom_path.empty()) {
             auto result = emulator_->load_rom(rom_path);
@@ -196,20 +195,7 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
         // Auto-load last ROM if no command line arg provided
         std::string last_rom = config_manager_->get_last_rom_path();
         if (!last_rom.empty()) {
-            std::string rom_path = last_rom;
-            
-            // Check if it's a ZIP file that needs extraction
-            bool is_zip = (rom_path.size() >= 4 && rom_path.substr(rom_path.size() - 4) == ".zip");
-            if (is_zip) {
-                // Extract ZIP to temp file
-                if (zip_handler_->open(rom_path)) {
-                    auto rom_files = zip_handler_->get_rom_files();
-                    if (!rom_files.empty()) {
-                        rom_path = zip_handler_->extract_file(rom_files[0]);
-                    }
-                    zip_handler_->close();
-                }
-            }
+            std::string rom_path = extract_if_zip(last_rom);
             
             if (!rom_path.empty()) {
                 auto result = emulator_->load_rom(rom_path);
@@ -789,7 +775,9 @@ void SDLFrontend::update_texture() {
     for (int y = 0; y < FRAMEBUFFER_HEIGHT; y++) {
         for (int x = 0; x < FRAMEBUFFER_WIDTH; x++) {
             uint8 palette_index = framebuffer[y * FRAMEBUFFER_WIDTH + x];
-            Color color = PALETTE[palette_index % 16];
+            // Use NTSC or PAL palette based on palette mode (not video standard)
+            const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
+            Color color = palette[palette_index % 16];
             
             int pixel_offset = (y * pitch) + (x * 3);
             rgb_pixels[pixel_offset + 0] = color.r;
@@ -1139,7 +1127,9 @@ void SDLFrontend::dump_framebuffer(const std::string& filename) {
     for (int y = 0; y < FRAMEBUFFER_HEIGHT; y++) {
         for (int x = 0; x < FRAMEBUFFER_WIDTH; x++) {
             uint8 palette_index = framebuffer[y * FRAMEBUFFER_WIDTH + x];
-            Color color = PALETTE[palette_index % 16];
+            // Use NTSC or PAL palette based on palette mode (not video standard)
+            const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
+            Color color = palette[palette_index % 16];
             file.put(color.r);
             file.put(color.g);
             file.put(color.b);
@@ -1501,8 +1491,8 @@ void SDLFrontend::handle_load_bios() {
     // Hide menu temporarily
     menu_system_->hide();
     
-    // Open file browser for BIOS files
-    file_browser_->open(".bin,.rom", FileBrowser::FileType::BIOS);
+    // Open file browser for BIOS files (including ZIP)
+    file_browser_->open(".bin,.rom,.zip", FileBrowser::FileType::BIOS);
     
     // Process file browser until closed
     while (file_browser_->is_open() && running_) {
@@ -1532,7 +1522,19 @@ void SDLFrontend::handle_load_bios() {
     
     // Check if a file was selected
     if (file_browser_->was_file_selected()) {
-        std::string file_path = file_browser_->get_selected_file();
+        std::string original_file_path = file_browser_->get_selected_file();
+        std::string file_path = original_file_path;
+        
+        // Check if it's a ZIP file
+        bool is_zip = (file_path.size() >= 4 && file_path.substr(file_path.size() - 4) == ".zip");
+        if (is_zip) {
+            file_path = handle_zip_file(file_path);
+            if (file_path.empty()) {
+                // ZIP handling failed or was cancelled
+                menu_system_->show();
+                return;
+            }
+        }
         
         // Show progress dialog
         progress_dialog_->set_message("Loading BIOS...");
@@ -1555,10 +1557,11 @@ void SDLFrontend::handle_load_bios() {
         // Show result message
         if (success) {
             message_dialog_->set_message("Success", "BIOS loaded successfully");
-            recent_bios_->add(file_path);
-            config_manager_->set_last_bios_path(file_path);  // Save last BIOS path
+            // Save the original ZIP path, not the extracted temp file
+            recent_bios_->add(original_file_path);
+            config_manager_->set_last_bios_path(original_file_path);  // Save last BIOS path
             config_manager_->save();  // Save updated recent files and last path
-            current_bios_name_ = file_path;
+            current_bios_name_ = original_file_path;
         } else {
             message_dialog_->set_message("Error", "Failed to load BIOS file");
         }
@@ -1602,8 +1605,8 @@ void SDLFrontend::handle_load_bios() {
         message_dialog_->hide();
     }
     
-    // Show menu again
-    menu_system_->show();
+    // Don't show menu again - let emulator start running
+    // User can press F10 to open menu if needed
 }
 
 void SDLFrontend::handle_load_rom() {
@@ -1723,8 +1726,8 @@ void SDLFrontend::handle_load_rom() {
         message_dialog_->hide();
     }
     
-    // Show menu again
-    menu_system_->show();
+    // Don't show menu again - let emulator start running
+    // User can press F10 to open menu if needed
 }
 
 void SDLFrontend::handle_reset() {
@@ -2031,7 +2034,29 @@ bool SDLFrontend::load_bios_file(const std::string& path) {
     size_t last_slash = path.find_last_of("/\\");
     current_bios_name_ = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
     
+    // Reset emulator after loading BIOS
+    emulator_->reset();
+    
     return true;
+}
+
+// Helper function to extract file from ZIP if needed
+std::string SDLFrontend::extract_if_zip(const std::string& path) {
+    // Check if it's a ZIP file
+    if (path.size() >= 4 && path.substr(path.size() - 4) == ".zip") {
+        // Extract ZIP to temp file
+        if (zip_handler_->open(path)) {
+            auto rom_files = zip_handler_->get_rom_files();
+            if (!rom_files.empty()) {
+                std::string extracted = zip_handler_->extract_file(rom_files[0]);
+                zip_handler_->close();
+                return extracted;
+            }
+            zip_handler_->close();
+        }
+        return "";  // ZIP extraction failed
+    }
+    return path;  // Not a ZIP, return original path
 }
 
 bool SDLFrontend::load_rom_file(const std::string& path) {

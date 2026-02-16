@@ -21,18 +21,37 @@ EmulatorCore::EmulatorCore(const Configuration& config)
 }
 
 Result<void> EmulatorCore::load_bios(const std::string& path) {
-    return memory_.load_bios(path);
+    auto result = memory_.load_bios(path);
+    if (result.is_ok()) {
+        // If ROM is already loaded, start emulation
+        if (memory_.get_cart_rom() != nullptr) {
+            running_ = true;
+        }
+    }
+    return result;
 }
 
 Result<void> EmulatorCore::load_bios(const uint8* data, size_t size) {
-    return memory_.load_bios(data, size);
+    auto result = memory_.load_bios(data, size);
+    if (result.is_ok()) {
+        // If ROM is already loaded, start emulation
+        if (memory_.get_cart_rom() != nullptr) {
+            running_ = true;
+        }
+    }
+    return result;
 }
 
 Result<void> EmulatorCore::load_rom(const std::string& path) {
     auto result = memory_.load_cartridge(path);
     if (result.is_ok()) {
         reset();
-        running_ = true;
+        // Only start emulation if BIOS is also loaded
+        // Check if BIOS has been loaded (first byte should be non-zero for valid BIOS)
+        const uint8* bios = memory_.get_bios_rom();
+        if (bios && bios[0] != 0) {
+            running_ = true;
+        }
     }
     return result;
 }
@@ -41,7 +60,12 @@ Result<void> EmulatorCore::load_rom(const uint8* data, size_t size) {
     auto result = memory_.load_cartridge(data, size);
     if (result.is_ok()) {
         reset();
-        running_ = true;
+        // Only start emulation if BIOS is also loaded
+        // Check if BIOS has been loaded (first byte should be non-zero for valid BIOS)
+        const uint8* bios = memory_.get_bios_rom();
+        if (bios && bios[0] != 0) {
+            running_ = true;
+        }
     }
     return result;
 }
