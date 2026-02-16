@@ -41,9 +41,9 @@ TEST(VDCTest, SpriteRendering) {
     advance_to_scanline(vdc, 50);
     vdc.render_scanline();
     
-    // Check that sprite pixel is rendered
+    // Check that sprite pixel is rendered with high-intensity color
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 3);  // Color 3
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 11);  // Color 3 + 8 (high-intensity)
 }
 
 // Test double-size sprite
@@ -67,10 +67,10 @@ TEST(VDCTest, DoubleSizeSprite) {
     advance_to_scanline(vdc, 50);
     vdc.render_scanline();
     
-    // Check that sprite is 16 pixels wide (double size)
+    // Check that sprite is 16 pixels wide (double size) with high-intensity color
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 3);
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 65], 3);  // Should extend to x+15
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 11);  // Color 3 + 8 (high-intensity)
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 65], 11);  // Should extend to x+15
 }
 
 // Test grid rendering in different modes

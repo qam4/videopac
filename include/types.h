@@ -71,32 +71,30 @@ struct Color {
     constexpr Color(uint8 red, uint8 green, uint8 blue) : r(red), g(green), b(blue) {}
 };
 
-// Videopac 8-color palette (full brightness)
-// Reference: Intel 8245 VDC standard digital RGB values
-// Used for sprites and characters
-constexpr Color PALETTE_BRIGHT[8] = {
-    {0x49, 0x49, 0x49},  // 0: Dark Grey
-    {0xFF, 0x49, 0x49},  // 1: Red
-    {0x49, 0xFF, 0x49},  // 2: Green
-    {0xFF, 0xFF, 0x49},  // 3: Yellow (Cyan in some docs)
-    {0x49, 0x49, 0xFF},  // 4: Blue
-    {0xFF, 0x49, 0xFF},  // 5: Magenta (Violet)
-    {0xFF, 0xFF, 0xFF},  // 6: White (Light Grey in some docs)
-    {0xFF, 0xFF, 0xFF}   // 7: White
-};
-
-// Videopac 8-color palette (half brightness)
-// Reference: Intel 8245 VDC standard digital RGB values
-// Used for background and grid elements
-constexpr Color PALETTE_DIM[8] = {
+// Videopac 16-color palette (RGBI - RGB + Intensity/Luminance bit)
+// Reference: Intel 8244/8245 VDC
+// Color index bits: Bit 0=Blue, Bit 1=Green, Bit 2=Red, Bit 3=Luminance
+// Indices 0-7: Low-intensity (Background & Grids)
+// Indices 8-15: High-intensity (Sprites & Characters)
+constexpr Color PALETTE[16] = {
+    // Low-intensity (0-7)
     {0x00, 0x00, 0x00},  // 0: Black
-    {0xB6, 0x00, 0x00},  // 1: Red (half)
-    {0x00, 0xB6, 0x00},  // 2: Green (half)
-    {0xB6, 0xB6, 0x00},  // 3: Yellow (half)
-    {0x00, 0x00, 0xB6},  // 4: Blue (half)
-    {0xB6, 0x00, 0xB6},  // 5: Magenta (half)
-    {0xB6, 0xB6, 0xB6},  // 6: Light Grey (half)
-    {0xB6, 0xB6, 0xB6}   // 7: Light Grey (half)
+    {0x08, 0x39, 0xD6},  // 1: Dark Blue
+    {0x00, 0x9C, 0x18},  // 2: Dark Green
+    {0x00, 0xBD, 0xDE},  // 3: Light Blue
+    {0xC6, 0x00, 0x08},  // 4: Dark Red
+    {0xCE, 0x10, 0xB5},  // 5: Violet
+    {0x9C, 0x84, 0x10},  // 6: Orange/Gold
+    {0xCE, 0xCE, 0xCE},  // 7: Grey
+    // High-intensity (8-15)
+    {0x49, 0x49, 0x49},  // 8: Light Grey
+    {0x49, 0x49, 0xFF},  // 9: Blue
+    {0x49, 0xFF, 0x49},  // 10: Green
+    {0x49, 0xFF, 0xFF},  // 11: Cyan
+    {0xFF, 0x49, 0x49},  // 12: Red
+    {0xFF, 0x49, 0xFF},  // 13: Magenta
+    {0xFF, 0xFF, 0x49},  // 14: Yellow
+    {0xFF, 0xFF, 0xFF}   // 15: White
 };
 
 // VDC framebuffer dimensions

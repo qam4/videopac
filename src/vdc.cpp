@@ -314,10 +314,6 @@ const uint8* VDC::get_framebuffer() const {
 // Enables rendering to a larger framebuffer to see what's outside visible area
 void VDC::set_extended_framebuffer_mode(bool enabled) {
     extended_fb_mode_ = enabled;
-    if (enabled) {
-        std::cout << "Extended framebuffer mode enabled (" 
-                  << EXTENDED_FB_WIDTH << "x" << EXTENDED_FB_HEIGHT << ")" << std::endl;
-    }
 }
 
 // Get extended framebuffer pointer
@@ -581,7 +577,7 @@ void VDC::render_characters(int y) {
         
         // Extract character attributes
         uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);  // 9-bit character pointer
-        uint8 color = (char_attr >> 1) & 0x07;  // Bits 1-3: color
+        uint8 color = ((char_attr >> 1) & 0x07) + 8;  // Bits 1-3: color (high-intensity for characters)
         
         // Characters are 8x7 (8 pixels wide, 7 lines tall, but stored as 8 bytes)
         // Check if current scanline intersects this character
@@ -688,7 +684,7 @@ void VDC::render_characters(int y) {
             
             // Extract character attributes
             uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);
-            uint8 color = (char_attr >> 1) & 0x07;
+            uint8 color = ((char_attr >> 1) & 0x07) + 8;  // High-intensity for characters
             
             // Check if current scanline intersects this character
             if (y < char_y || y >= char_y + 14) {
@@ -755,7 +751,7 @@ void VDC::render_sprites(int y) {
         
         // Extract sprite attributes from color register
         // Reference: doc/o2doc.md section 4.3.1
-        uint8 color = (sprite_color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT;
+        uint8 color = ((sprite_color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT) + 8;  // Sprites use high-intensity palette
         bool double_size = (sprite_color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
         bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
         bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
@@ -1545,7 +1541,7 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
         bool pixel_on = (pattern & (0x80 >> pixel_x)) != 0;
         
         if (pixel_on) {
-            color = (char_attr >> 1) & 0x07;
+            color = ((char_attr >> 1) & 0x07) + 8;  // Characters use high-intensity palette
             return true;
         }
     }
@@ -1606,7 +1602,7 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
             bool pixel_on = (pattern & (0x80 >> pixel_x)) != 0;
             
             if (pixel_on) {
-                color = (char_attr >> 1) & 0x07;
+                color = ((char_attr >> 1) & 0x07) + 8;  // Characters use high-intensity palette
                 return true;
             }
         }
@@ -1675,7 +1671,7 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
         bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;
         
         if (pixel_on) {
-            color = sprite_color;
+            color = sprite_color + 8;  // Sprites use high-intensity palette
             return true;
         }
     }

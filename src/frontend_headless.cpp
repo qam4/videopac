@@ -387,7 +387,7 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 uint8 palette_index = framebuffer[y * width + x];
-                Color color = PALETTE_BRIGHT[palette_index % 8];
+                Color color = PALETTE[palette_index % 16];
                 // Write each pixel twice (2x horizontal scaling)
                 file.put(color.r);
                 file.put(color.g);
@@ -410,7 +410,7 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 uint8 palette_index = framebuffer[y * width + x];
-                Color color = PALETTE_BRIGHT[palette_index % 8];
+                Color color = PALETTE[palette_index % 16];
                 // Write each pixel twice (2x horizontal scaling)
                 file.put(color.r);
                 file.put(color.g);

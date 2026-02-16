@@ -65,31 +65,36 @@ TEST(UtilsTest, ChecksumCalculation) {
 }
 
 TEST(TypesTest, ColorPalette) {
-    // Test bright palette - Intel 8245 VDC standard values
-    EXPECT_EQ(PALETTE_BRIGHT[0].r, 0x49);  // Dark Grey
-    EXPECT_EQ(PALETTE_BRIGHT[0].g, 0x49);
-    EXPECT_EQ(PALETTE_BRIGHT[0].b, 0x49);
+    // Test 16-color RGBI palette - Intel 8244/8245 VDC
+    // Low-intensity colors (0-7): Background/Grid
+    EXPECT_EQ(PALETTE[0].r, 0x00);  // 0: Black
+    EXPECT_EQ(PALETTE[0].g, 0x00);
+    EXPECT_EQ(PALETTE[0].b, 0x00);
     
-    EXPECT_EQ(PALETTE_BRIGHT[1].r, 0xFF);  // Red
-    EXPECT_EQ(PALETTE_BRIGHT[1].g, 0x49);
-    EXPECT_EQ(PALETTE_BRIGHT[1].b, 0x49);
+    EXPECT_EQ(PALETTE[1].r, 0x08);  // 1: Dark Blue
+    EXPECT_EQ(PALETTE[1].g, 0x39);
+    EXPECT_EQ(PALETTE[1].b, 0xD6);
     
-    EXPECT_EQ(PALETTE_BRIGHT[7].r, 0xFF);  // White
-    EXPECT_EQ(PALETTE_BRIGHT[7].g, 0xFF);
-    EXPECT_EQ(PALETTE_BRIGHT[7].b, 0xFF);
+    EXPECT_EQ(PALETTE[7].r, 0xCE);  // 7: Grey
+    EXPECT_EQ(PALETTE[7].g, 0xCE);
+    EXPECT_EQ(PALETTE[7].b, 0xCE);
     
-    // Test dim palette
-    EXPECT_EQ(PALETTE_DIM[0].r, 0x00);  // Black
-    EXPECT_EQ(PALETTE_DIM[0].g, 0x00);
-    EXPECT_EQ(PALETTE_DIM[0].b, 0x00);
+    // High-intensity colors (8-15): Sprites/Characters
+    EXPECT_EQ(PALETTE[8].r, 0x49);  // 8: Light Grey
+    EXPECT_EQ(PALETTE[8].g, 0x49);
+    EXPECT_EQ(PALETTE[8].b, 0x49);
     
-    EXPECT_EQ(PALETTE_DIM[1].r, 0xB6);  // Red (half)
-    EXPECT_EQ(PALETTE_DIM[1].g, 0x00);
-    EXPECT_EQ(PALETTE_DIM[1].b, 0x00);
+    EXPECT_EQ(PALETTE[9].r, 0x49);  // 9: Blue
+    EXPECT_EQ(PALETTE[9].g, 0x49);
+    EXPECT_EQ(PALETTE[9].b, 0xFF);
     
-    EXPECT_EQ(PALETTE_DIM[7].r, 0xB6);  // Light Grey (half)
-    EXPECT_EQ(PALETTE_DIM[7].g, 0xB6);
-    EXPECT_EQ(PALETTE_DIM[7].b, 0xB6);
+    EXPECT_EQ(PALETTE[12].r, 0xFF);  // 12: Red
+    EXPECT_EQ(PALETTE[12].g, 0x49);
+    EXPECT_EQ(PALETTE[12].b, 0x49);
+    
+    EXPECT_EQ(PALETTE[15].r, 0xFF);  // 15: White
+    EXPECT_EQ(PALETTE[15].g, 0xFF);
+    EXPECT_EQ(PALETTE[15].b, 0xFF);
 }
 
 TEST(TypesTest, ResultType) {

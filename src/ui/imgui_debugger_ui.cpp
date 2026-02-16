@@ -1102,16 +1102,28 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
     
     // Sprite control registers for sprites 0-3
     if (ImGui::TreeNode("Sprites")) {
-        // Videopac palette colors (RGB)
-        static const ImU32 palette_colors[8] = {
-            IM_COL32(73, 73, 73, 255),      // 0: Dark Grey
-            IM_COL32(255, 73, 73, 255),     // 1: Red
-            IM_COL32(73, 255, 73, 255),     // 2: Green
-            IM_COL32(255, 255, 73, 255),    // 3: Yellow
-            IM_COL32(73, 73, 255, 255),     // 4: Blue
-            IM_COL32(255, 73, 255, 255),    // 5: Magenta
-            IM_COL32(255, 255, 255, 255),   // 6: White
-            IM_COL32(255, 255, 255, 255)    // 7: White
+        // Videopac 16-color palette (RGBI) - matches PALETTE in types.h
+        // Low-intensity (0-7): Background/Grid colors
+        // High-intensity (8-15): Sprite/Character colors
+        static const ImU32 palette_colors[16] = {
+            // Low-intensity
+            IM_COL32(0, 0, 0, 255),         // 0: Black
+            IM_COL32(8, 57, 214, 255),      // 1: Dark Blue
+            IM_COL32(0, 156, 24, 255),      // 2: Dark Green
+            IM_COL32(0, 189, 222, 255),     // 3: Light Blue
+            IM_COL32(198, 0, 8, 255),       // 4: Dark Red
+            IM_COL32(206, 16, 181, 255),    // 5: Violet
+            IM_COL32(156, 132, 16, 255),    // 6: Orange/Gold
+            IM_COL32(206, 206, 206, 255),   // 7: Grey
+            // High-intensity
+            IM_COL32(73, 73, 73, 255),      // 8: Light Grey
+            IM_COL32(73, 73, 255, 255),     // 9: Blue
+            IM_COL32(73, 255, 73, 255),     // 10: Green
+            IM_COL32(73, 255, 255, 255),    // 11: Cyan
+            IM_COL32(255, 73, 73, 255),     // 12: Red
+            IM_COL32(255, 73, 255, 255),    // 13: Magenta
+            IM_COL32(255, 255, 73, 255),    // 14: Yellow
+            IM_COL32(255, 255, 255, 255)    // 15: White
         };
         
         for (int i = 0; i < 4; i++) {
