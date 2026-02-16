@@ -65,36 +65,59 @@ TEST(UtilsTest, ChecksumCalculation) {
 }
 
 TEST(TypesTest, ColorPalette) {
-    // Test 16-color RGBI palette - Intel 8244/8245 VDC
-    // Low-intensity colors (0-7): Background/Grid
-    EXPECT_EQ(PALETTE[0].r, 0x00);  // 0: Black
-    EXPECT_EQ(PALETTE[0].g, 0x00);
-    EXPECT_EQ(PALETTE[0].b, 0x00);
+    // Test 16-color RGBI palettes - Intel 8244/8245 VDC
+    // NTSC (8244) and PAL (8245) have different color mappings
     
-    EXPECT_EQ(PALETTE[1].r, 0x08);  // 1: Dark Blue
-    EXPECT_EQ(PALETTE[1].g, 0x39);
-    EXPECT_EQ(PALETTE[1].b, 0xD6);
+    // NTSC Palette - Color 1 = RED
+    EXPECT_EQ(PALETTE_NTSC[0].r, 0x00);  // 0: Black
+    EXPECT_EQ(PALETTE_NTSC[0].g, 0x00);
+    EXPECT_EQ(PALETTE_NTSC[0].b, 0x00);
     
-    EXPECT_EQ(PALETTE[7].r, 0xCE);  // 7: Grey
-    EXPECT_EQ(PALETTE[7].g, 0xCE);
-    EXPECT_EQ(PALETTE[7].b, 0xCE);
+    EXPECT_EQ(PALETTE_NTSC[1].r, 0xC6);  // 1: Dark Red (NTSC)
+    EXPECT_EQ(PALETTE_NTSC[1].g, 0x00);
+    EXPECT_EQ(PALETTE_NTSC[1].b, 0x08);
+    
+    EXPECT_EQ(PALETTE_NTSC[4].r, 0x08);  // 4: Dark Blue (NTSC)
+    EXPECT_EQ(PALETTE_NTSC[4].g, 0x39);
+    EXPECT_EQ(PALETTE_NTSC[4].b, 0xD6);
+    
+    EXPECT_EQ(PALETTE_NTSC[7].r, 0xCE);  // 7: Grey
+    EXPECT_EQ(PALETTE_NTSC[7].g, 0xCE);
+    EXPECT_EQ(PALETTE_NTSC[7].b, 0xCE);
     
     // High-intensity colors (8-15): Sprites/Characters
-    EXPECT_EQ(PALETTE[8].r, 0x49);  // 8: Light Grey
-    EXPECT_EQ(PALETTE[8].g, 0x49);
-    EXPECT_EQ(PALETTE[8].b, 0x49);
+    EXPECT_EQ(PALETTE_NTSC[8].r, 0x49);  // 8: Light Grey
+    EXPECT_EQ(PALETTE_NTSC[8].g, 0x49);
+    EXPECT_EQ(PALETTE_NTSC[8].b, 0x49);
     
-    EXPECT_EQ(PALETTE[9].r, 0x49);  // 9: Blue
-    EXPECT_EQ(PALETTE[9].g, 0x49);
-    EXPECT_EQ(PALETTE[9].b, 0xFF);
+    EXPECT_EQ(PALETTE_NTSC[9].r, 0xFF);  // 9: Red (NTSC high-intensity)
+    EXPECT_EQ(PALETTE_NTSC[9].g, 0x49);
+    EXPECT_EQ(PALETTE_NTSC[9].b, 0x49);
     
-    EXPECT_EQ(PALETTE[12].r, 0xFF);  // 12: Red
-    EXPECT_EQ(PALETTE[12].g, 0x49);
-    EXPECT_EQ(PALETTE[12].b, 0x49);
+    EXPECT_EQ(PALETTE_NTSC[12].r, 0x49);  // 12: Blue (NTSC high-intensity)
+    EXPECT_EQ(PALETTE_NTSC[12].g, 0x49);
+    EXPECT_EQ(PALETTE_NTSC[12].b, 0xFF);
     
-    EXPECT_EQ(PALETTE[15].r, 0xFF);  // 15: White
-    EXPECT_EQ(PALETTE[15].g, 0xFF);
-    EXPECT_EQ(PALETTE[15].b, 0xFF);
+    EXPECT_EQ(PALETTE_NTSC[15].r, 0xFF);  // 15: White
+    EXPECT_EQ(PALETTE_NTSC[15].g, 0xFF);
+    EXPECT_EQ(PALETTE_NTSC[15].b, 0xFF);
+    
+    // PAL Palette - Color 1 = BLUE
+    EXPECT_EQ(PALETTE_PAL[1].r, 0x08);  // 1: Dark Blue (PAL)
+    EXPECT_EQ(PALETTE_PAL[1].g, 0x39);
+    EXPECT_EQ(PALETTE_PAL[1].b, 0xD6);
+    
+    EXPECT_EQ(PALETTE_PAL[4].r, 0xC6);  // 4: Dark Red (PAL)
+    EXPECT_EQ(PALETTE_PAL[4].g, 0x00);
+    EXPECT_EQ(PALETTE_PAL[4].b, 0x08);
+    
+    EXPECT_EQ(PALETTE_PAL[9].r, 0x49);  // 9: Blue (PAL high-intensity)
+    EXPECT_EQ(PALETTE_PAL[9].g, 0x49);
+    EXPECT_EQ(PALETTE_PAL[9].b, 0xFF);
+    
+    EXPECT_EQ(PALETTE_PAL[12].r, 0xFF);  // 12: Red (PAL high-intensity)
+    EXPECT_EQ(PALETTE_PAL[12].g, 0x49);
+    EXPECT_EQ(PALETTE_PAL[12].b, 0x49);
 }
 
 TEST(TypesTest, ResultType) {

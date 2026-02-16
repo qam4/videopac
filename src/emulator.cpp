@@ -47,9 +47,8 @@ Result<void> EmulatorCore::load_rom(const std::string& path) {
     if (result.is_ok()) {
         reset();
         // Only start emulation if BIOS is also loaded
-        // Check if BIOS has been loaded (first byte should be non-zero for valid BIOS)
         const uint8* bios = memory_.get_bios_rom();
-        if (bios && bios[0] != 0) {
+        if (bios) {
             running_ = true;
         }
     }
@@ -61,9 +60,8 @@ Result<void> EmulatorCore::load_rom(const uint8* data, size_t size) {
     if (result.is_ok()) {
         reset();
         // Only start emulation if BIOS is also loaded
-        // Check if BIOS has been loaded (first byte should be non-zero for valid BIOS)
         const uint8* bios = memory_.get_bios_rom();
-        if (bios && bios[0] != 0) {
+        if (bios) {
             running_ = true;
         }
     }
@@ -74,7 +72,7 @@ void EmulatorCore::reset() {
     cpu_.reset();
     vdc_.reset();
     input_.reset();
-    master_clock_.reset_frame();
+    master_clock_.reset();
     frame_count_ = 0;
     
     // According to doc/o2doc.md section 6.1:
@@ -140,16 +138,16 @@ void EmulatorCore::run_frame() {
                     return;
                 }
                 
+                // Log instruction trace BEFORE executing (so we capture the PC before it changes)
+                if (debugger_ && debugger_->is_trace_enabled()) {
+                    debugger_->log_instruction(master_clock_.get_master_cycle_count());
+                }
+                
                 // Execute one CPU instruction
                 uint8 instruction_cycles = cpu_.execute_instruction();
                 
                 // Notify master clock that CPU executed
                 master_clock_.cpu_executed(instruction_cycles);
-                
-                // Log instruction trace AFTER executing
-                if (debugger_ && debugger_->is_trace_enabled()) {
-                    debugger_->log_instruction(master_clock_.get_master_cycle_count());
-                }
                 
                 if (profiling) {
                     auto cpu_end = std::chrono::high_resolution_clock::now();

@@ -94,6 +94,7 @@ public:
     void set_trace_level(TraceLevel level);
     TraceLevel get_trace_level() const { return trace_level_; }
     bool is_trace_enabled() const { return trace_level_ != TraceLevel::Off; }
+    void set_trace_limit(bool enable_limit) { trace_limit_enabled_ = enable_limit; }
     void log_instruction(uint64 current_cycles = 0);
     const std::vector<std::string>& get_trace_log() const { return trace_log_; }
     void clear_trace_log();
@@ -109,6 +110,7 @@ private:
     DebuggerState state_;
     TraceLevel trace_level_;
     std::vector<std::string> trace_log_;
+    bool trace_limit_enabled_;  // Enable/disable trace log size limit
     FrameStats frame_stats_;
     uint64 last_frame_time_;
     

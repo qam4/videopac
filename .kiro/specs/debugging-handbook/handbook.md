@@ -252,24 +252,51 @@ The Videopac emulator supports various command-line options for debugging:
 
 **Basic Usage:**
 ```bash
-videopac [options] <bios_file> <rom_file>
+videopac [options] <rom_file>
 ```
 
 **Common Options:**
-- `--debugger` - Enable in-game debugger (F12 to toggle)
-- `--disassemble-bios <file>` - Disassemble BIOS file
-- `--disassemble-rom <file>` - Disassemble ROM file
-- `--trace` - Enable execution tracing
-- `--trace-output <file>` - Specify trace output file
-- `--output <file>` - Specify output file for disassembly
+- `--bios <file>` - Load BIOS from file (optional)
+- `--region <name>` - Hardware region: usa, europe, france (default: usa)
+- `--headless` - Run without display (for testing/automation)
+- `--frames <n>` - Run for N frames then exit (headless mode)
+- `--screenshot <n>` - Save screenshot every N frames (headless mode)
+- `--press-key <key> <frame>` - Press key at frame N (headless mode)
+- `--debug` - Enable in-game debugger (F12 to toggle)
+- `--trace[=level]` - Enable instruction trace logging
+  - Levels: minimal, normal, full (default: full)
+  - minimal = PC + instruction + A register only (fast)
+  - normal = PC + instruction + all registers (medium)
+  - full = PC + instruction + all registers + memory/IO (slow)
 
-**Example:**
+**Disassembly Tool:**
+
+For generating disassembly, use the separate `disasm_tool` executable:
+
+```bash
+disasm_tool <rom_file> [start_addr] [end_addr]
+```
+
+- ROM files: Use start address `0x400` (ROMs load at 0x400)
+- BIOS files: Use start address `0x000` (or omit, defaults to 0x000)
+- Supports both .bin and .zip files
+
+**Examples:**
 ```bash
 # Run with debugger enabled
-videopac --debugger bios.bin game.bin
+videopac --debug --bios bios.bin game.bin
 
-# Generate disassembly
-videopac --disassemble-rom game.bin --output game_disasm.txt
+# Run headless with screenshots
+videopac --headless --screenshot 1 --frames 10 game.bin
+
+# Generate ROM disassembly (note: ROM offset is 0x400)
+disasm_tool game.bin 0x400 > game_disasm.txt
+
+# Generate BIOS disassembly (no offset needed)
+disasm_tool bios.bin > bios_disasm.txt
+
+# Disassemble specific address range
+disasm_tool game.bin 0x400 0x800 > game_partial.txt
 ```
 
 ### 2.2 SDL vs Headless Mode Selection
@@ -591,195 +618,234 @@ videopac --disassemble-rom game.bin --start 0x0000 --end 0x00FF --output game_in
 
 ### 4.1 Trace Capture Command Syntax
 
-**Basic Trace:**
+**Basic Trace (SDL Mode):**
 ```bash
-videopac --trace --trace-output trace.txt <bios> <rom>
+# Trace is written to trace.log in current directory
+videopac --trace --bios bios.bin game.bin
 ```
 
-**Trace with Start Condition:**
+**Trace with Level Control:**
 ```bash
-# Start at specific frame
-videopac --trace --trace-start-frame 100 --trace-output trace.txt <bios> <rom>
+# Minimal trace (fastest, PC + instruction + A register only)
+videopac --trace=minimal --bios bios.bin game.bin
 
-# Start on key press
-videopac --trace --trace-start-key "1" --trace-output trace.txt <bios> <rom>
+# Normal trace (medium speed, PC + instruction + all registers)
+videopac --trace=normal --bios bios.bin game.bin
 
-# Start at specific address
-videopac --trace --trace-start-address 0x0400 --trace-output trace.txt <bios> <rom>
+# Full trace (slowest, everything including memory/IO)
+videopac --trace=full --bios bios.bin game.bin
 ```
 
-**Trace with Duration:**
+**Headless Mode with Trace:**
 ```bash
-# Trace for specific number of frames
-videopac --trace --trace-frames 1 --trace-output trace.txt <bios> <rom>
+# Capture trace for specific number of frames
+videopac --headless --trace --frames 10 --bios bios.bin game.bin
 
-# Trace for specific number of instructions
-videopac --trace --trace-instructions 1000 --trace-output trace.txt <bios> <rom>
+# Capture trace with key press simulation
+videopac --headless --trace --frames 10 --press-key 1 5 --bios bios.bin game.bin
+
+# Capture trace with screenshots
+videopac --headless --trace --screenshot 1 --frames 10 --bios bios.bin game.bin
 ```
+
+**Note:** In headless mode, the complete trace from frame 0 is captured without size limits. In SDL mode, the trace buffer is limited to the most recent 50,000 instructions to prevent memory issues.
 
 ### 4.2 Trace Start Conditions
 
-**Frame Number:**
-- `--trace-start-frame <n>` - Start tracing at frame N
-- Useful for capturing specific game states
-- Frame 0 is the first frame after initialization
+**Frame-Based Start:**
+- Use `--frames <n>` in headless mode to control how many frames to run
+- Trace starts from frame 0 and captures all frames
+- Example: `--frames 10` captures frames 0-9
 
-**Key Press:**
-- `--trace-start-key <key>` - Start tracing when key is pressed
-- Keys: "0"-"9", "A"-"Z", "SPACE", "ENTER"
-- Useful for capturing player input response
+**Key Press Simulation:**
+- Use `--press-key <key> <frame>` to simulate key press at specific frame
+- Keys: 0-9, A-Z (single character)
+- Example: `--press-key 1 60` presses '1' at frame 60
+- Useful for capturing game state after player input
 
-**Address:**
-- `--trace-start-address <addr>` - Start when PC reaches address
-- Address in hexadecimal (e.g., 0x0400)
-- Useful for tracing specific code sections
-
-**Condition:**
-- `--trace-start-condition <expr>` - Start when expression is true
-- Example: "A == 0x42" or "R0 > 0x10"
-- Useful for complex start conditions
+**Manual Control (SDL Mode):**
+- Start emulator with `--trace`
+- Trace begins immediately when emulator starts
+- Use debugger (F12) to pause and examine state
+- Trace is written to `trace.log` on exit
 
 ### 4.3 Trace Duration Options
 
-**Frame Count:**
-- `--trace-frames <n>` - Trace for N frames
-- Typical: 1 frame for single-frame analysis
-- Use 10-60 for multi-frame sequences
+**Headless Mode:**
+- `--frames <n>` - Run for N frames then exit
+- Trace captures all frames from 0 to N-1
+- No size limit - complete trace is saved
 
-**Instruction Count:**
-- `--trace-instructions <n>` - Trace for N instructions
-- Typical: 100-1000 for focused analysis
-- Use 10000+ for comprehensive traces
+**SDL Mode:**
+- Trace runs until emulator exits
+- Buffer limited to most recent 50,000 instructions
+- Older entries are discarded as new ones are added
 
-**Time Duration:**
-- `--trace-time <seconds>` - Trace for specified time
-- Useful for real-time debugging scenarios
-
-**Unlimited:**
-- No duration option - Trace until program exit
-- **Warning:** Can generate very large files
+**Recommendations:**
+- Use headless mode for complete traces
+- Use `--frames 1` for single frame analysis
+- Use `--frames 10` for multi-frame sequences
+- For longer traces, consider trace level (minimal/normal/full)
 
 ### 4.4 Trace Filtering Options
 
-**Filter Types:**
+**Trace Levels:**
+
+The emulator provides three trace levels that control what information is captured:
+
+**Minimal (Fastest):**
 ```bash
-# All events (default)
-videopac --trace --trace-filter all --trace-output trace.txt <bios> <rom>
-
-# CPU instructions only
-videopac --trace --trace-filter cpu --trace-output trace.txt <bios> <rom>
-
-# VDC register writes only
-videopac --trace --trace-filter vdc --trace-output trace.txt <bios> <rom>
-
-# Memory writes only
-videopac --trace --trace-filter mem-write --trace-output trace.txt <bios> <rom>
-
-# Memory reads only
-videopac --trace --trace-filter mem-read --trace-output trace.txt <bios> <rom>
-
-# I/O port accesses only
-videopac --trace --trace-filter io --trace-output trace.txt <bios> <rom>
+videopac --trace=minimal --headless --frames 10 game.bin
 ```
+- PC (Program Counter)
+- Instruction bytes
+- A register only
+- Best for: Quick analysis, large frame counts
 
-**Address Range Filtering:**
+**Normal (Medium Speed):**
 ```bash
-# Trace only specific address range
-videopac --trace --trace-address-range 0x0400:0x0FFF --trace-output trace.txt <bios> <rom>
+videopac --trace=normal --headless --frames 10 game.bin
+```
+- PC, instruction bytes
+- All CPU registers (A, PSW, P1, P2)
+- Best for: General debugging, register tracking
+
+**Full (Slowest, Most Detail):**
+```bash
+videopac --trace=full --headless --frames 10 game.bin
+```
+- PC, instruction bytes
+- All CPU registers
+- Register bank, F1 flag
+- Best for: Deep analysis, timing issues
+
+**Post-Processing Filtering:**
+
+Since the emulator doesn't have built-in filtering, use command-line tools to filter trace.log:
+
+```bash
+# Filter for VDC writes (grep for register addresses 0xA0-0xAF)
+grep "0x0A[0-9A-F]" trace.log > vdc_writes.txt
+
+# Filter for specific frame
+grep "\\[F:0007" trace.log > frame_7.txt
+
+# Filter for specific address range
+grep "0x04[0-9A-F][0-9A-F]:" trace.log > rom_code.txt
+
+# Count instructions per frame
+grep -c "\\[F:0001" trace.log
 ```
 
 ### 4.5 Trace Output Format
 
-**Standard Format:**
+**Minimal Level Format:**
 ```
-Frame:0001 Scanline:010 Cycle:00123 PC:0x0234 A:0x42 PSW:0x08 | MOV A, #0x42
-Frame:0001 Scanline:010 Cycle:00125 PC:0x0235 A:0x42 PSW:0x08 | OUTL P1, A
-Frame:0001 Scanline:010 Cycle:00127 PC:0x0236 A:0x42 PSW:0x08 | VDC_WRITE[0xA3] = 0x42
-```
-
-**Columns:**
-- **Frame** - Current video frame number
-- **Scanline** - Current scanline (0-261)
-- **Cycle** - CPU cycle within frame
-- **PC** - Program Counter
-- **A** - Accumulator value
-- **PSW** - Program Status Word
-- **Instruction** - Disassembled instruction or event
-
-**VDC Write Format:**
-```
-Frame:0001 Scanline:010 Cycle:00127 | VDC_WRITE[0xA3] = 0x42 (Sprite 0 Color)
+[F:1 C:1234] 0x0400: 23 42 | A=0x00
+[F:1 C:1236] 0x0402: F0 00 | A=0x42
 ```
 
-**Memory Access Format:**
+**Normal Level Format:**
 ```
-Frame:0001 Scanline:010 Cycle:00130 | MEM_WRITE[0x1000] = 0x55
-Frame:0001 Scanline:010 Cycle:00132 | MEM_READ[0x1000] = 0x55
+[F:1 C:1234] 0x0400: 23 42 | A=00 PSW=00 P1=FF
+[F:1 C:1236] 0x0402: F0 00 | A=42 PSW=00 P1=FF
 ```
+
+**Full Level Format:**
+```
+[F:1 C:1234] 0x0400: 23 42 | A=00 PSW=00 P1=FF P2=00 RB0 F1=0
+[F:1 C:1236] 0x0402: F0 00 | A=42 PSW=00 P1=FF P2=00 RB0 F1=0
+```
+
+**Field Descriptions:**
+- **[F:N]** - Frame number
+- **C:NNNN** - Cycle count within frame
+- **0xNNNN:** - Program Counter (PC)
+- **XX XX** - Instruction bytes (opcode + operand)
+- **A=XX** - Accumulator value
+- **PSW=XX** - Program Status Word (flags)
+- **P1=XX** - Port 1 value
+- **P2=XX** - Port 2 value
+- **RBN** - Register Bank number (0 or 1)
+- **F1=N** - F1 flag state
 
 ### 4.6 Reading Trace Output
 
 **Analyzing Execution Flow:**
 1. Follow PC values to track code execution
 2. Identify loops (PC returns to previous values)
-3. Identify function calls (CALL instructions)
-4. Identify returns (RET instructions)
+3. Identify function calls (look for CALL pattern in disassembly)
+4. Identify returns (look for RET pattern)
 
 **Analyzing Register Changes:**
 1. Track accumulator (A) value changes
-2. Identify data sources (immediate values, memory, registers)
+2. Identify data sources (compare with disassembly)
 3. Track PSW flag changes (carry, zero, etc.)
+4. Monitor port values for I/O operations
 
 **Analyzing Timing:**
-1. Check scanline values for VBLANK (scanline > 192)
-2. Identify mid-frame updates (scanline 0-192)
-3. Calculate instruction timing from cycle counts
+1. Check cycle counts (C:NNNN) for instruction timing
+2. Track frame numbers to identify frame boundaries
+3. Calculate cycles per frame
 4. Identify timing-critical sections
 
-**Analyzing VDC Writes:**
-1. Filter for VDC_WRITE events
-2. Check register addresses (0xA0-0xAF)
-3. Verify write timing (VBLANK vs mid-frame)
-4. Track register value changes over time
+**Finding VDC Operations:**
+1. Look for port writes in disassembly
+2. Cross-reference with VDC register map (0xA0-0xAF)
+3. Track register write sequences
+4. Verify write timing relative to frame boundaries
 
 ### 4.7 Performance Considerations
 
 **Trace File Size:**
-- 1 frame ≈ 50,000-100,000 instructions
-- 1 frame trace ≈ 5-10 MB uncompressed
-- 60 frames ≈ 300-600 MB uncompressed
+- Minimal: ~2-3 MB per frame
+- Normal: ~5-7 MB per frame
+- Full: ~8-10 MB per frame
+- 10 frames (full): ~80-100 MB
 
 **Recommendations:**
-- Use filtering to reduce file size
-- Trace only necessary frames
-- Use address range filtering for focused analysis
-- Compress trace files after capture (gzip, zip)
+- Use minimal level for initial analysis
+- Use normal level for register debugging
+- Use full level only when needed
+- Compress trace files: `gzip trace.log`
+- Use grep/awk for filtering instead of loading entire file
 
 **Memory Usage:**
-- Traces are written to disk incrementally
-- Memory usage is minimal during capture
-- Large traces may take time to load in editors
+- Headless mode: Unlimited trace buffer (all frames captured)
+- SDL mode: Limited to 50,000 most recent instructions
+- Trace written to disk on exit
 
 ### 4.8 Examples
 
-**Example 1: Capture First Frame After Key Press**
+**Example 1: Capture First 10 Frames**
 ```bash
-videopac --trace --trace-start-key "1" --trace-frames 1 --trace-output first_frame.txt bios.bin game.bin
+videopac --headless --trace --frames 10 --bios bios.bin game.bin
+# Output: trace.log
 ```
 
-**Example 2: Capture VDC Writes Only**
+**Example 2: Capture Frame with Key Press**
 ```bash
-videopac --trace --trace-filter vdc --trace-frames 10 --trace-output vdc_trace.txt bios.bin game.bin
+videopac --headless --trace --frames 10 --press-key 1 5 --bios bios.bin game.bin
+# Presses '1' at frame 5, captures frames 0-9
 ```
 
-**Example 3: Capture Specific Code Section**
+**Example 3: Fast Trace for Many Frames**
 ```bash
-videopac --trace --trace-start-address 0x0400 --trace-instructions 1000 --trace-output code_trace.txt bios.bin game.bin
+videopac --headless --trace=minimal --frames 60 --bios bios.bin game.bin
+# Minimal trace for 60 frames (1 second at 60fps)
 ```
 
-**Example 4: Capture Memory Writes**
+**Example 4: Filter Trace for Specific Frame**
 ```bash
-videopac --trace --trace-filter mem-write --trace-frames 1 --trace-output mem_trace.txt bios.bin game.bin
+# After capturing trace
+grep "\[F:0007" trace.log > frame_7.txt
+# Extract only frame 7 instructions
+```
+
+**Example 5: Find VDC Register Writes**
+```bash
+# Search for writes to VDC registers (addresses 0x0A0-0x0AF)
+grep "0x0A[0-9A-F]:" trace.log | head -20
 ```
 
 [↑ Back to Top](#table-of-contents)

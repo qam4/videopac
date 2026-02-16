@@ -80,6 +80,8 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
                 std::cerr << "Unknown trace level: " << config_.trace_level << ", using 'full'" << std::endl;
             }
             debugger_->set_trace_level(level);
+            // Disable trace limit in headless mode to capture complete trace
+            debugger_->set_trace_limit(false);
         }
         
         // Set breakpoints from config
@@ -384,10 +386,13 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
         
         file << "P6\n" << output_width << " " << output_height << "\n255\n";
         
+        // Select palette based on configuration
+        const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
+        
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 uint8 palette_index = framebuffer[y * width + x];
-                Color color = PALETTE[palette_index % 16];
+                Color color = palette[palette_index % 16];
                 // Write each pixel twice (2x horizontal scaling)
                 file.put(color.r);
                 file.put(color.g);
@@ -406,11 +411,14 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
         
         file << "P6\n" << output_width << " " << output_height << "\n255\n";
         
+        // Select palette based on configuration
+        const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
+        
         // Framebuffer area (240 lines, each pixel 2x wide)
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 uint8 palette_index = framebuffer[y * width + x];
-                Color color = PALETTE[palette_index % 16];
+                Color color = palette[palette_index % 16];
                 // Write each pixel twice (2x horizontal scaling)
                 file.put(color.r);
                 file.put(color.g);

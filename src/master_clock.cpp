@@ -82,4 +82,12 @@ void MasterClock::reset_frame() {
     }
 }
 
+void MasterClock::reset() {
+    master_cycle_count_ = 0;
+    frame_cycle_count_ = 0;
+    // Initialize CPU with enough debt to execute immediately at cycle 0
+    cpu_cycle_debt_ = CYCLES_PER_CPU_INSTRUCTION;
+    vdc_cycle_debt_ = 0.0;
+}
+
 } // namespace videopac

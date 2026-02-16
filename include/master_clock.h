@@ -32,6 +32,9 @@ public:
     bool is_frame_complete() const;
     void reset_frame();
     
+    // Reset master cycle count (for emulator reset)
+    void reset();
+    
     // Accessors for testing
     uint64 get_master_cycle_count() const { return master_cycle_count_; }
     double get_cpu_cycle_debt() const { return cpu_cycle_debt_; }

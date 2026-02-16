@@ -11,6 +11,7 @@ Debugger::Debugger(EmulatorCore* emulator)
     : emulator_(emulator)
     , state_(DebuggerState::Running)
     , trace_level_(TraceLevel::Off)
+    , trace_limit_enabled_(true)  // Enable limit by default (for SDL mode)
     , last_frame_time_(0) {
     frame_stats_.total_cycles = 0;
     frame_stats_.frame_count = 0;
@@ -453,7 +454,7 @@ void Debugger::log_instruction(uint64 current_cycles) {
                 (unsigned long long)cycles_to_log, 
                 cpu.pc, byte0, byte1, cpu.a);
         trace_log_.push_back(buffer);
-        if (trace_log_.size() > 50000) {
+        if (trace_limit_enabled_ && trace_log_.size() > 50000) {
             trace_log_.erase(trace_log_.begin(), trace_log_.begin() + 10000);
         }
         return;
@@ -481,7 +482,7 @@ void Debugger::log_instruction(uint64 current_cycles) {
     }
     
     trace_log_.push_back(buffer);
-    if (trace_log_.size() > 50000) {
+    if (trace_limit_enabled_ && trace_log_.size() > 50000) {
         trace_log_.erase(trace_log_.begin(), trace_log_.begin() + 10000);
     }
 }

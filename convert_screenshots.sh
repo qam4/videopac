@@ -3,13 +3,8 @@
 
 cd screenshots
 
-for ppm in *.ppm; do
-    if [ -f "$ppm" ]; then
-        png="${ppm%.ppm}.png"
-        echo "Converting $ppm to $png..."
-        convert "$ppm" "$png"
-    fi
-done
+# requires pip install Pillow
+python -c "import os; from PIL import Image; [Image.open(f).save(f.replace('.ppm', '.png')) for f in os.listdir('.') if f.endswith('.ppm')]"
 
 echo "Conversion complete!"
 ls -lh *.png
