@@ -77,6 +77,7 @@ enum class MenuAction {
     SaveState,
     LoadState,
     Screenshot,
+    ToggleFPS,
     ToggleDebugger,
     OpenDebugger,
     ToggleFullscreen,

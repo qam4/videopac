@@ -89,14 +89,20 @@ void OSDRenderer::render_fps(float fps, OSDPosition position) {
     int x, y;
     calculate_position(position, text_width, text_height, &x, &y);
 
-    // Render with white color and black outline for visibility
-    SDL_Color outline_color = {0, 0, 0, 255};
-    SDL_Color text_color = {255, 255, 255, 255};
+    // Render semi-transparent background box for better visibility
+    const int padding = 4;
+    SDL_Rect bg_rect = {
+        x - padding,
+        y - padding,
+        text_width + (padding * 2),
+        text_height + (padding * 2)
+    };
+    SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 180);  // Semi-transparent black
+    SDL_RenderFillRect(renderer_, &bg_rect);
 
-    // Render outline (simple shadow effect)
-    render_text_with_opacity(fps_text, x + 1, y + 1, outline_color, font_size_);
-    
-    // Render main text
+    // Render with white color
+    SDL_Color text_color = {255, 255, 255, 255};
     render_text_with_opacity(fps_text, x, y, text_color, font_size_);
 }
 
@@ -160,6 +166,41 @@ void OSDRenderer::render_status_indicator(const std::string& icon, OSDPosition p
     
     // Render main text
     render_text_with_opacity(icon, x, y, text_color, font_size_);
+}
+
+void OSDRenderer::render_status_bar(const std::string& text) {
+    if (text.empty()) {
+        return;
+    }
+
+    // Measure text dimensions
+    int text_width, text_height;
+    if (!text_renderer_.measure_text(text, to_text_renderer_font_size(font_size_),
+                                     &text_width, &text_height)) {
+        return;
+    }
+
+    // Get screen dimensions
+    int screen_width, screen_height;
+    get_screen_dimensions(&screen_width, &screen_height);
+
+    // Create a full-width bar at the bottom
+    const int bar_height = text_height + 8;  // Padding top and bottom
+    const int bar_y = screen_height - bar_height;
+    
+    // Render semi-transparent background bar
+    SDL_Rect bar_rect = {0, bar_y, screen_width, bar_height};
+    SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 200);  // Semi-transparent black
+    SDL_RenderFillRect(renderer_, &bar_rect);
+
+    // Center the text in the bar
+    int text_x = (screen_width - text_width) / 2;
+    int text_y = bar_y + 4;  // 4px padding from top of bar
+
+    // Render text in white
+    SDL_Color text_color = {255, 255, 255, 255};
+    render_text_with_opacity(text, text_x, text_y, text_color, font_size_);
 }
 
 void OSDRenderer::set_font_size(FontSize size) {

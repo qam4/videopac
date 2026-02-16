@@ -1102,6 +1102,18 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
     
     // Sprite control registers for sprites 0-3
     if (ImGui::TreeNode("Sprites")) {
+        // Videopac palette colors (RGB)
+        static const ImU32 palette_colors[8] = {
+            IM_COL32(73, 73, 73, 255),      // 0: Dark Grey
+            IM_COL32(255, 73, 73, 255),     // 1: Red
+            IM_COL32(73, 255, 73, 255),     // 2: Green
+            IM_COL32(255, 255, 73, 255),    // 3: Yellow
+            IM_COL32(73, 73, 255, 255),     // 4: Blue
+            IM_COL32(255, 73, 255, 255),    // 5: Magenta
+            IM_COL32(255, 255, 255, 255),   // 6: White
+            IM_COL32(255, 255, 255, 255)    // 7: White
+        };
+        
         for (int i = 0; i < 4; i++) {
             uint8 base = i * 4;
             uint8 y = vdc_state.registers[base + 0];
@@ -1117,16 +1129,48 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
             // Get pattern bytes
             uint8 pattern_base = 0x80 + (i * 8);
             
-            ImGui::Text("Sprite %d:", i);
-            ImGui::Indent();
-            ImGui::Text("  Position: X=%d Y=%d", x, y);
-            ImGui::Text("  Color: %d", color);
-            ImGui::Text("  Pattern: 0x%02X", pattern_base);
-            ImGui::Text("  Flags: %s%s%s",
-                       shift_full ? "[Shift Full] " : "",
-                       shift_even ? "[Shift Even] " : "",
-                       double_size ? "[Double Size]" : "");
-            ImGui::Unindent();
+            if (ImGui::TreeNode((void*)(intptr_t)i, "Sprite %d", i)) {
+                ImGui::Text("Position: X=%d Y=%d", x, y);
+                ImGui::Text("Color: %d", color);
+                ImGui::Text("Size: %s", double_size ? "16x16" : "8x8");
+                ImGui::Text("Shift: %s", shift_full ? "Full" : (shift_even ? "Even" : "None"));
+                
+                // Render sprite pattern visualization
+                ImGui::Text("Pattern:");
+                ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+                
+                // Draw sprite pattern (8x8 base pattern)
+                float pixel_size = 8.0f;  // Size of each pixel in the visualization
+                ImU32 sprite_color = palette_colors[color];
+                ImU32 bg_color = IM_COL32(40, 40, 40, 255);  // Dark gray background
+                
+                for (int row = 0; row < 8; row++) {
+                    uint8 pattern = vdc_state.registers[pattern_base + row];
+                    
+                    for (int col = 0; col < 8; col++) {
+                        bool pixel_on = (pattern & (0x80 >> col)) != 0;
+                        ImU32 pixel_color = pixel_on ? sprite_color : bg_color;
+                        
+                        ImVec2 p_min(canvas_pos.x + col * pixel_size, canvas_pos.y + row * pixel_size);
+                        ImVec2 p_max(p_min.x + pixel_size, p_min.y + pixel_size);
+                        
+                        draw_list->AddRectFilled(p_min, p_max, pixel_color);
+                        draw_list->AddRect(p_min, p_max, IM_COL32(80, 80, 80, 255));  // Grid lines
+                    }
+                }
+                
+                // Reserve space for the sprite visualization
+                ImGui::Dummy(ImVec2(8 * pixel_size, 8 * pixel_size));
+                
+                // Show pattern bytes in hex
+                ImGui::Text("Pattern bytes:");
+                for (int row = 0; row < 8; row++) {
+                    ImGui::Text("  Row %d: 0x%02X", row, vdc_state.registers[pattern_base + row]);
+                }
+                
+                ImGui::TreePop();
+            }
             ImGui::Separator();
         }
         ImGui::TreePop();

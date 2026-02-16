@@ -127,7 +127,7 @@ void MenuSystem::build_main_menu() {
     audio_settings_menu.submenu.push_back(volume_menu);
     
     // Mute toggle
-    audio_settings_menu.submenu.push_back(MenuItem("Mute", MenuAction::ToggleMute));
+    audio_settings_menu.submenu.push_back(MenuItem("Mute (F4)", MenuAction::ToggleMute));
     
     // Audio Buffer Size submenu
     MenuItem buffer_size_menu("Buffer Size", MenuAction::None);
@@ -141,8 +141,9 @@ void MenuSystem::build_main_menu() {
 
     main_menu_.push_back(MenuItem("Display Info", MenuAction::DisplayInfo));
     main_menu_.push_back(MenuItem("Screenshot", MenuAction::Screenshot));
+    main_menu_.push_back(MenuItem("Toggle FPS Display (F3)", MenuAction::ToggleFPS));
     main_menu_.push_back(MenuItem("Toggle Debugger (F12)", MenuAction::ToggleDebugger));
-    main_menu_.push_back(MenuItem("Toggle Fullscreen", MenuAction::ToggleFullscreen));
+    main_menu_.push_back(MenuItem("Toggle Fullscreen (F11)", MenuAction::ToggleFullscreen));
     main_menu_.push_back(MenuItem("Quit", MenuAction::Quit));
 
     current_menu_ = &main_menu_;

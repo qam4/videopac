@@ -36,6 +36,9 @@ public:
 
     // Render status indicator (e.g., mute icon) at specified position
     void render_status_indicator(const std::string& icon, OSDPosition position);
+    
+    // Render unified status bar at bottom with consistent styling
+    void render_status_bar(const std::string& text);
 
     // Set font size for all OSD elements
     void set_font_size(FontSize size);

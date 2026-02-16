@@ -95,6 +95,13 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     // Load FPS display position from config (Requirement 19.3)
     fps_position_ = string_to_osd_position(config_manager_->get_fps_position());
     
+    // If position is TopLeft (which overlaps with game graphics), move to BottomRight
+    if (fps_position_ == OSDRenderer::OSDPosition::TopLeft) {
+        fps_position_ = OSDRenderer::OSDPosition::BottomRight;
+        config_manager_->set_fps_position("bottom-right");
+        config_manager_->save();
+    }
+    
     // Load FPS display enabled state
     show_fps_ = config_manager_->get_fps_display_enabled();
     
@@ -606,21 +613,35 @@ void SDLFrontend::render_frame() {
     }
     
     // === STEP 3: RENDER ALL UI AT NATIVE RESOLUTION ===
-    // Render OSD elements (FPS, status indicators, notifications)
+    // Render unified status bar at bottom with FPS and all indicators
     if (osd_renderer_ && !menu_system_->is_visible()) {
-        // Render FPS display if enabled
+        // Build status bar text with all info
+        std::string status_bar;
+        
+        // Add FPS if enabled
         if (show_fps_) {
-            osd_renderer_->render_fps(current_fps_, fps_position_);
+            char fps_text[32];
+            snprintf(fps_text, sizeof(fps_text), "FPS: %.1f", current_fps_);
+            status_bar += fps_text;
         }
         
-        // Render mute indicator if audio is muted
+        // Add status indicators
         if (audio_muted_) {
-            osd_renderer_->render_status_indicator("MUTE", OSDRenderer::OSDPosition::TopLeft);
+            if (!status_bar.empty()) status_bar += " | ";
+            status_bar += "MUTE";
+        }
+        if (turbo_mode_) {
+            if (!status_bar.empty()) status_bar += " | ";
+            status_bar += "TURBO";
+        }
+        if (paused_) {
+            if (!status_bar.empty()) status_bar += " | ";
+            status_bar += "PAUSED";
         }
         
-        // Render turbo mode indicator if active
-        if (turbo_mode_) {
-            osd_renderer_->render_status_indicator("TURBO", OSDRenderer::OSDPosition::BottomRight);
+        // Render the unified status bar at bottom
+        if (!status_bar.empty()) {
+            osd_renderer_->render_status_bar(status_bar);
         }
         
         // Update and render notifications
@@ -1234,6 +1255,14 @@ void SDLFrontend::handle_menu_action(videopac::MenuAction action) {
                 }
             }
             break;
+        case MenuAction::ToggleFPS:
+            show_fps_ = !show_fps_;
+            if (config_manager_) {
+                config_manager_->set_fps_display_enabled(show_fps_);
+                config_manager_->save();
+            }
+            break;
+            
         case MenuAction::ToggleDebugger:
             if (imgui_debugger_ui_) {
                 if (imgui_debugger_ui_->is_visible()) {
