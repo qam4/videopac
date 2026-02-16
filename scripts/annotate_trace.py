@@ -12,65 +12,45 @@ import argparse
 
 
 def load_disassembly(bios_path, rom_path):
-    """Load disassembly from BIOS and ROM files into dicts: addr -> (label, instruction)"""
+    """Load disassembly from BIOS and ROM files into dict: addr -> (label, instruction)"""
     disasm = {}
     
-    # Load BIOS disassembly
-    try:
-        with open(bios_path, 'r') as f:
+    # Process both BIOS and ROM files with the same logic
+    for file_path in [bios_path, rom_path]:
+        try:
+            # Try UTF-8 first, then UTF-16 if that fails
+            encodings = ['utf-8', 'utf-16']
+            content = None
+            for encoding in encodings:
+                try:
+                    with open(file_path, 'r', encoding=encoding) as f:
+                        content = f.readlines()
+                    break
+                except (UnicodeDecodeError, UnicodeError):
+                    continue
+            
+            if content is None:
+                print(f"Warning: Could not decode file: {file_path}", file=sys.stderr)
+                continue
+            
             current_label = None
-            for line in f:
+            for line in content:
                 # Check for label line (ends with colon, no leading whitespace)
-                label_match = re.match(r'^(\w+):$', line.strip())
+                label_match = re.match(r'^(\w+):\s*$', line.strip())
                 if label_match:
                     current_label = label_match.group(1)
                     continue
                 
-                # Format: "0x000: 84 00  JMP 0x400"
-                match = re.match(r'^(0x[0-9a-fA-F]+):\s+[0-9a-fA-F\s]+\s+(\w+(?:\s+[^;]+)?)', line)
+                # Format: "0x400: 44 c3  JMP bios:select_game"
+                # Match address, hex bytes, and instruction
+                match = re.match(r'^(0x[0-9A-Fa-f]+):\s+[0-9a-fA-F\s]+\s+(.+?)(?:\s*$)', line)
                 if match:
                     addr = match.group(1).lower()
                     instr = match.group(2).strip()
                     disasm[addr] = (current_label, instr)
                     current_label = None  # Label only applies to first instruction
-    except FileNotFoundError:
-        print(f"Warning: BIOS disassembly not found: {bios_path}", file=sys.stderr)
-    
-    # Load ROM disassembly
-    try:
-        with open(rom_path, 'r') as f:
-            current_label = None
-            for line in f:
-                # Check for label line (ends with colon, no leading whitespace)
-                label_match = re.match(r'^(\w+):$', line.strip())
-                if label_match:
-                    current_label = label_match.group(1)
-                    continue
-                
-                # Format 1: "0400: [ 44 C3 ] JMP selectgame" (Satellite Attack style)
-                match = re.match(r'^([0-9A-Fa-f]{4}):\s+\[.*?\]\s+(\w+(?:\s+[^;]+)?)', line)
-                if match:
-                    addr_hex = match.group(1).lower()
-                    instr = match.group(2).strip()
-                    # ROM addresses need 0x400 offset
-                    addr_int = int(addr_hex, 16)
-                    if addr_int < 0x400:
-                        # After wrap, add 0xC00
-                        addr_int += 0xC00
-                    addr = f'0x{addr_int:x}'
-                    disasm[addr] = (current_label, instr)
-                    current_label = None
-                    continue
-                
-                # Format 2: "0x400: 44 c3  JMP bios:select_game" (disasm tool style)
-                match = re.match(r'^(0x[0-9A-Fa-f]+):\s+[0-9a-fA-F\s]+\s+(.+?)(?:\s*;|\s*$)', line)
-                if match:
-                    addr = match.group(1).lower()
-                    instr = match.group(2).strip()
-                    disasm[addr] = (current_label, instr)
-                    current_label = None
-    except FileNotFoundError:
-        print(f"Warning: ROM disassembly not found: {rom_path}", file=sys.stderr)
+        except FileNotFoundError:
+            print(f"Warning: Disassembly file not found: {file_path}", file=sys.stderr)
     
     return disasm
 
@@ -107,7 +87,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s trace.log trace_annotated.log
-  %(prog)s --bios doc/french_bios_annotated.txt --rom doc/satellite-attack-disassembly.txt trace.log trace_annotated.log
+  %(prog)s --bios doc/french_bios_annotated.txt --rom racing_game_disasm.txt trace.log trace_annotated.log
         """
     )
     
@@ -124,13 +104,13 @@ Examples:
     parser.add_argument(
         '--bios',
         default='doc/french_bios_annotated.txt',
-        help='Path to annotated BIOS disassembly (default: doc/french_bios_annotated.txt)'
+        help='Path to BIOS disassembly (default: doc/french_bios_annotated.txt)'
     )
     
     parser.add_argument(
         '--rom',
-        default='doc/satellite-attack-disassembly.txt',
-        help='Path to annotated ROM disassembly (default: doc/satellite-attack-disassembly.txt)'
+        default='racing_game_disasm.txt',
+        help='Path to ROM disassembly (default: racing_game_disasm.txt)'
     )
     
     args = parser.parse_args()

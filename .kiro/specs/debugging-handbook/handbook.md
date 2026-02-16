@@ -877,77 +877,98 @@ python run_emulator.py headless --rom roms/satellite_attack.bin --frames 10 --tr
 
 This generates `trace.log` with raw instruction bytes:
 ```
+**Step 1: Generate ROM Disassembly**
+
+First, disassemble the ROM file using the `disasm_tool`:
+
+```bash
+# Disassemble a ROM file (use 0x400 as base address for Videopac ROMs)
+build/dev-mingw/tools/disasm_tool "roms/Course de Voitures + Autodrome + Cryptogramme (1980)(Philips)(FR).bin" 0x400 > racing_game_disasm.txt
+
+# For BIOS (base address 0x000)
+build/dev-mingw/tools/disasm_tool bios.bin 0x000 > bios_disasm.txt
+```
+
+The `base_addr` parameter (e.g., `0x400`) specifies where the ROM is loaded in memory, not an offset into the file. The tool always reads from offset 0 in the file.
+
+**Step 2: Run Emulator to Generate Trace**
+
+Run the emulator in headless mode to capture a trace:
+
+```bash
+# Run with trace output
+python run_emulator.py headless "roms/Course de Voitures + Autodrome + Cryptogramme (1980)(Philips)(FR).bin"
+```
+
+This produces `trace.log` with raw instruction bytes:
+```
 [F:0 C:0] 0x000: 84 00 | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
 [F:0 C:20] 0x400: 44 c3 | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
 ```
 
-**Step 2: Annotate Trace**
+**Step 3: Annotate Trace**
 
 Use the `annotate_trace.py` script to add disassembled instructions:
 
 ```bash
-# Annotate trace with default paths
-python scripts/annotate_trace.py trace.log trace_annotated.log
-
-# Specify custom BIOS and ROM disassembly paths
+# Annotate trace with BIOS and ROM disassembly
 python scripts/annotate_trace.py --bios doc/french_bios_annotated.txt \
-    --rom doc/satellite-attack-disassembly.txt \
+    --rom racing_game_disasm.txt \
     trace.log trace_annotated.log
 ```
 
-This produces `trace_annotated.log` with disassembled instructions:
+This produces `trace_annotated.log` with disassembled instructions and labels:
 ```
-[F:0 C:0] 0x000: 84 00 JMP restart | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
-[F:0 C:20] 0x400: 44 c3 JMP selectgame | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
+[F:0 C:0] 0x000: 84 00 cold_boot: JMP restart | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
+[F:0 C:20] 0x400: 44 c3 restart: JMP bios:select_game | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
 ```
 
-**Step 3: Generate Call Tree**
+**Step 4: Generate Call Tree**
 
 Use the `build_call_tree.py` script to analyze the annotated trace:
 
 ```bash
-# Generate call tree for a single frame (uses default paths)
-python scripts/build_call_tree.py --trace trace_annotated.log 0
+# Generate call tree for frame 0 and save to file
+python scripts/build_call_tree.py --trace trace_annotated.log 0 > call_tree.txt
 
 # Generate call trees for multiple frames
-python scripts/build_call_tree.py --trace trace_annotated.log 0 1 2 3
-
-# Specify custom BIOS and ROM disassembly paths
-python scripts/build_call_tree.py --trace trace_annotated.log \
-    --bios doc/french_bios_annotated.txt \
-    --rom doc/satellite-attack-disassembly.txt 0
+python scripts/build_call_tree.py --trace trace_annotated.log 0 1 2 3 > call_tree.txt
 ```
 
 **Command-Line Options:**
 
+`disasm_tool`:
+- `rom_file` - ROM file to disassemble (.bin or .zip) (required)
+- `base_addr` - Memory address where ROM is loaded (default: 0x0000, use 0x400 for Videopac ROMs)
+- `max_size` - Maximum bytes to disassemble (default: entire file)
+
 `annotate_trace.py`:
 - `input` - Input trace log file (required)
 - `output` - Output annotated trace log file (required)
-- `--bios PATH` - Path to annotated BIOS disassembly (default: `doc/french_bios_annotated.txt`)
-- `--rom PATH` - Path to annotated ROM disassembly (default: `doc/satellite-attack-disassembly.txt`)
+- `--bios PATH` - Path to BIOS disassembly (default: `doc/french_bios_annotated.txt`)
+- `--rom PATH` - Path to ROM disassembly (default: `racing_game_disasm.txt`)
 
 `build_call_tree.py`:
 - `FRAME` - Frame number(s) to analyze (required, one or more)
 - `--trace PATH` - Path to annotated trace log file (default: `trace.log`)
-- `--bios PATH` - Path to annotated BIOS disassembly (default: `doc/french_bios_annotated.txt`)
-- `--rom PATH` - Path to annotated ROM disassembly (default: `doc/satellite-attack-disassembly.txt`)
 
 **Output Format:**
 
 The call tree shows:
 - **CALL/RET events** with proper nesting (indentation shows call depth)
-- **JMP instructions** for significant jumps
+- **Labels** from disassembly for better readability (e.g., `CALL reset` instead of `CALL 0xf1`)
 - **LOOP regions** with iteration counts and cycle duration
-- **Labels** from BIOS and ROM disassembly for better readability
+- **Cycle numbers** in brackets for timing analysis
 
 Example output:
 ```
 === Frame 0 Call Tree ===
 
-[     0] bios:cold_boot -> JMP rom:restart
-[    20] rom:restart -> JMP bios:select_game
-[    70] 0x2c6 -> CALL 0xf1
+[    70] 0x2c6 -> CALL reset                          ; reset the machine
   [   198..  1424] LOOP 0x0fc -> 0xf8: 32 iterations (1226 cycles)
+  [  1444] 0x0fe -> CALL set_up_ram_access              ; access RAM
+  [  1504] 0x0f0 <- RET
+[ 23485] 0x11b <- RET
   [  1444] 0x0fe -> CALL 0xec
   [  1504] 0x0f0 <- RET
   [ 11649] 0x106 -> CALL 0xe7

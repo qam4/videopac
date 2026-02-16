@@ -275,14 +275,19 @@ def build_call_tree(frame_num, labels, frame_starts, trace_path):
         
         for line in f:
             # Match annotated trace: [F:0 C:0] 0x000: 84 00 JMP restart | A=00...
-            match = re.match(r'\[F:(\d+)\s+C:(\d+)\]\s+(0x[0-9a-f]+):\s+([0-9a-f]+)\s+([0-9a-f]*)\s+(\S+)', line)
+            # Capture the full instruction text including operand/label
+            match = re.match(r'\[F:(\d+)\s+C:(\d+)\]\s+(0x[0-9a-f]+):\s+([0-9a-f]+)\s+([0-9a-f]*)\s+(.+?)\s*\|', line)
             if not match:
                 continue
             
             current_frame = int(match.group(1))
             abs_cycle = int(match.group(2))
             addr = match.group(3)
-            instr = match.group(6)
+            instr_full = match.group(6).strip()  # Full instruction like "CALL reset" or "JMP bios:select_game"
+            
+            # Extract just the mnemonic
+            instr_parts = instr_full.split(None, 1)
+            instr = instr_parts[0] if instr_parts else instr_full
             
             if current_frame == frame_num:
                 in_frame = True
@@ -351,23 +356,27 @@ def build_call_tree(frame_num, labels, frame_starts, trace_path):
                     pass
             
             if instr == 'CALL':
-                # Extract target from instruction bytes
-                # For 8048: CALL uses opcodes 0x14/0x34/0x54/0x74/0x94/0xB4/0xD4/0xF4
-                # Format: [opcode] [low_byte], target = (opcode & 0xE0) | low_byte
-                byte0 = match.group(4)
-                byte1 = match.group(5)
-                if byte1:  # CALL is 2-byte instruction
-                    try:
-                        opcode = int(byte0, 16)
-                        low_byte = int(byte1, 16)
-                        # 8048 CALL: target = ((opcode & 0xE0) << 3) | low_byte
-                        target_int = ((opcode & 0xE0) << 3) | low_byte
-                        target = f'0x{target_int:x}'
-                        target_label = labels.get(target, target)
-                        call_stack.append(addr)
-                        events.append(('CALL', cycle, addr_label, target_label, len(call_stack) - 1))
-                    except:
-                        pass
+                # Extract target label from instruction text (e.g., "CALL reset" or "CALL bios:display_off")
+                if len(instr_parts) > 1:
+                    target_label = instr_parts[1]
+                else:
+                    # Fallback: calculate from bytes
+                    byte0 = match.group(4)
+                    byte1 = match.group(5)
+                    if byte1:
+                        try:
+                            opcode = int(byte0, 16)
+                            low_byte = int(byte1, 16)
+                            target_int = ((opcode & 0xE0) << 3) | low_byte
+                            target = f'0x{target_int:x}'
+                            target_label = labels.get(target, target)
+                        except:
+                            target_label = '???'
+                    else:
+                        target_label = '???'
+                
+                call_stack.append(addr)
+                events.append(('CALL', cycle, addr_label, target_label, len(call_stack) - 1))
             elif instr in ['RET', 'RETR']:
                 if call_stack:
                     from_addr = call_stack.pop()
