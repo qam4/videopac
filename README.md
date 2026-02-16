@@ -76,17 +76,29 @@ Basic usage:
 
 Example:
 ```bash
+# USA Odyssey 2 (default) - red ship in Satellite Attack
 ./videopac --bios "roms/Philips C52 BIOS (19xx)(Philips)(FR).bin" "roms/Satellite Attack (1981)(Philips)(EU).bin"
+
+# European Videopac G7000 - blue ship in Satellite Attack
+./videopac --region europe --bios "roms/Philips C52 BIOS (19xx)(Philips)(FR).bin" "roms/Satellite Attack (1981)(Philips)(EU).bin"
+
+# French C52 SECAM - red ship with PAL timing
+./videopac --region france --bios "roms/Philips C52 BIOS (19xx)(Philips)(FR).bin" "roms/Satellite Attack (1981)(Philips)(EU).bin"
 ```
 
 Command-line options:
-- `--bios <file>` - Load BIOS from file (required)
-- `--pal` - Use PAL timing (default: NTSC)
+- `--bios <file>` - Load BIOS from file (optional, auto-loads last used BIOS if available)
+- `--region <name>` - Hardware region: `usa`, `europe`, `france` (default: `usa`)
+  - `usa` - Magnavox Odyssey 2 (NTSC 60Hz, red ship in Satellite Attack)
+  - `europe` - Philips Videopac G7000 (PAL 50Hz, blue ship in Satellite Attack)
+  - `france` - Philips C52 SECAM (PAL 50Hz timing, NTSC colors - red ship)
 - `--headless` - Run without display (for testing)
 - `--frames <n>` - Run for N frames then exit (headless mode)
 - `--screenshot <n>` - Save screenshot every N frames (headless mode)
 - `--debug` - Enable debugger
 - `--help` - Show help message
+
+**Note on Hardware Regions:** The Videopac/Odyssey 2 had different hardware in different regions. The Intel 8244 (NTSC) and 8245 (PAL) chips have different color palettes - notably, color index 1 is red on NTSC systems but blue on PAL systems. The French C52 is special: it uses PAL timing but NTSC colors.
 
 ### Controls
 
@@ -121,7 +133,12 @@ Note: Audio may not work on systems without ALSA, but the emulator will continue
 
 - **[BUILDING.md](BUILDING.md)** - Comprehensive build instructions for all platforms
 - **[HACKING.md](HACKING.md)** - Developer guide with CMake presets and IDE integration
-- **[.kiro/context.md](.kiro/context.md)** - Project-specific development guidelines
+- **[TESTING.md](TESTING.md)** - Testing guide including video settings
+- **[doc/](doc/)** - Technical documentation:
+  - **[doc/hardware/](doc/hardware/)** - Hardware reference (CPU, VDC, memory architecture)
+  - **[doc/case-studies/](doc/case-studies/)** - Debugging case studies (Satellite Attack, etc.)
+  - **[doc/reference/](doc/reference/)** - MCS-48 manuals, programming guides
+  - **[doc/debugging.md](doc/debugging.md)** - Debugging guide
 - **[.kiro/specs/](.kiro/specs/)** - Feature specifications and implementation plans
 
 ## Project Structure

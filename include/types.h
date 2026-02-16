@@ -14,10 +14,16 @@ using uint32 = std::uint32_t;
 using uint64 = std::uint64_t;
 using int16 = std::int16_t;
 
-// Video standard
+// Video standard (timing)
 enum class VideoStandard {
     NTSC,  // 60Hz, 262 scanlines
     PAL    // 50Hz, 312 scanlines
+};
+
+// Palette mode (colors)
+enum class PaletteMode {
+    NTSC,  // Intel 8244 colors (Color 1 = Red) - USA Odyssey 2, French C52
+    PAL    // Intel 8245 colors (Color 1 = Blue) - European Videopac G7000
 };
 
 // Result type for error handling
@@ -71,11 +77,58 @@ struct Color {
     constexpr Color(uint8 red, uint8 green, uint8 blue) : r(red), g(green), b(blue) {}
 };
 
-// Videopac 16-color palette (RGBI - RGB + Intensity/Luminance bit)
-// Reference: Intel 8244/8245 VDC
-// Color index bits: Bit 0=Blue, Bit 1=Green, Bit 2=Red, Bit 3=Luminance
-// Indices 0-7: Low-intensity (Background & Grids)
-// Indices 8-15: High-intensity (Sprites & Characters)
+// Videopac 16-color palettes
+// The Intel 8244 (NTSC) and 8245 (PAL) chips have different color mappings
+// Key difference: Color index 1 and 4 are swapped between NTSC and PAL
+// Reference: Hardware differences between Odyssey 2 (NTSC) and Videopac G7000 (PAL)
+
+// NTSC Palette (Intel 8244 - USA Odyssey 2, French C52 SECAM)
+// Color index 1 = RED, Color index 4 = DARK BLUE
+constexpr Color PALETTE_NTSC[16] = {
+    // Low-intensity (0-7)
+    {0x00, 0x00, 0x00},  // 0: Black
+    {0xC6, 0x00, 0x08},  // 1: DARK RED (Player ship in Satellite Attack - French version)
+    {0x00, 0x9C, 0x18},  // 2: Dark Green
+    {0x00, 0xBD, 0xDE},  // 3: Light Blue
+    {0x08, 0x39, 0xD6},  // 4: DARK BLUE
+    {0xCE, 0x10, 0xB5},  // 5: Violet
+    {0x9C, 0x84, 0x10},  // 6: Orange/Gold
+    {0xCE, 0xCE, 0xCE},  // 7: Grey
+    // High-intensity (8-15)
+    {0x49, 0x49, 0x49},  // 8: Light Grey
+    {0xFF, 0x49, 0x49},  // 9: RED (High-intensity red)
+    {0x49, 0xFF, 0x49},  // 10: Green
+    {0x49, 0xFF, 0xFF},  // 11: Cyan
+    {0x49, 0x49, 0xFF},  // 12: BLUE (High-intensity blue)
+    {0xFF, 0x49, 0xFF},  // 13: Magenta
+    {0xFF, 0xFF, 0x49},  // 14: Yellow
+    {0xFF, 0xFF, 0xFF}   // 15: White
+};
+
+// PAL Palette (Intel 8245 - European Videopac G7000)
+// Color index 1 = DARK BLUE, Color index 4 = RED
+constexpr Color PALETTE_PAL[16] = {
+    // Low-intensity (0-7)
+    {0x00, 0x00, 0x00},  // 0: Black
+    {0x08, 0x39, 0xD6},  // 1: DARK BLUE (Player ship in Satellite Attack - PAL version)
+    {0x00, 0x9C, 0x18},  // 2: Dark Green
+    {0x00, 0xBD, 0xDE},  // 3: Light Blue
+    {0xC6, 0x00, 0x08},  // 4: DARK RED
+    {0xCE, 0x10, 0xB5},  // 5: Violet
+    {0x9C, 0x84, 0x10},  // 6: Orange/Gold
+    {0xCE, 0xCE, 0xCE},  // 7: Grey
+    // High-intensity (8-15)
+    {0x49, 0x49, 0x49},  // 8: Light Grey
+    {0x49, 0x49, 0xFF},  // 9: BLUE (High-intensity blue)
+    {0x49, 0xFF, 0x49},  // 10: Green
+    {0x49, 0xFF, 0xFF},  // 11: Cyan
+    {0xFF, 0x49, 0x49},  // 12: RED (High-intensity red)
+    {0xFF, 0x49, 0xFF},  // 13: Magenta
+    {0xFF, 0xFF, 0x49},  // 14: Yellow
+    {0xFF, 0xFF, 0xFF}   // 15: White
+};
+
+// Default palette (for backward compatibility)
 constexpr Color PALETTE[16] = {
     // Low-intensity (0-7)
     {0x00, 0x00, 0x00},  // 0: Black

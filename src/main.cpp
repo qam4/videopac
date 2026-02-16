@@ -17,7 +17,7 @@ void print_usage(const char* program_name) {
     std::cout << "  2. Otherwise, start with the menu (press F10)" << std::endl;
     std::cout << "\nOptions:" << std::endl;
     std::cout << "  --bios <file>       Load BIOS from file (optional)" << std::endl;
-    std::cout << "  --pal               Use PAL timing (default: NTSC)" << std::endl;
+    std::cout << "  --region <name>     Hardware region: usa, europe, france (default: usa)" << std::endl;
     std::cout << "  --headless          Run without display (for testing)" << std::endl;
     std::cout << "  --frames <n>        Run for N frames then exit (headless mode)" << std::endl;
     std::cout << "  --screenshot <n>    Save screenshot every N frames (headless mode)" << std::endl;
@@ -71,8 +71,24 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (strcmp(argv[i], "--bios") == 0 && i + 1 < argc) {
             config.bios_path = argv[++i];
-        } else if (strcmp(argv[i], "--pal") == 0) {
-            config.video_standard = VideoStandard::PAL;
+        } else if (strcmp(argv[i], "--region") == 0 && i + 1 < argc) {
+            std::string region = argv[++i];
+            if (region == "usa") {
+                // USA: NTSC timing (60Hz) + NTSC colors (red ship) - Odyssey 2
+                config.video_standard = VideoStandard::NTSC;
+                config.palette_mode = PaletteMode::NTSC;
+            } else if (region == "europe") {
+                // Europe: PAL timing (50Hz) + PAL colors (blue ship) - Videopac G7000
+                config.video_standard = VideoStandard::PAL;
+                config.palette_mode = PaletteMode::PAL;
+            } else if (region == "france") {
+                // France: PAL timing (50Hz) + NTSC colors (red ship) - C52 SECAM
+                config.video_standard = VideoStandard::PAL;
+                config.palette_mode = PaletteMode::NTSC;
+            } else {
+                std::cerr << "Unknown region: " << region << " (valid: usa, europe, france)" << std::endl;
+                return 1;
+            }
         } else if (strcmp(argv[i], "--headless") == 0) {
             force_headless = true;
         } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {

@@ -20,6 +20,7 @@ struct BreakpointConfig {
 struct FrontendConfig {
     // Video settings
     VideoStandard video_standard;
+    PaletteMode palette_mode;       // Separate from video timing
     int display_scale;              // 1x, 2x, 3x, 4x
     bool fullscreen;
     bool vsync;
@@ -50,6 +51,7 @@ struct FrontendConfig {
     
     FrontendConfig() 
         : video_standard(VideoStandard::NTSC)
+        , palette_mode(PaletteMode::NTSC)  // Default to NTSC palette
         , display_scale(2)
         , fullscreen(false)
         , vsync(true)
