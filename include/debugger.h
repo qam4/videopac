@@ -43,6 +43,14 @@ enum class DebuggerState {
     TraceMode
 };
 
+// Trace detail level
+enum class TraceLevel {
+    Off,        // No tracing
+    Minimal,    // PC, instruction, A register only
+    Normal,     // PC, instruction, A, PSW, ports, basic state
+    Full        // Everything (current behavior)
+};
+
 // Frame timing statistics
 struct FrameStats {
     uint64 total_cycles;
@@ -83,7 +91,9 @@ public:
     
     // Trace logging
     void enable_trace(bool enabled);
-    bool is_trace_enabled() const { return trace_enabled_; }
+    void set_trace_level(TraceLevel level);
+    TraceLevel get_trace_level() const { return trace_level_; }
+    bool is_trace_enabled() const { return trace_level_ != TraceLevel::Off; }
     void log_instruction(uint64 current_cycles = 0);
     const std::vector<std::string>& get_trace_log() const { return trace_log_; }
     void clear_trace_log();
@@ -97,7 +107,7 @@ private:
     EmulatorCore* emulator_;
     std::vector<Breakpoint> breakpoints_;
     DebuggerState state_;
-    bool trace_enabled_;
+    TraceLevel trace_level_;
     std::vector<std::string> trace_log_;
     FrameStats frame_stats_;
     uint64 last_frame_time_;
