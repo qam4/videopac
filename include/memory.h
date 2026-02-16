@@ -51,6 +51,11 @@ public:
     MemoryState get_state() const;
     void set_state(const MemoryState& state);
     
+    // Direct ROM access (read-only, no copying - for disassembly/debugging)
+    const uint8* get_bios_rom() const { return state_.bios_rom; }
+    const uint8* get_cart_rom() const { return state_.cart_rom.empty() ? nullptr : state_.cart_rom.data(); }
+    size_t get_cart_rom_size() const { return state_.cart_rom.size(); }
+    
     // Port 1 control signals (for bank switching)
     void update_control_signals(uint8 port1_value);
 

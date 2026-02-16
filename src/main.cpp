@@ -26,7 +26,11 @@ void print_usage(const char* program_name) {
     std::cout << "                      Press key at frame N (headless mode)" << std::endl;
     std::cout << "                      Example: --press-key 1 60 (press '1' at frame 60)" << std::endl;
     std::cout << "  --debug             Enable debugger" << std::endl;
-    std::cout << "  --trace             Enable instruction trace logging (very slow!)" << std::endl;
+    std::cout << "  --trace[=level]     Enable instruction trace logging" << std::endl;
+    std::cout << "                      Levels: minimal, normal, full (default: full)" << std::endl;
+    std::cout << "                      minimal = PC + instruction + A register only (fast)" << std::endl;
+    std::cout << "                      normal  = + PSW, ports, memory ops (medium)" << std::endl;
+    std::cout << "                      full    = all registers, VDC state (slow)" << std::endl;
     std::cout << "  --profile           Enable performance profiling" << std::endl;
     std::cout << "  --break <addr>      Set breakpoint at address (hex, e.g. 0x00B0)" << std::endl;
     std::cout << "  --condition <expr>  Add condition to previous breakpoint" << std::endl;
@@ -50,7 +54,7 @@ int main(int argc, char* argv[]) {
     int frame_limit = 0;
     int screenshot_interval = 0;
     bool extended_framebuffer = false;
-    bool enable_trace = false;
+    std::string trace_level_str = "";  // empty = off, "minimal", "normal", "full"
     bool enable_profile = false;
     std::vector<BreakpointConfig> breakpoints;
     std::vector<std::string> watch_conditions;  // Condition-only breakpoints
@@ -85,8 +89,13 @@ int main(int argc, char* argv[]) {
             force_headless = true;  // Key press implies headless
         } else if (strcmp(argv[i], "--debug") == 0) {
             config.enable_debugger = true;
-        } else if (strcmp(argv[i], "--trace") == 0) {
-            enable_trace = true;
+        } else if (strncmp(argv[i], "--trace", 7) == 0) {
+            // Parse --trace or --trace=level
+            if (argv[i][7] == '=') {
+                trace_level_str = &argv[i][8];  // Get level after '='
+            } else if (argv[i][7] == '\0') {
+                trace_level_str = "full";  // Default to full if no level specified
+            }
             config.enable_debugger = true;  // Trace requires debugger
         } else if (strcmp(argv[i], "--profile") == 0) {
             enable_profile = true;
@@ -119,7 +128,7 @@ int main(int argc, char* argv[]) {
     if (!rom_path.empty()) {
         config.rom_path = rom_path;
     }
-    config.enable_trace = enable_trace;
+    config.trace_level = trace_level_str;
     config.enable_profile = enable_profile;
     config.breakpoints = breakpoints;
     config.watch_conditions = watch_conditions;

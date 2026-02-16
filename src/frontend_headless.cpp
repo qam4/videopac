@@ -64,10 +64,22 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
         debugger_ = std::make_unique<Debugger>(emulator_.get());
         debugger_ui_ = std::make_unique<DebuggerUI>(debugger_.get());
         emulator_->set_debugger(debugger_.get());
-        // Enable trace if requested (very expensive!)
-        if (config_.enable_trace) {
-            debugger_->enable_trace(true);
-            std::cout << "Instruction trace enabled (performance will be slow)" << std::endl;
+        // Enable trace if requested
+        if (!config_.trace_level.empty()) {
+            TraceLevel level = TraceLevel::Full;  // Default
+            if (config_.trace_level == "minimal") {
+                level = TraceLevel::Minimal;
+                std::cout << "Instruction trace enabled (minimal - fast)" << std::endl;
+            } else if (config_.trace_level == "normal") {
+                level = TraceLevel::Normal;
+                std::cout << "Instruction trace enabled (normal - medium)" << std::endl;
+            } else if (config_.trace_level == "full") {
+                level = TraceLevel::Full;
+                std::cout << "Instruction trace enabled (full - slow)" << std::endl;
+            } else {
+                std::cerr << "Unknown trace level: " << config_.trace_level << ", using 'full'" << std::endl;
+            }
+            debugger_->set_trace_level(level);
         }
         
         // Set breakpoints from config

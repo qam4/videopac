@@ -29,18 +29,9 @@ TextRenderer::FontSize OSDRenderer::to_text_renderer_font_size(FontSize size) co
 }
 
 void OSDRenderer::get_screen_dimensions(int* width, int* height) const {
-    // Get the window from the renderer
-    SDL_RendererInfo info;
-    if (SDL_GetRendererInfo(renderer_, &info) == 0) {
-        // Try to get window from renderer
-        // Note: SDL doesn't provide a direct way to get window from renderer
-        // We'll use SDL_GetRendererOutputSize instead
-        SDL_GetRendererOutputSize(renderer_, width, height);
-    } else {
-        // Fallback to default dimensions
-        *width = 640;
-        *height = 480;
-    }
+    // Always get actual window/renderer output size
+    // No logical size is used anymore - UI renders at native resolution
+    SDL_GetRendererOutputSize(renderer_, width, height);
 }
 
 void OSDRenderer::calculate_position(OSDPosition position, int text_width, int text_height,

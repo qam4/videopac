@@ -37,7 +37,7 @@ struct FrontendConfig {
     // Debug settings
     bool show_fps;
     bool enable_debugger;
-    bool enable_trace;              // Enable instruction trace logging (very slow!)
+    std::string trace_level;        // "", "minimal", "normal", "full"
     bool enable_profile;            // Enable performance profiling
     std::vector<BreakpointConfig> breakpoints;
     std::vector<std::string> watch_conditions;  // Condition-only breakpoints
@@ -60,7 +60,7 @@ struct FrontendConfig {
         , audio_enabled(true)
         , show_fps(true)
         , enable_debugger(true)  // Enable by default for ImGui debugger UI
-        , enable_trace(false)
+        , trace_level("")        // Off by default
         , enable_profile(false)
         , screenshot_path("screenshots")
     {}

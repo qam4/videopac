@@ -31,7 +31,7 @@ SDLFrontend::SDLFrontend()
     , last_fps_time_(0)
     , fps_counter_(0)
     , current_fps_(0.0f)
-    , show_fps_(false)
+    , show_fps_(true)  // Show FPS by default
     , fps_position_(OSDRenderer::OSDPosition::TopRight)  // Default position
     , audio_muted_(false)
     , turbo_mode_(false)
@@ -248,10 +248,22 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
             imgui_debugger_ui_.reset();  // Clean up on failure
         }
         
-        // Enable trace if requested (very expensive!)
-        if (config_.enable_trace) {
-            debugger_->enable_trace(true);
-            std::cout << "Instruction trace enabled (performance will be slow)" << std::endl;
+        // Enable trace if requested
+        if (!config_.trace_level.empty()) {
+            TraceLevel level = TraceLevel::Full;  // Default
+            if (config_.trace_level == "minimal") {
+                level = TraceLevel::Minimal;
+                std::cout << "Instruction trace enabled (minimal - fast)" << std::endl;
+            } else if (config_.trace_level == "normal") {
+                level = TraceLevel::Normal;
+                std::cout << "Instruction trace enabled (normal - medium)" << std::endl;
+            } else if (config_.trace_level == "full") {
+                level = TraceLevel::Full;
+                std::cout << "Instruction trace enabled (full - slow)" << std::endl;
+            } else {
+                std::cerr << "Unknown trace level: " << config_.trace_level << ", using 'full'" << std::endl;
+            }
+            debugger_->set_trace_level(level);
         }
         
         // Set breakpoints from config
@@ -523,6 +535,11 @@ void SDLFrontend::run() {
                 current_fps_ = fps_counter_ * 1000.0f / (current_time - last_fps_time_);
                 fps_counter_ = 0;
                 last_fps_time_ = current_time;
+                
+                // Update window title with FPS
+                char title[256];
+                snprintf(title, sizeof(title), "Videopac Emulator - %.1f FPS", current_fps_);
+                SDL_SetWindowTitle(window_, title);
             }
             
             // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
@@ -553,13 +570,13 @@ void SDLFrontend::render_frame() {
     SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
     SDL_RenderClear(renderer_);
     
-    // === GAME RENDERING ===
+    // === STEP 1: GAME RENDERING WITH LOGICAL SIZE ===
     // Determine if we're in split screen mode
     bool split_screen = imgui_debugger_ui_ && imgui_debugger_ui_->is_visible() && 
                         imgui_debugger_ui_->get_display_mode() == DisplayMode::SplitScreen;
     
     if (split_screen) {
-        // Split Screen mode: disable logical size and render game to left half
+        // Split Screen mode: no logical size, render game to left half
         SDL_RenderSetLogicalSize(renderer_, 0, 0);
         
         // Get actual window size
@@ -573,14 +590,8 @@ void SDLFrontend::render_frame() {
         // Apply CRT effects and scanlines if enabled (in actual window coordinates)
         render_crt_effects(dest_rect);
         render_scanlines(dest_rect);
-        
-        // Render OSD elements if not in menu (in actual window coordinates)
-        if (osd_renderer_ && !menu_system_->is_visible()) {
-            // Note: OSD rendering would need to be adjusted for actual coordinates
-            // For now, skip OSD in split screen mode to avoid coordinate issues
-        }
     } else {
-        // Overlay mode: use logical size 320x240
+        // Overlay mode: use logical size 320x240 for game rendering
         SDL_RenderSetLogicalSize(renderer_, 320, 240);
         
         SDL_Rect dest_rect = {0, 0, 320, 240};
@@ -590,33 +601,33 @@ void SDLFrontend::render_frame() {
         render_crt_effects(dest_rect);
         render_scanlines(dest_rect);
         
-        // Render OSD elements if not in menu (still in 320x240 space)
-        if (osd_renderer_ && !menu_system_->is_visible()) {
-            // Render FPS display if enabled (Requirements 7.2, 7.5)
-            if (show_fps_) {
-                osd_renderer_->render_fps(current_fps_, fps_position_);
-            }
-            
-            // Render mute indicator if audio is muted
-            if (audio_muted_) {
-                osd_renderer_->render_status_indicator("MUTE", OSDRenderer::OSDPosition::TopLeft);
-            }
-            
-            // Render turbo mode indicator if active
-            if (turbo_mode_) {
-                osd_renderer_->render_status_indicator("TURBO", OSDRenderer::OSDPosition::BottomRight);
-            }
-            
-            // Update and render notifications
-            osd_renderer_->update(SDL_GetTicks());
-        }
+        // === STEP 2: DISABLE LOGICAL SIZE FOR ALL UI ===
+        SDL_RenderSetLogicalSize(renderer_, 0, 0);
     }
     
-    // === UI RENDERING (disable logical size for all UI) ===
-    // Disable logical rendering for UI elements (menu and ImGui)
-    SDL_RenderSetLogicalSize(renderer_, 0, 0);
+    // === STEP 3: RENDER ALL UI AT NATIVE RESOLUTION ===
+    // Render OSD elements (FPS, status indicators, notifications)
+    if (osd_renderer_ && !menu_system_->is_visible()) {
+        // Render FPS display if enabled
+        if (show_fps_) {
+            osd_renderer_->render_fps(current_fps_, fps_position_);
+        }
+        
+        // Render mute indicator if audio is muted
+        if (audio_muted_) {
+            osd_renderer_->render_status_indicator("MUTE", OSDRenderer::OSDPosition::TopLeft);
+        }
+        
+        // Render turbo mode indicator if active
+        if (turbo_mode_) {
+            osd_renderer_->render_status_indicator("TURBO", OSDRenderer::OSDPosition::BottomRight);
+        }
+        
+        // Update and render notifications
+        osd_renderer_->update(SDL_GetTicks());
+    }
     
-    // Render menu overlay if visible (now in actual window coordinates)
+    // Render menu overlay if visible
     if (menu_system_ && menu_system_->is_visible()) {
         menu_system_->render();
     }
@@ -639,10 +650,7 @@ void SDLFrontend::render_frame() {
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
     }
     
-    // Restore logical rendering for next frame's game rendering
-    SDL_RenderSetLogicalSize(renderer_, 320, 240);
-    
-    // Present
+    // === STEP 4: PRESENT ===
     SDL_RenderPresent(renderer_);
 }
 
