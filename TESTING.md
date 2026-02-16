@@ -103,3 +103,58 @@ build/videopac_tests --gtest_filter="MemoryTest.*"
 The emulator should run at full speed (60 FPS for NTSC, 50 FPS for PAL) on modern hardware.
 
 To see FPS counter, the frontend can be modified to enable `show_fps` in the config.
+
+
+---
+
+## Video Settings Testing
+
+### Features
+
+The emulator includes several video settings that can be adjusted through the in-game menu (F10):
+
+1. **Aspect Ratio** - Applied immediately
+   - Original (1:1 pixel, 320x240 with 2x horizontal scaling)
+   - 4:3 (standard TV aspect ratio with letterboxing)
+   - Stretch (fill entire window)
+
+2. **CRT Effects** - Applied immediately
+   - None, Light, Medium, Heavy (vignette effect at edges)
+
+3. **Scanlines** - Applied immediately
+   - Off, 25%, 50%, 75% (horizontal line overlay)
+
+4. **VSync** - Requires restart
+   - On/Off toggle
+
+### Testing Video Settings
+
+1. **Start the emulator and press F10** to open the menu
+
+2. **Navigate to Video Settings** using arrow keys and press Enter
+
+3. **Test each setting:**
+   - Aspect Ratio: Changes viewport immediately
+   - CRT Effects: Adds edge darkening effect
+   - Scanlines: Adds horizontal lines across display
+   - VSync: Saves setting, requires restart
+
+4. **Verify persistence:**
+   - Change settings, exit emulator
+   - Restart and verify settings are preserved
+
+### Configuration File
+
+Settings are stored in:
+- **Windows**: `%APPDATA%\videopac\videopac.cfg`
+- **Linux/macOS**: `~/.config/videopac/videopac.cfg`
+
+Example `[Video]` section:
+```ini
+[Video]
+scaling_filter=nearest
+aspect_ratio=4:3
+vsync=true
+crt_effect=medium
+scanlines=50
+```
