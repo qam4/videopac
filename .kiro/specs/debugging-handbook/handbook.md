@@ -54,6 +54,7 @@ This handbook uses anchor links for easy navigation. Click any section in the Ta
    - [4.6 Reading Trace Output](#46-reading-trace-output)
    - [4.7 Performance Considerations](#47-performance-considerations)
    - [4.8 Examples](#48-examples)
+   - [4.9 Call Tree Generation](#49-call-tree-generation)
 
 5. [Graphics Debugging](#5-graphics-debugging)
    - [5.1 Sprite Debugging Workflow](#51-sprite-debugging-workflow)
@@ -847,6 +848,117 @@ grep "\[F:0007" trace.log > frame_7.txt
 # Search for writes to VDC registers (addresses 0x0A0-0x0AF)
 grep "0x0A[0-9A-F]:" trace.log | head -20
 ```
+
+### 4.9 Call Tree Generation
+
+**Purpose:** Generate a visual call tree showing function calls, returns, jumps, and loops for a specific frame.
+
+**Prerequisites:**
+1. Trace log file from the emulator (raw format without disassembly)
+2. Annotated BIOS disassembly (e.g., `doc/french_bios_annotated.txt`)
+3. Annotated ROM disassembly (e.g., `doc/satellite-attack-disassembly.txt`)
+
+**Workflow:**
+
+The call tree generation is a two-step process:
+
+1. **Capture trace** (raw format from emulator)
+2. **Annotate trace** with disassembled instructions
+3. **Generate call tree** from annotated trace
+
+**Step 1: Capture Trace**
+
+Run the emulator in headless mode to capture a complete trace:
+
+```bash
+# Capture trace for Satellite Attack (uses default trace.log output)
+python run_emulator.py headless --rom roms/satellite_attack.bin --frames 10 --trace full
+```
+
+This generates `trace.log` with raw instruction bytes:
+```
+[F:0 C:0] 0x000: 84 00 | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
+[F:0 C:20] 0x400: 44 c3 | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
+```
+
+**Step 2: Annotate Trace**
+
+Use the `annotate_trace.py` script to add disassembled instructions:
+
+```bash
+# Annotate trace with default paths
+python scripts/annotate_trace.py trace.log trace_annotated.log
+
+# Specify custom BIOS and ROM disassembly paths
+python scripts/annotate_trace.py --bios doc/french_bios_annotated.txt \
+    --rom doc/satellite-attack-disassembly.txt \
+    trace.log trace_annotated.log
+```
+
+This produces `trace_annotated.log` with disassembled instructions:
+```
+[F:0 C:0] 0x000: 84 00 JMP restart | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
+[F:0 C:20] 0x400: 44 c3 JMP selectgame | A=00 PSW=00 P1=ff P2=ff RB0 F1=0
+```
+
+**Step 3: Generate Call Tree**
+
+Use the `build_call_tree.py` script to analyze the annotated trace:
+
+```bash
+# Generate call tree for a single frame (uses default paths)
+python scripts/build_call_tree.py --trace trace_annotated.log 0
+
+# Generate call trees for multiple frames
+python scripts/build_call_tree.py --trace trace_annotated.log 0 1 2 3
+
+# Specify custom BIOS and ROM disassembly paths
+python scripts/build_call_tree.py --trace trace_annotated.log \
+    --bios doc/french_bios_annotated.txt \
+    --rom doc/satellite-attack-disassembly.txt 0
+```
+
+**Command-Line Options:**
+
+`annotate_trace.py`:
+- `input` - Input trace log file (required)
+- `output` - Output annotated trace log file (required)
+- `--bios PATH` - Path to annotated BIOS disassembly (default: `doc/french_bios_annotated.txt`)
+- `--rom PATH` - Path to annotated ROM disassembly (default: `doc/satellite-attack-disassembly.txt`)
+
+`build_call_tree.py`:
+- `FRAME` - Frame number(s) to analyze (required, one or more)
+- `--trace PATH` - Path to annotated trace log file (default: `trace.log`)
+- `--bios PATH` - Path to annotated BIOS disassembly (default: `doc/french_bios_annotated.txt`)
+- `--rom PATH` - Path to annotated ROM disassembly (default: `doc/satellite-attack-disassembly.txt`)
+
+**Output Format:**
+
+The call tree shows:
+- **CALL/RET events** with proper nesting (indentation shows call depth)
+- **JMP instructions** for significant jumps
+- **LOOP regions** with iteration counts and cycle duration
+- **Labels** from BIOS and ROM disassembly for better readability
+
+Example output:
+```
+=== Frame 0 Call Tree ===
+
+[     0] bios:cold_boot -> JMP rom:restart
+[    20] rom:restart -> JMP bios:select_game
+[    70] 0x2c6 -> CALL 0xf1
+  [   198..  1424] LOOP 0x0fc -> 0xf8: 32 iterations (1226 cycles)
+  [  1444] 0x0fe -> CALL 0xec
+  [  1504] 0x0f0 <- RET
+  [ 11649] 0x106 -> CALL 0xe7
+  [ 11708] 0x0eb <- RET
+  [ 11728] 0x108 -> CALL bios:display_off
+  [ 11866] 0x126 <- RET
+```
+
+**Performance Note:**
+
+Annotating the trace is a one-time operation. Once you have `trace_annotated.log`, you can run `build_call_tree.py` multiple times to analyze different frames without re-annotating.
 
 [↑ Back to Top](#table-of-contents)
 

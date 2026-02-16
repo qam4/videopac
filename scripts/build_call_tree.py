@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 import sys
 import re
+import argparse
 
-def load_labels():
+def load_labels(bios_path, rom_path):
     labels = {}
     
     # Load from BIOS - format: "0x000: 84 00  JMP restart"
     # Labels are on lines before the address, like "cold_boot:"
     try:
-        with open('doc/french_bios_annotated.txt', 'r') as f:
+        with open(bios_path, 'r') as f:
             current_label = None
             for line in f:
                 # Check for label (ends with :, no leading whitespace, not hex address)
@@ -59,9 +60,9 @@ def load_labels():
     # NOTE: ROM addresses wrap after 0x7FF back to 0x0000 (which is actually 0x800 in ROM)
     try:
         # First pass: build wrap detection map
-        wrap_map = rom_address_to_absolute(None)
+        wrap_map = rom_address_to_absolute(rom_path)
         
-        with open('doc/satellite-attack-disassembly.txt', 'r') as f:
+        with open(rom_path, 'r') as f:
             current_label = None
             
             for line_num, line in enumerate(f, 1):
@@ -136,10 +137,10 @@ def load_labels():
     
     return labels
 
-def find_frame_boundaries():
+def find_frame_boundaries(trace_path):
     """Find the starting cycle for each frame"""
     frame_starts = {}
-    with open('trace.log', 'r') as f:
+    with open(trace_path, 'r') as f:
         for line in f:
             match = re.match(r'\[F:(\d+)\s+C:(\d+)\]', line)
             if match:
@@ -149,7 +150,7 @@ def find_frame_boundaries():
                     frame_starts[frame] = cycle
     return frame_starts
 
-def rom_address_to_absolute(rom_addr_str):
+def rom_address_to_absolute(rom_path):
     """
     Convert ROM disassembly address to absolute memory address.
     
@@ -167,7 +168,7 @@ def rom_address_to_absolute(rom_addr_str):
     wrap_map = {}
     seen_7ff = False
     
-    with open('doc/satellite-attack-disassembly.txt', 'r') as f:
+    with open(rom_path, 'r') as f:
         for line_num, line in enumerate(f, 1):
             addr_match = re.match(r'^([0-9A-Fa-f]{4}):', line)
             if addr_match:
@@ -203,16 +204,17 @@ def translate_rom_address(addr_hex, after_wrap):
     
     return f'0x{addr_int:x}'
 
-def check_frame_ending_loop(frame_num, frame_starts):
+def check_frame_ending_loop(frame_num, frame_starts, trace_path):
     """Check if a frame ends with a loop back-edge, return loop info if so"""
     frame_start_cycle = frame_starts.get(frame_num, 0)
     next_frame_start = frame_starts.get(frame_num + 1, float('inf'))
     
     last_instr = None
-    with open('trace.log', 'r') as f:
+    with open(trace_path, 'r') as f:
         in_frame = False
         for line in f:
-            match = re.match(r'\[F:(\d+)\s+C:(\d+)\]\s+(0x[0-9a-f]+):\s+([0-9a-f]+)\s+([0-9a-f]*)\s+(\w+)', line)
+            # Match annotated trace: [F:0 C:0] 0x000: 84 00 JMP restart | A=00...
+            match = re.match(r'\[F:(\d+)\s+C:(\d+)\]\s+(0x[0-9a-f]+):\s+([0-9a-f]+)\s+([0-9a-f]*)\s+(\S+)', line)
             if not match:
                 continue
             
@@ -248,7 +250,7 @@ def check_frame_ending_loop(frame_num, frame_starts):
     
     return None
 
-def build_call_tree(frame_num, labels, frame_starts):
+def build_call_tree(frame_num, labels, frame_starts, trace_path):
     call_stack = []
     events = []
     loop_regions = []  # Track loop regions: (start_cycle, end_cycle, from_addr, to_addr, iterations)
@@ -261,9 +263,9 @@ def build_call_tree(frame_num, labels, frame_starts):
     # Check if previous frame ended with a loop - if so, we might be continuing it
     prev_frame_loop = None
     if frame_num > 0:
-        prev_frame_loop = check_frame_ending_loop(frame_num - 1, frame_starts)
+        prev_frame_loop = check_frame_ending_loop(frame_num - 1, frame_starts, trace_path)
     
-    with open('trace.log', 'r') as f:
+    with open(trace_path, 'r') as f:
         in_frame = False
         prev_addr = None
         prev_cycle = None
@@ -272,7 +274,8 @@ def build_call_tree(frame_num, labels, frame_starts):
         first_instruction_addr = None
         
         for line in f:
-            match = re.match(r'\[F:(\d+)\s+C:(\d+)\]\s+(0x[0-9a-f]+):\s+([0-9a-f]+)\s+([0-9a-f]*)\s+(\w+)', line)
+            # Match annotated trace: [F:0 C:0] 0x000: 84 00 JMP restart | A=00...
+            match = re.match(r'\[F:(\d+)\s+C:(\d+)\]\s+(0x[0-9a-f]+):\s+([0-9a-f]+)\s+([0-9a-f]*)\s+(\S+)', line)
             if not match:
                 continue
             
@@ -348,13 +351,23 @@ def build_call_tree(frame_num, labels, frame_starts):
                     pass
             
             if instr == 'CALL':
-                target_match = re.search(r'CALL (0x[0-9a-f]+)', line)
-                if target_match:
-                    target = target_match.group(1)
-                    target_label = labels.get(target, target)
-                    call_stack.append(addr)
-                    events.append(('CALL', cycle, addr_label, target_label, len(call_stack) - 1))
-            
+                # Extract target from instruction bytes
+                # For 8048: CALL uses opcodes 0x14/0x34/0x54/0x74/0x94/0xB4/0xD4/0xF4
+                # Format: [opcode] [low_byte], target = (opcode & 0xE0) | low_byte
+                byte0 = match.group(4)
+                byte1 = match.group(5)
+                if byte1:  # CALL is 2-byte instruction
+                    try:
+                        opcode = int(byte0, 16)
+                        low_byte = int(byte1, 16)
+                        # 8048 CALL: target = ((opcode & 0xE0) << 3) | low_byte
+                        target_int = ((opcode & 0xE0) << 3) | low_byte
+                        target = f'0x{target_int:x}'
+                        target_label = labels.get(target, target)
+                        call_stack.append(addr)
+                        events.append(('CALL', cycle, addr_label, target_label, len(call_stack) - 1))
+                    except:
+                        pass
             elif instr in ['RET', 'RETR']:
                 if call_stack:
                     from_addr = call_stack.pop()
@@ -364,18 +377,27 @@ def build_call_tree(frame_num, labels, frame_starts):
             elif instr in ['JMP', 'JNZ', 'JZ', 'DJNZ', 'JNC', 'JC', 'JF0', 'JF1',
                            'JT0', 'JNT0', 'JT1', 'JNT1', 'JTF', 'JNI',
                            'JB0', 'JB1', 'JB2', 'JB3', 'JB4', 'JB5', 'JB6', 'JB7']:
-                # Extract target address from various jump instructions
-                # Build regex pattern for all jump instructions
-                jump_instrs = ['JMP', 'JNZ', 'JZ', 'DJNZ', 'JNC', 'JC', 'JF0', 'JF1',
-                               'JT0', 'JNT0', 'JT1', 'JNT1', 'JTF', 'JNI',
-                               'JB0', 'JB1', 'JB2', 'JB3', 'JB4', 'JB5', 'JB6', 'JB7']
-                pattern = r'(?:' + '|'.join(jump_instrs) + r')\s+(?:R\d+,)?(0x[0-9a-f]+)'
-                target_match = re.search(pattern, line)
-                if target_match:
-                    target = target_match.group(1)
+                # Extract target address from instruction bytes
+                byte0 = match.group(4)
+                byte1 = match.group(5)
+                if byte1:  # Jump instructions are 2-byte
                     try:
+                        opcode = int(byte0, 16)
+                        low_byte = int(byte1, 16)
+                        # 8048 JMP: target = ((opcode & 0xE0) << 3) | low_byte
+                        # Conditional jumps use different encoding
+                        if instr == 'JMP':
+                            target_int = ((opcode & 0xE0) << 3) | low_byte
+                        elif instr == 'DJNZ':
+                            # DJNZ: relative jump, byte1 is signed offset
+                            target_int = (int(addr, 16) + 2 + (low_byte if low_byte < 128 else low_byte - 256)) & 0xFFF
+                        else:
+                            # Other conditional jumps: page-relative
+                            target_int = (int(addr, 16) & 0xF00) | low_byte
+                        
+                        target = f'0x{target_int:x}'
                         addr_int = int(addr, 16)
-                        target_int = int(target, 16)
+                        
                         # Check if it's a backward jump (potential loop)
                         if target_int < addr_int and abs(target_int - addr_int) < 0x30:
                             # This is a loop back-edge
@@ -448,21 +470,55 @@ def merge_events_and_loops(events, loop_regions, labels):
     return timeline
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: build_call_tree.py <frame_number> ...")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description='Generate call tree from trace log',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s 0
+  %(prog)s 0 1 2 3
+  %(prog)s --bios doc/french_bios_annotated.txt --rom doc/satellite-attack-disassembly.txt 0
+        """
+    )
     
-    labels = load_labels()
-    frame_starts = find_frame_boundaries()
+    parser.add_argument(
+        'frames',
+        metavar='FRAME',
+        type=int,
+        nargs='+',
+        help='Frame number(s) to analyze'
+    )
+    
+    parser.add_argument(
+        '--bios',
+        default='doc/french_bios_annotated.txt',
+        help='Path to annotated BIOS disassembly (default: doc/french_bios_annotated.txt)'
+    )
+    
+    parser.add_argument(
+        '--rom',
+        default='doc/satellite-attack-disassembly.txt',
+        help='Path to annotated ROM disassembly (default: doc/satellite-attack-disassembly.txt)'
+    )
+    
+    parser.add_argument(
+        '--trace',
+        default='trace.log',
+        help='Path to trace log file (default: trace.log)'
+    )
+    
+    args = parser.parse_args()
+    
+    labels = load_labels(args.bios, args.rom)
+    frame_starts = find_frame_boundaries(args.trace)
     print(f"Loaded {len(labels)} labels\n")
     
     prev_frame_depth = 0  # Track call stack depth across frames
     
-    for frame_arg in sys.argv[1:]:
-        frame_num = int(frame_arg)
+    for frame_num in args.frames:
         print(f"=== Frame {frame_num} Call Tree ===\n")
         
-        events, loop_regions, final_depth = build_call_tree(frame_num, labels, frame_starts)
+        events, loop_regions, final_depth = build_call_tree(frame_num, labels, frame_starts, args.trace)
         timeline = merge_events_and_loops(events, loop_regions, labels)
         
         # Start with the depth from the previous frame
@@ -473,20 +529,20 @@ if __name__ == '__main__':
                 cycle, _, event_type, from_label, to_label, depth = item
                 indent = '  ' * depth
                 if event_type == 'CALL':
-                    print(f"{indent}[{cycle:6d}] {from_label} → CALL {to_label}")
+                    print(f"{indent}[{cycle:6d}] {from_label} -> CALL {to_label}")
                     current_depth = depth + 1
                 elif event_type == 'RET':
-                    print(f"{indent}[{cycle:6d}] {from_label} ← RET")
+                    print(f"{indent}[{cycle:6d}] {from_label} <- RET")
                     current_depth = depth
                 elif event_type == 'JMP':
-                    print(f"{indent}[{cycle:6d}] {from_label} → JMP {to_label}")
+                    print(f"{indent}[{cycle:6d}] {from_label} -> JMP {to_label}")
                 elif event_type == 'INTERRUPT':
-                    print(f"{indent}[{cycle:6d}] *** INTERRUPT → {from_label} ***")
+                    print(f"{indent}[{cycle:6d}] *** INTERRUPT -> {from_label} ***")
             elif item[1] == 'loop':
                 cycle, _, from_label, to_label, end_cycle, iterations = item
                 indent = '  ' * current_depth
                 duration = end_cycle - cycle
-                print(f"{indent}[{cycle:6d}..{end_cycle:6d}] LOOP {from_label} → {to_label}: {iterations} iterations ({duration} cycles)")
+                print(f"{indent}[{cycle:6d}..{end_cycle:6d}] LOOP {from_label} -> {to_label}: {iterations} iterations ({duration} cycles)")
         
         if len(timeline) > 200:
             print(f"\n... ({len(timeline) - 200} more items)")

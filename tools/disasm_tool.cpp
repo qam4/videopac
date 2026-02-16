@@ -14,8 +14,10 @@ namespace fs = std::filesystem;
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <rom_file> [start_addr] [end_addr]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <rom_file> [base_addr] [max_size]" << std::endl;
         std::cerr << "  rom_file can be .bin or .zip (will extract first .bin file)" << std::endl;
+        std::cerr << "  base_addr: address where ROM is mapped (default: 0x0000, use 0x400 for Videopac ROMs)" << std::endl;
+        std::cerr << "  max_size: maximum bytes to disassemble (default: entire file)" << std::endl;
         return 1;
     }
     
@@ -75,11 +77,11 @@ int main(int argc, char* argv[]) {
                                      std::istreambuf_iterator<char>());
     }
     
-    uint16_t start = 0x0000;
+    uint16_t base_addr = 0x0000;  // Base address for labeling
     uint16_t end = rom.size();
     
     if (argc >= 3) {
-        start = std::strtol(argv[2], nullptr, 16);
+        base_addr = std::strtol(argv[2], nullptr, 16);
     }
     if (argc >= 4) {
         end = std::strtol(argv[3], nullptr, 16);
@@ -88,7 +90,16 @@ int main(int argc, char* argv[]) {
     Disassembler disasm;
     
     // First pass: disassemble and collect jump/call targets
-    std::vector<Instruction> instructions = disasm.disassemble_range(rom.data(), start, end - 1);
+    // Disassemble from file offset 0, but label addresses starting at base_addr
+    std::vector<Instruction> instructions;
+    uint16_t addr = base_addr;
+    size_t offset = 0;
+    while (offset < rom.size() && offset < end) {
+        Instruction instr = disasm.disassemble_instruction(addr, &rom[offset]);
+        instructions.push_back(instr);
+        offset += instr.size;
+        addr += instr.size;
+    }
     std::set<uint16_t> jump_targets;
     
     // Add all known addresses as jump targets so they get labels
@@ -112,7 +123,7 @@ int main(int argc, char* argv[]) {
             if (instr.operand_text.find("0x") == 0) {
                 uint16_t target = std::strtol(instr.operand_text.c_str() + 2, nullptr, 16);
                 // Only add label if target is within our disassembled range
-                if (target >= start && target < end) {
+                if (target >= base_addr && target < base_addr + end) {
                     jump_targets.insert(target);
                 }
             }
