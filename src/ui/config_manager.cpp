@@ -209,7 +209,7 @@ void ConfigManager::set_scaling_filter(const std::string& filter) {
 }
 
 std::string ConfigManager::get_aspect_ratio() const {
-    return get_value("Video", "aspect_ratio", "original");
+    return get_value("Video", "aspect_ratio", "4:3");
 }
 
 void ConfigManager::set_aspect_ratio(const std::string& ratio) {

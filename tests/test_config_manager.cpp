@@ -37,7 +37,7 @@ TEST_F(ConfigManagerTest, DefaultValues) {
     
     // Video settings
     EXPECT_EQ(config.get_scaling_filter(), "nearest");
-    EXPECT_EQ(config.get_aspect_ratio(), "original");
+    EXPECT_EQ(config.get_aspect_ratio(), "4:3");
     EXPECT_TRUE(config.get_vsync_enabled());
     EXPECT_FALSE(config.get_fullscreen());
     EXPECT_EQ(config.get_crt_effect(), "none");

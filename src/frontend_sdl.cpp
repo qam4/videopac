@@ -71,6 +71,10 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     config_manager_ = std::make_unique<ConfigManager>();
     config_manager_->load();  // Load saved configuration
     
+    // Apply saved scaling filter preference
+    std::string scaling_filter = config_manager_->get_scaling_filter();
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, scaling_filter == "linear" ? "1" : "0");
+    
     // Requirement 12.7: Restore fullscreen state on startup
     bool saved_fullscreen = config_manager_->get_fullscreen();
     if (saved_fullscreen != is_fullscreen_) {
@@ -339,11 +343,11 @@ void SDLFrontend::shutdown() {
 }
 
 bool SDLFrontend::init_video() {
-    // Proper Videopac display: 320x240 output (2x horizontal scaling)
-    // VDC framebuffer is 160x240 (full VDC height to capture status bars)
-    int display_width = 320;   // 160 * 2
-    int display_height = 240;  // Full VDC height
-    int window_width = display_width * config_.display_scale;
+    // Native resolution rendering: VDC outputs 160x240, GPU handles scaling
+    // No manual pixel doubling - SDL renderer scales to display
+    int display_width = FRAMEBUFFER_WIDTH;   // 160 (native VDC width)
+    int display_height = FRAMEBUFFER_HEIGHT;  // 240 (full VDC height)
+    int window_width = display_width * 2 * config_.display_scale;  // Default 2x scale for visibility
     int window_height = display_height * config_.display_scale;
     
     // Store windowed dimensions
@@ -390,12 +394,12 @@ bool SDLFrontend::init_video() {
         return false;
     }
     
-    // Set logical size to 320x240 for proper aspect ratio
-    SDL_RenderSetLogicalSize(renderer_, display_width, display_height);
+    // Set scaling quality hint before texture creation
+    // Default to nearest neighbor (sharp pixels) for retro aesthetic
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");  // 0=nearest (sharp), 1=linear (smooth)
     
-    // Use nearest-neighbor filtering for sharp pixels
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");  // 0=nearest (sharp), 1=linear, 2=best
-    SDL_SetHint(SDL_HINT_RENDER_LOGICAL_SIZE_MODE, "0");  // 0=letterbox (default, most compatible)
+    // No logical size - we'll use GPU scaling with calculated viewports
+    // This allows flexible aspect ratio handling
     
     // Create texture for framebuffer
     texture_ = SDL_CreateTexture(
@@ -559,44 +563,38 @@ bool SDLFrontend::is_running() const {
 void SDLFrontend::render_frame() {
     update_texture();
     
-    // Clear renderer (black background)
-    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+    // Clear renderer with dark gray background for letterboxing
+    // This provides contrast with the game's black background
+    SDL_SetRenderDrawColor(renderer_, 32, 32, 32, 255);
     SDL_RenderClear(renderer_);
     
-    // === STEP 1: GAME RENDERING WITH LOGICAL SIZE ===
+    // Disable logical size - we use GPU scaling with viewports
+    SDL_RenderSetLogicalSize(renderer_, 0, 0);
+    
+    // === STEP 1: GAME RENDERING WITH GPU SCALING ===
     // Determine if we're in split screen mode
     bool split_screen = imgui_debugger_ui_ && imgui_debugger_ui_->is_visible() && 
                         imgui_debugger_ui_->get_display_mode() == DisplayMode::SplitScreen;
     
+    SDL_Rect viewport;
     if (split_screen) {
-        // Split Screen mode: no logical size, render game to left half
-        SDL_RenderSetLogicalSize(renderer_, 0, 0);
-        
-        // Get actual window size
+        // Split Screen mode: render game to left half
         int window_width, window_height;
         SDL_GetRendererOutputSize(renderer_, &window_width, &window_height);
         
         // Game uses left half of window
-        SDL_Rect dest_rect = {0, 0, window_width / 2, window_height};
-        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
-        
-        // Apply CRT effects and scanlines if enabled (in actual window coordinates)
-        render_crt_effects(dest_rect);
-        render_scanlines(dest_rect);
+        viewport = {0, 0, window_width / 2, window_height};
     } else {
-        // Overlay mode: use logical size 320x240 for game rendering
-        SDL_RenderSetLogicalSize(renderer_, 320, 240);
-        
-        SDL_Rect dest_rect = {0, 0, 320, 240};
-        SDL_RenderCopy(renderer_, texture_, nullptr, &dest_rect);
-        
-        // Apply CRT effects and scanlines if enabled (in 320x240 logical space)
-        render_crt_effects(dest_rect);
-        render_scanlines(dest_rect);
-        
-        // === STEP 2: DISABLE LOGICAL SIZE FOR ALL UI ===
-        SDL_RenderSetLogicalSize(renderer_, 0, 0);
+        // Normal mode: use calculated viewport for aspect ratio handling
+        viewport = calculate_viewport();
     }
+    
+    // Render the framebuffer texture to the viewport (GPU scaling)
+    SDL_RenderCopy(renderer_, texture_, nullptr, &viewport);
+    
+    // Apply post-scaling effects to the viewport
+    render_crt_effects(viewport);
+    render_scanlines(viewport);
     
     // === STEP 3: RENDER ALL UI AT NATIVE RESOLUTION ===
     // Render unified status bar at bottom with FPS and all indicators
@@ -680,24 +678,42 @@ SDL_Rect SDLFrontend::calculate_viewport() const {
     int window_width, window_height;
     SDL_GetRendererOutputSize(renderer_, &window_width, &window_height);
     
+    // Handle edge case: zero or negative window dimensions
+    if (window_width <= 0 || window_height <= 0) {
+        // Return default viewport matching framebuffer
+        return {0, 0, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT};
+    }
+    
     // Original framebuffer dimensions
     const int fb_width = FRAMEBUFFER_WIDTH;   // 160
     const int fb_height = FRAMEBUFFER_HEIGHT; // 240
     
     SDL_Rect viewport;
-    std::string aspect_ratio = config_manager_->get_aspect_ratio();
+    std::string aspect_ratio = config_manager_ ? config_manager_->get_aspect_ratio() : "4:3";
     
     if (aspect_ratio == "original") {
-        // Original 1:1 pixel aspect ratio (160x240 -> 320x240 with 2x horizontal scaling)
-        viewport.w = fb_width * 2;  // 320
-        viewport.h = fb_height;      // 240
+        // Original 2:3 aspect ratio (160:240 native VDC ratio)
+        // Maintain the native pixel aspect ratio with letterboxing
+        float target_aspect = static_cast<float>(fb_width) / fb_height;  // 160/240 = 2/3
+        float window_aspect = static_cast<float>(window_width) / window_height;
         
-        // Center in window
-        viewport.x = (window_width - viewport.w) / 2;
-        viewport.y = (window_height - viewport.h) / 2;
+        if (window_aspect > target_aspect) {
+            // Window is wider than 2:3, fit to height
+            viewport.h = window_height;
+            viewport.w = static_cast<int>(window_height * target_aspect);
+            viewport.x = (window_width - viewport.w) / 2;
+            viewport.y = 0;
+        } else {
+            // Window is taller than 2:3, fit to width
+            viewport.w = window_width;
+            viewport.h = static_cast<int>(window_width / target_aspect);
+            viewport.x = 0;
+            viewport.y = (window_height - viewport.h) / 2;
+        }
         
     } else if (aspect_ratio == "4:3") {
-        // 4:3 aspect ratio - calculate based on window size
+        // 4:3 aspect ratio (CRT television aspect ratio)
+        // Horizontally stretch the image to achieve 4:3 display ratio
         float target_aspect = 4.0f / 3.0f;
         float window_aspect = static_cast<float>(window_width) / window_height;
         
@@ -716,7 +732,7 @@ SDL_Rect SDLFrontend::calculate_viewport() const {
         }
         
     } else { // "stretch"
-        // Stretch to fill entire window
+        // Stretch to fill entire window (no aspect ratio preservation)
         viewport.x = 0;
         viewport.y = 0;
         viewport.w = window_width;
@@ -814,10 +830,6 @@ void SDLFrontend::process_audio() {
 }
 
 void SDLFrontend::process_input() {
-    // Temporarily disable logical size so mouse coordinates are in actual window space
-    // This ensures ImGui gets correct mouse positions
-    SDL_RenderSetLogicalSize(renderer_, 0, 0);
-    
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         // Handle F12 (debugger toggle) BEFORE ImGui to prevent double-processing
@@ -878,9 +890,6 @@ void SDLFrontend::process_input() {
                 break;
         }
     }
-    
-    // Restore logical size for game rendering
-    SDL_RenderSetLogicalSize(renderer_, 320, 240);
 }
 
 void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {

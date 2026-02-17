@@ -25,6 +25,7 @@ struct FrontendConfig {
     bool fullscreen;
     bool vsync;
     bool headless;                  // Run without window (for remote/testing)
+    std::string aspect_ratio;       // "original", "4:3", "stretch"
     
     // Audio settings
     int sample_rate;                // 44100 or 48000
@@ -56,6 +57,7 @@ struct FrontendConfig {
         , fullscreen(false)
         , vsync(true)
         , headless(false)
+        , aspect_ratio("4:3")       // Default to 4:3 (CRT aspect ratio)
         , sample_rate(44100)
         , audio_buffer_size(512)
         , master_volume(0.7f)

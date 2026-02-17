@@ -90,6 +90,9 @@ private:
     // Helpers
     void write_ppm(const std::string& filename, const uint8* framebuffer, int width, int height);
     void update_timing();
+    
+    // Get output dimensions based on aspect ratio setting
+    void get_output_dimensions(int input_width, int input_height, int& output_width, int& output_height) const;
 };
 
 } // namespace videopac

@@ -367,6 +367,27 @@ void HeadlessFrontend::dump_framebuffer(const std::string& filename) {
     save_screenshot(filename);
 }
 
+void HeadlessFrontend::get_output_dimensions(int input_width, int input_height, 
+                                              int& output_width, int& output_height) const {
+    // Default to native resolution
+    output_width = input_width;
+    output_height = input_height;
+    
+    // Apply scaling based on aspect ratio setting from config
+    // For headless mode, we check the config's aspect_ratio field
+    if (config_.aspect_ratio == "4:3") {
+        // 4:3 aspect ratio: scale horizontally to achieve 4:3 ratio
+        // 160x240 -> 320x240 (2x horizontal)
+        output_width = input_width * 2;
+        output_height = input_height;
+    } else if (config_.aspect_ratio == "stretch") {
+        // Stretch mode: for screenshots, same as 4:3 (no window to stretch to)
+        output_width = input_width * 2;
+        output_height = input_height;
+    }
+    // "original" or any other value: keep native resolution (160x240)
+}
+
 void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* framebuffer, 
                                   int width, int height) {
     std::ofstream file(filename, std::ios::binary);
@@ -403,29 +424,29 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
             }
         }
     } else {
-        // Normal framebuffer (160x240): O2EM-style 320x240 output
-        // - 2x horizontal scaling for square-looking pixels
-        // - No vertical borders needed since framebuffer is already 240 lines
-        int output_width = 320;   // 160 * 2
-        int output_height = 240;  // Same as framebuffer height
+        // Normal framebuffer: apply aspect ratio scaling
+        int output_width, output_height;
+        get_output_dimensions(width, height, output_width, output_height);
         
         file << "P6\n" << output_width << " " << output_height << "\n255\n";
         
         // Select palette based on configuration
         const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
         
-        // Framebuffer area (240 lines, each pixel 2x wide)
+        // Calculate horizontal scaling factor
+        int h_scale = output_width / width;
+        
+        // Write framebuffer with horizontal scaling
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 uint8 palette_index = framebuffer[y * width + x];
                 Color color = palette[palette_index % 16];
-                // Write each pixel twice (2x horizontal scaling)
-                file.put(color.r);
-                file.put(color.g);
-                file.put(color.b);
-                file.put(color.r);
-                file.put(color.g);
-                file.put(color.b);
+                // Write each pixel h_scale times for horizontal scaling
+                for (int s = 0; s < h_scale; s++) {
+                    file.put(color.r);
+                    file.put(color.g);
+                    file.put(color.b);
+                }
             }
         }
     }
