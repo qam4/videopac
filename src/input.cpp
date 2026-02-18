@@ -79,11 +79,12 @@ void InputHandler::set_joystick_button(uint8 joystick, bool pressed) {
 }
 
 uint8 InputHandler::read_joystick(uint8 select_bits) {
-    // P20-P22 select joystick
-    // 0b000 = Joystick 2
-    // 0b111 = Joystick 1
+    // P20-P22 select joystick (per doc/o2doc.md section 5.0)
+    // 0b000 (0) = Joystick 2 (right joystick)
+    // 0b001 (1) = Joystick 1 (left joystick)
     
-    bool* joy = ((select_bits & 0x07) == 0x07) ? state_.joystick1 : state_.joystick2;
+    uint8 joy_select = select_bits & 0x07;
+    bool* joy = (joy_select == 1) ? state_.joystick1 : state_.joystick2;
     
     uint8 result = 0xFF;
     

@@ -198,11 +198,11 @@ The emulator has multiple bugs affecting this game cartridge:
 
 **Status**: 
 - ✅ **Grid Color Bug (Bug #1)**: FIXED - Implemented hardware-accurate color mapping formulas
-- ✅ **Grid Rendering Bug (Bug #3)**: FIXED - Implemented correct 9-segment horizontal line handling
+- ✅ **Grid Rendering Bug (Bug #2)**: FIXED - Implemented correct column-based byte layout with proper corner connections
+- ✅ **Input Handling Bug (Bug #3)**: FIXED - Corrected joystick direction mapping (active-low logic)
 - ❌ **Remaining bugs**: Require investigation of:
-  - Collision detection system (affects both games)
-  - Input system
-  - Sprite rendering (horizontal flip)
+  - Sprite Direction Bug (Bug #4) - Cars face wrong direction
+  - Collision detection system (Bug #5) - Affects both games
 
 ## Resolution: Grid Color Bug
 
@@ -274,5 +274,29 @@ The o2doc documentation was misleading, describing bytes as representing "horizo
 
 **Files Modified**:
 - `src/vdc.cpp` - Grid rendering implementation (render_grid and is_grid_pixel_at functions)
+- `include/ui/imgui_debugger_ui.h`, `src/ui/imgui_debugger_ui.cpp` - Added visual grid register display to debugger
 
-**Verification**: All 263 tests passing.
+**Verification**: All tests passing.
+
+## Resolution: Input Handling Bug #1 (Game 2) - Both Cars Responding to Same Input
+
+**Root Cause**: The joystick direction mapping was inverted. The hardware uses active-low logic where a bit value of 0 means the direction is pressed, but the emulator was treating 1 as pressed.
+
+**Hardware Specification**:
+- Port 1 bits 0-3 represent joystick directions (active-low)
+- Bit 0 = Right (0 = pressed, 1 = not pressed)
+- Bit 1 = Left (0 = pressed, 1 = not pressed)
+- Bit 2 = Down (0 = pressed, 1 = not pressed)
+- Bit 3 = Up (0 = pressed, 1 = not pressed)
+
+**Fix Applied**: Updated `src/input.cpp` in the `update_joystick_state()` function:
+- Changed from setting bits to 1 when pressed to clearing bits to 0 when pressed
+- Inverted the logic: `port1_state &= ~bit` instead of `port1_state |= bit`
+
+**Result**: Both cars in game 2 (Autodrome) now respond correctly to their respective inputs without interference.
+
+**Files Modified**:
+- `src/input.cpp` - Joystick direction mapping
+- `tests/test_input.cpp` - Updated tests for correct active-low behavior
+
+**Verification**: All tests passing.
