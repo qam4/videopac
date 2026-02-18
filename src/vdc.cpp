@@ -446,10 +446,58 @@ void VDC::render_grid(int y) {
     bool fill_mode = (control & ControlBits::ENABLE_FILL_MODE) != 0;
     bool dot_mode = (control & ControlBits::ENABLE_DOT_GRID) != 0;
     
-    // Grid layout: 8 rows and 9 columns
+    // Grid layout: 9 rows × 9 columns of horizontal bars, 10 columns × 8 rows of vertical bars
+    // This creates 9 columns × 8 rows = 72 enclosed areas (boxes)
     // Each horizontal bar is 3 scanlines tall, spaced by 21 scanlines
     // First horizontal bar starts at scanline 24 (relative to end of VBLANK)
-    // Reference: doc/o2doc.md section 4.2, doc/8245.md lines 300-350
+    // Reference: doc/8245.md lines 720-760
+    
+    // IMPORTANT: Grid register layout (bytes go left to right, bits go top to bottom)
+    //
+    // Visual representation of the grid:
+    //     Col:  0   1   2   3   4   5   6   7   8   9
+    //          ┌───┬───┬───┬───┬───┬───┬───┬───┬───┐
+    // Row 0    │ H │ H │ H │ H │ H │ H │ H │ H │ H │   H = Horizontal bar segment
+    //          ├ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V  V = Vertical bar segment
+    // Row 1    │ H │ H │ H │ H │ H │ H │ H │ H │ H │
+    //          ├ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V
+    // Row 2    │ H │ H │ H │ H │ H │ H │ H │ H │ H │
+    //          ├ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V
+    // Row 3    │ H │ H │ H │ H │ H │ H │ H │ H │ H │
+    //          ├ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V
+    // Row 4    │ H │ H │ H │ H │ H │ H │ H │ H │ H │
+    //          ├ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V
+    // Row 5    │ H │ H │ H │ H │ H │ H │ H │ H │ H │
+    //          ├ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V
+    // Row 6    │ H │ H │ H │ H │ H │ H │ H │ H │ H │
+    //          ├ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V
+    // Row 7    │ H │ H │ H │ H │ H │ H │ H │ H │ H │
+    //          ├ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V ┼ V
+    // Row 8    │ H │ H │ H │ H │ H │ H │ H │ H │ H │
+    //          └───┴───┴───┴───┴───┴───┴───┴───┴───┘
+    //
+    // Register mapping:
+    // Horizontal bars C0-C8: Each byte represents a COLUMN (0-8), bits 0-7 represent ROWS (0-7)
+    //   C0 = column 0: bit 0=row 0, bit 1=row 1, ..., bit 7=row 7
+    //   C1 = column 1: bit 0=row 0, bit 1=row 1, ..., bit 7=row 7
+    //   ...
+    //   C8 = column 8: bit 0=row 0, bit 1=row 1, ..., bit 7=row 7
+    //   Total: 9 columns × 8 rows = 72 segments
+    //
+    // Horizontal bar row 8 (D0-D8): 9 bytes, bit 0 only
+    //   D0 bit 0 = column 0 row 8
+    //   D1 bit 0 = column 1 row 8
+    //   ...
+    //   D8 bit 0 = column 8 row 8
+    //   Total: 9 columns × 1 row = 9 segments
+    //   Grand total horizontal: 72 + 9 = 81 segments (9 rows × 9 columns)
+    //
+    // Vertical bars E0-E9: Each byte represents a COLUMN (0-9), bits 0-7 represent ROWS (0-7)
+    //   E0 = column 0: bit 0=row 0, bit 1=row 1, ..., bit 7=row 7
+    //   E1 = column 1: bit 0=row 0, bit 1=row 1, ..., bit 7=row 7
+    //   ...
+    //   E9 = column 9: bit 0=row 0, bit 1=row 1, ..., bit 7=row 7
+    //   Total: 10 columns × 8 rows = 80 segments
     
     // Calculate grid row (0-8) based on scanline
     // Grid starts at scanline 24, each row is 24 scanlines apart (3 lines + 21 spacing)
@@ -463,31 +511,29 @@ void VDC::render_grid(int y) {
         int grid_row = y_offset / GRID_ROW_HEIGHT;
         int row_offset = y_offset % GRID_ROW_HEIGHT;
         
-        // Render horizontal grid lines (9 lines total, including line 9)
+        // Render horizontal grid lines (9 rows total: 0-8)
         if (grid_row < 9 && row_offset < GRID_LINE_HEIGHT) {
-            // Get horizontal grid line data
-            uint8 h_line_data;
-            if (grid_row < 8) {
-                // Lines 0-7 from 0xC0-0xC7
-                h_line_data = state_.registers[VDCRegisters::GRID_H_BASE + grid_row];
-            } else {
-                // Line 8 (9th line) from 0xD0-0xD8, only bit 0 used per column
-                h_line_data = 0;
-                for (int col = 0; col < 9; col++) {
-                    if (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) {
-                        h_line_data |= (1 << col);
-                    }
-                }
-            }
-            
             // Render horizontal line segments
             const int GRID_START_X = 10;  // Grid starts at column 10 (10 clock cycles from HBL end)
             const int GRID_COL_WIDTH = 16; // 14 spacing + 2 for vertical line
             
+            // Loop through columns (0-8) and check if segment at this row is enabled
             for (int col = 0; col < 9; col++) {
-                if (h_line_data & (1 << col)) {
+                bool segment_on = false;
+                
+                if (grid_row < 8) {
+                    // Rows 0-7: Check bit grid_row of byte C0+col
+                    // Example: For row 2, col 3: check bit 2 of register C3
+                    segment_on = (state_.registers[VDCRegisters::GRID_H_BASE + col] & (1 << grid_row)) != 0;
+                } else {
+                    // Row 8: Check bit 0 of byte D0+col
+                    // Example: For row 8, col 3: check bit 0 of register D3
+                    segment_on = (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) != 0;
+                }
+                
+                if (segment_on) {
                     int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                    int x_end = x_start + 14;  // Segment is 14 pixels wide
+                    int x_end = x_start + 16;  // Segment spans full column width (16 pixels)
                     
                     for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
                         state_.framebuffer[y][x] = grid_color;
@@ -504,32 +550,48 @@ void VDC::render_grid(int y) {
     
     // Render vertical grid lines (10 lines, columns 0-9)
     // Each vertical bar is 2 or 16 clock intervals wide depending on fill mode
+    // Vertical bars extend from one horizontal bar down to the next horizontal bar
+    // to create proper connections at grid intersections
     // Reference: doc/o2doc.md section 4.2
     const int GRID_START_X = 10;
     const int GRID_COL_WIDTH = 16;
     const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
     
     // Calculate which grid row we're in for vertical line rendering
+    // Vertical bars span between horizontal bars, extending from the current row
+    // down through the horizontal bar of the next row
     if (y >= GRID_START_Y) {
         int y_offset = y - GRID_START_Y;
         int grid_row = y_offset / GRID_ROW_HEIGHT;
+        int row_offset = y_offset % GRID_ROW_HEIGHT;
         
-        if (grid_row < 8) {
-            // Render vertical grid lines
-            for (int col = 0; col < 10; col++) {
-                uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+        // Render vertical grid lines
+        // A vertical bar at row N renders from the start of row N through the
+        // horizontal bar at row N+1 (first 3 scanlines of row N+1)
+        for (int col = 0; col < 10; col++) {
+            uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+            bool segment_on = false;
+            
+            // Check which vertical bar segment should render at this scanline
+            if (grid_row < 8) {
+                // Rows 0-7: Check bit for current row
+                segment_on = (v_line_data & (1 << grid_row)) != 0;
+            } else if (grid_row == 8 && row_offset < GRID_LINE_HEIGHT) {
+                // Row 8, first 3 scanlines (horizontal bar area):
+                // Check if vertical bar from row 7 extends down to connect
+                segment_on = (v_line_data & (1 << 7)) != 0;
+            }
+            
+            if (segment_on) {
+                int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                int x_end = x_start + VERT_LINE_WIDTH;
                 
-                if (v_line_data & (1 << grid_row)) {
-                    int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                    int x_end = x_start + VERT_LINE_WIDTH;
+                for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                    state_.framebuffer[y][x] = grid_color;
                     
-                    for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
-                        state_.framebuffer[y][x] = grid_color;
-                        
-                        // Write to extended framebuffer if enabled
-                        if (extended_fb_mode_ && x < EXTENDED_FB_WIDTH && y < EXTENDED_FB_HEIGHT) {
-                            state_.extended_framebuffer[y][x] = grid_color;
-                        }
+                    // Write to extended framebuffer if enabled
+                    if (extended_fb_mode_ && x < EXTENDED_FB_WIDTH && y < EXTENDED_FB_HEIGHT) {
+                        state_.extended_framebuffer[y][x] = grid_color;
                     }
                 }
             }
@@ -1419,6 +1481,43 @@ void VDC::dump_registers() const {
         std::cout << " Attr=0x" << std::hex << static_cast<int>(state_.registers[base]) << std::dec << std::endl;
     }
     
+    std::cout << "\nGrid Registers:" << std::endl;
+    std::cout << "  Horizontal Lines (C0-C7):" << std::endl;
+    for (int i = 0; i < 8; i++) {
+        std::cout << "    Line " << i << " (0x" << std::hex << (0xC0 + i) << "): 0x" 
+                  << std::setfill('0') << std::setw(2) << static_cast<int>(state_.registers[0xC0 + i]) 
+                  << std::dec << " (bits: ";
+        for (int bit = 7; bit >= 0; bit--) {
+            std::cout << ((state_.registers[0xC0 + i] & (1 << bit)) ? "1" : "0");
+        }
+        std::cout << ")" << std::endl;
+    }
+    std::cout << "  Register C8 (0xC8): 0x" << std::hex << std::setfill('0') << std::setw(2) 
+              << static_cast<int>(state_.registers[0xC8]) << std::dec 
+              << " (bits: ";
+    for (int bit = 7; bit >= 0; bit--) {
+        std::cout << ((state_.registers[0xC8] & (1 << bit)) ? "1" : "0");
+    }
+    std::cout << ")" << std::endl;
+    
+    std::cout << "  Horizontal Line 9 (D0-D8):" << std::endl;
+    std::cout << "    ";
+    for (int i = 0; i < 9; i++) {
+        std::cout << "D" << i << "=" << ((state_.registers[0xD0 + i] & 0x01) ? "1" : "0") << " ";
+    }
+    std::cout << std::endl;
+    
+    std::cout << "  Vertical Lines (E0-E9):" << std::endl;
+    for (int i = 0; i < 10; i++) {
+        std::cout << "    Line " << i << " (0x" << std::hex << (0xE0 + i) << "): 0x" 
+                  << std::setfill('0') << std::setw(2) << static_cast<int>(state_.registers[0xE0 + i]) 
+                  << std::dec << " (bits: ";
+        for (int bit = 7; bit >= 0; bit--) {
+            std::cout << ((state_.registers[0xE0 + i] & (1 << bit)) ? "1" : "0");
+        }
+        std::cout << ")" << std::endl;
+    }
+    
     std::cout << "\nAudio:" << std::endl;
     std::cout << "  Control (0xAA): 0x" << std::hex << static_cast<int>(state_.registers[0xAA]) << std::dec;
     std::cout << " [Enabled:" << (state_.audio_enabled ? "YES" : "NO");
@@ -1433,6 +1532,13 @@ void VDC::dump_registers() const {
 
 // Per-pixel rendering helper: Check if grid pixel exists at position
 // Reference: Requirements 12.1, 12.2
+// 
+// Grid register layout (bytes go left to right, bits go top to bottom):
+// - Horizontal bars: 9 rows × 9 columns = 81 segments
+//   - C0-C8: Each byte = COLUMN (0-8), bits 0-7 = ROWS (0-7) [72 segments]
+//   - D0-D8: Row 8, bit 0 only (one per column) [9 segments]
+// - Vertical bars: 10 columns × 8 rows = 80 segments
+//   - E0-E9: Each byte = COLUMN (0-9), bits 0-7 = ROWS (0-7)
 bool VDC::is_grid_pixel_at(int x, int y) const {
     if (!state_.grid_enabled) {
         return false;
@@ -1457,24 +1563,25 @@ bool VDC::is_grid_pixel_at(int x, int y) const {
     int grid_row = y_offset / GRID_ROW_HEIGHT;
     int row_offset = y_offset % GRID_ROW_HEIGHT;
     
-    // Check horizontal grid lines
+    // Check horizontal grid lines (9 rows: 0-8)
+    // Loop through columns and check if segment at this row is enabled
     if (grid_row < 9 && row_offset < GRID_LINE_HEIGHT) {
-        uint8 h_line_data;
-        if (grid_row < 8) {
-            h_line_data = state_.registers[VDCRegisters::GRID_H_BASE + grid_row];
-        } else {
-            h_line_data = 0;
-            for (int col = 0; col < 9; col++) {
-                if (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) {
-                    h_line_data |= (1 << col);
-                }
-            }
-        }
-        
         for (int col = 0; col < 9; col++) {
-            if (h_line_data & (1 << col)) {
+            bool segment_on = false;
+            
+            if (grid_row < 8) {
+                // Rows 0-7: Check bit grid_row of byte C0+col
+                // Example: For row 2, col 3: check bit 2 of register C3
+                segment_on = (state_.registers[VDCRegisters::GRID_H_BASE + col] & (1 << grid_row)) != 0;
+            } else {
+                // Row 8: Check bit 0 of byte D0+col
+                // Example: For row 8, col 3: check bit 0 of register D3
+                segment_on = (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) != 0;
+            }
+            
+            if (segment_on) {
                 int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                int x_end = x_start + 14;
+                int x_end = x_start + 16;  // Segment spans full column width (16 pixels)
                 
                 if (x >= x_start && x < x_end) {
                     return true;
@@ -1483,18 +1590,30 @@ bool VDC::is_grid_pixel_at(int x, int y) const {
         }
     }
     
-    // Check vertical grid lines
-    if (grid_row < 8) {
-        for (int col = 0; col < 10; col++) {
-            uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+    // Check vertical grid lines (10 columns: 0-9)
+    // Vertical bars extend between horizontal bars, so they appear in multiple rows
+    // Each byte E0-E9 represents a column, bits 0-7 represent rows
+    // A vertical bar at row N extends through the horizontal bar at row N+1
+    for (int col = 0; col < 10; col++) {
+        uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+        bool segment_on = false;
+        
+        // Check which vertical bar segment should render at this position
+        if (grid_row < 8) {
+            // Rows 0-7: Check bit for current row
+            segment_on = (v_line_data & (1 << grid_row)) != 0;
+        } else if (grid_row == 8 && row_offset < GRID_LINE_HEIGHT) {
+            // Row 8, first 3 scanlines (horizontal bar area):
+            // Check if vertical bar from row 7 extends down to connect
+            segment_on = (v_line_data & (1 << 7)) != 0;
+        }
+        
+        if (segment_on) {
+            int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+            int x_end = x_start + VERT_LINE_WIDTH;
             
-            if (v_line_data & (1 << grid_row)) {
-                int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                int x_end = x_start + VERT_LINE_WIDTH;
-                
-                if (x >= x_start && x < x_end) {
-                    return true;
-                }
+            if (x >= x_start && x < x_end) {
+                return true;
             }
         }
     }

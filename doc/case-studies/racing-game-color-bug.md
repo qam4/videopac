@@ -188,7 +188,7 @@ The emulator has multiple bugs affecting this game cartridge:
 
 2. **Collision Detection Bug (Both Games)**: Collision detection is not working in either game - player car doesn't collide with oncoming traffic in game 1, and cars don't collide with circuit walls in game 2. This indicates a systemic issue with the collision detection system.
 
-3. **Grid Rendering Bug (Game 2)**: The circuit shape in game 2 is malformed, suggesting issues with grid pattern generation or display.
+3. **Grid Rendering Bug (Game 2)**: ~~The circuit shape in game 2 is malformed, suggesting issues with grid pattern generation or display.~~ **FIXED** - The horizontal grid lines 0-7 were only reading 8 bits from registers C0-C7, but each line needs 9 segments. The 9th segment for each line is stored in register C8.
 
 4. **Input Handling Bug (Game 2)**: Both players respond to the same input, indicating a problem with input routing or player selection logic.
 
@@ -198,9 +198,9 @@ The emulator has multiple bugs affecting this game cartridge:
 
 **Status**: 
 - ✅ **Grid Color Bug (Bug #1)**: FIXED - Implemented hardware-accurate color mapping formulas
+- ✅ **Grid Rendering Bug (Bug #3)**: FIXED - Implemented correct 9-segment horizontal line handling
 - ❌ **Remaining bugs**: Require investigation of:
   - Collision detection system (affects both games)
-  - Grid pattern rendering
   - Input system
   - Sprite rendering (horizontal flip)
 
@@ -230,5 +230,49 @@ The emulator has multiple bugs affecting this game cartridge:
 - `src/vdc.cpp` - Color mapping implementation
 - `src/frontend_sdl.cpp`, `src/frontend_headless.cpp`, `src/main.cpp` - Palette mode updates
 - `tests/test_vdc.cpp`, `tests/test_utils.cpp` - Test updates for correct color formulas
+
+**Verification**: All 263 tests passing.
+
+## Resolution: Grid Rendering Bug (Game 2)
+
+**Root Cause**: The grid rendering implementation was treating register bytes as ROWS when they actually represent COLUMNS. The hardware specification is:
+- **Bytes go left to right (columns)**
+- **Bits go top to bottom (rows)**
+
+The o2doc documentation was misleading, describing bytes as representing "horizontal lines" (rows) when they actually represent columns.
+
+**Hardware Specification**:
+- 9 horizontal lines (bars), each with 9 segments
+- 10 vertical lines (bars), each with 8 segments
+- Creates 9×8 = 72 enclosed areas (boxes)
+
+**Correct Register Mapping**:
+- **Horizontal bars C0-C8**: Each byte represents a COLUMN (0-8), bits 0-7 represent ROWS (0-7)
+- **Horizontal bar row 8 (D0-D8)**: 9 bytes, bit 0 only - D0 bit 0 = column 0 row 8, etc.
+- **Vertical bars E0-E9**: Each byte represents a COLUMN (0-9), bits 0-7 represent ROWS (0-7)
+
+**Example**:
+- H00 = C0 bit 0 (column 0, row 0)
+- H10 = C0 bit 1 (column 0, row 1)
+- H01 = C1 bit 0 (column 1, row 0)
+- H80 = D0 bit 0 (column 0, row 8)
+
+**Fix Applied**: Updated `src/vdc.cpp` in both `render_grid()` and `is_grid_pixel_at()` functions:
+
+1. **Byte/Bit Interpretation**: Changed from treating bytes as rows to treating bytes as columns
+   - For horizontal bars: Loop through columns (0-8), check bit `grid_row` of byte `C0+col`
+   - For row 8: Check bit 0 of byte `D0+col`
+
+2. **Horizontal Segment Width**: Changed from 14 to 16 pixels to eliminate gaps between segments
+
+3. **Vertical Bar Extension**: Vertical bars at row 7 now extend down into row 8's horizontal bar area (first 3 scanlines) to create proper corner connections
+   - This is necessary because vertical bar registers only have 8 bits (rows 0-7) but there are 9 horizontal bars (rows 0-8)
+   - The hardware extends vertical bars downward to connect with the next horizontal bar
+   - Without this extension, there would be gaps at bottom corners where row 8 horizontal bars meet vertical bars
+
+**Result**: The racing circuit in game 2 (Autodrome) now renders with the correct shape and all corners connect properly without gaps.
+
+**Files Modified**:
+- `src/vdc.cpp` - Grid rendering implementation (render_grid and is_grid_pixel_at functions)
 
 **Verification**: All 263 tests passing.
