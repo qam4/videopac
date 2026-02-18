@@ -235,7 +235,9 @@ The emulator has multiple bugs affecting this game cartridge:
 
 ## Resolution: Grid Rendering Bug (Game 2)
 
-**Root Cause**: The grid rendering implementation was treating register bytes as ROWS when they actually represent COLUMNS. The hardware specification is:
+**Root Cause**: The grid rendering implementation was treating register bytes as ROWS when they actually represent COLUMNS. Additionally, vertical bars were not properly extending into the next row's horizontal bar area, causing gaps at corners.
+
+The hardware specification is:
 - **Bytes go left to right (columns)**
 - **Bits go top to bottom (rows)**
 
@@ -245,6 +247,7 @@ The o2doc documentation was misleading, describing bytes as representing "horizo
 - 9 horizontal lines (bars), each with 9 segments
 - 10 vertical lines (bars), each with 8 segments
 - Creates 9×8 = 72 enclosed areas (boxes)
+- Vertical bars must extend through the NEXT row's horizontal bar to create proper corner connections
 
 **Correct Register Mapping**:
 - **Horizontal bars C0-C8**: Each byte represents a COLUMN (0-8), bits 0-7 represent ROWS (0-7)
@@ -265,10 +268,10 @@ The o2doc documentation was misleading, describing bytes as representing "horizo
 
 2. **Horizontal Segment Width**: Changed from 14 to 16 pixels to eliminate gaps between segments
 
-3. **Vertical Bar Extension**: Vertical bars at row 7 now extend down into row 8's horizontal bar area (first 3 scanlines) to create proper corner connections
-   - This is necessary because vertical bar registers only have 8 bits (rows 0-7) but there are 9 horizontal bars (rows 0-8)
-   - The hardware extends vertical bars downward to connect with the next horizontal bar
-   - Without this extension, there would be gaps at bottom corners where row 8 horizontal bars meet vertical bars
+3. **Vertical Bar Extension**: Vertical bars now properly extend into the next row's horizontal bar area
+   - When rendering grid_row N, check if vertical bar at row N-1 should extend down
+   - This creates proper corner connections by overlapping vertical bars with horizontal bars
+   - Fixes gaps at corners, particularly visible at the inner rectangle's bottom-right corner
 
 **Result**: The racing circuit in game 2 (Autodrome) now renders with the correct shape and all corners connect properly without gaps.
 

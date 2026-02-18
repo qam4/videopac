@@ -605,6 +605,11 @@ void VDC::render_grid(int y) {
         // Render vertical grid lines
         // A vertical bar at row N renders from the start of row N through the
         // horizontal bar at row N+1 (first 3 scanlines of row N+1)
+        // 
+        // IMPORTANT: Vertical bars must extend through the NEXT row's horizontal bar
+        // to create proper corner connections. This means:
+        // - Vertical bar row 0 renders during grid_row 0 AND into grid_row 1's h-bar
+        // - Vertical bar row 7 renders during grid_row 7 AND into grid_row 8's h-bar
         for (int col = 0; col < 10; col++) {
             uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
             bool segment_on = false;
@@ -612,7 +617,15 @@ void VDC::render_grid(int y) {
             // Check which vertical bar segment should render at this scanline
             if (grid_row < 8) {
                 // Rows 0-7: Check bit for current row
+                // This renders the vertical bar for the full 24-scanline span of this row
                 segment_on = (v_line_data & (1 << grid_row)) != 0;
+                
+                // ALSO check if we need to render the PREVIOUS row's vertical bar
+                // extending down into this row's horizontal bar area (first 3 scanlines)
+                if (!segment_on && grid_row > 0 && row_offset < GRID_LINE_HEIGHT) {
+                    // Check if previous row's vertical bar extends down
+                    segment_on = (v_line_data & (1 << (grid_row - 1))) != 0;
+                }
             } else if (grid_row == 8 && row_offset < GRID_LINE_HEIGHT) {
                 // Row 8, first 3 scanlines (horizontal bar area):
                 // Check if vertical bar from row 7 extends down to connect
@@ -1648,6 +1661,9 @@ bool VDC::is_grid_pixel_at(int x, int y) const {
     // Vertical bars extend between horizontal bars, so they appear in multiple rows
     // Each byte E0-E9 represents a column, bits 0-7 represent rows
     // A vertical bar at row N extends through the horizontal bar at row N+1
+    //
+    // IMPORTANT: Vertical bars must extend through the NEXT row's horizontal bar
+    // to create proper corner connections.
     for (int col = 0; col < 10; col++) {
         uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
         bool segment_on = false;
@@ -1655,7 +1671,15 @@ bool VDC::is_grid_pixel_at(int x, int y) const {
         // Check which vertical bar segment should render at this position
         if (grid_row < 8) {
             // Rows 0-7: Check bit for current row
+            // This renders the vertical bar for the full 24-scanline span of this row
             segment_on = (v_line_data & (1 << grid_row)) != 0;
+            
+            // ALSO check if we need to render the PREVIOUS row's vertical bar
+            // extending down into this row's horizontal bar area (first 3 scanlines)
+            if (!segment_on && grid_row > 0 && row_offset < GRID_LINE_HEIGHT) {
+                // Check if previous row's vertical bar extends down
+                segment_on = (v_line_data & (1 << (grid_row - 1))) != 0;
+            }
         } else if (grid_row == 8 && row_offset < GRID_LINE_HEIGHT) {
             // Row 8, first 3 scanlines (horizontal bar area):
             // Check if vertical bar from row 7 extends down to connect
