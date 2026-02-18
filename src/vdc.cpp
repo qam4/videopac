@@ -897,16 +897,17 @@ void VDC::render_sprites(int y) {
         bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
         
         // Calculate sprite height and check if current scanline intersects sprite
-        int sprite_height = double_size ? 16 : 8;
+        // Normal sprites: 8 pattern rows × 2 scanlines per row = 16 scanlines
+        // Double-size sprites: 8 pattern rows × 4 scanlines per row = 32 scanlines
+        // Reference: Verified in o2em source (doc/vdc.c lines 502-509)
+        int sprite_height = double_size ? 32 : 16;
         if (y < sprite_y || y >= sprite_y + sprite_height) {
             continue;  // Scanline doesn't intersect this sprite
         }
         
         // Calculate which row of the sprite pattern to render
-        int sprite_row = y - sprite_y;
-        if (double_size) {
-            sprite_row /= 2;  // Each pattern row is rendered twice in double-size mode
-        }
+        // Each pattern row spans multiple scanlines
+        int sprite_row = (y - sprite_y) / (double_size ? 4 : 2);
         
         // Get sprite pattern byte for this row
         uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (sprite_num * 8) + sprite_row;
@@ -1866,16 +1867,17 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
         bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
         
         // Calculate sprite height and check if pixel is within sprite bounds
-        int sprite_height = double_size ? 16 : 8;
+        // Normal sprites: 8 pattern rows × 2 scanlines per row = 16 scanlines
+        // Double-size sprites: 8 pattern rows × 4 scanlines per row = 32 scanlines
+        // Reference: Verified in o2em source (doc/vdc.c lines 502-509)
+        int sprite_height = double_size ? 32 : 16;
         if (y < sprite_y || y >= sprite_y + sprite_height) {
             continue;
         }
         
         // Calculate which row of the sprite pattern to check
-        int sprite_row = y - sprite_y;
-        if (double_size) {
-            sprite_row /= 2;
-        }
+        // Each pattern row spans multiple scanlines
+        int sprite_row = (y - sprite_y) / (double_size ? 4 : 2);
         
         // Get sprite pattern byte for this row
         uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (sprite_num * 8) + sprite_row;

@@ -1133,7 +1133,10 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
             uint8 color_reg = vdc_state.registers[base + 2];
             
             // Extract color and flags from color register
-            uint8 color = (color_reg >> 3) & 0x07;
+            // Color is in bits 3-5, needs BGR→RGB conversion and high-intensity offset
+            uint8 color_bits = (color_reg >> 3) & 0x07;
+            // Sprite color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity
+            uint8 color = ((color_bits & 2) | ((color_bits & 1) << 2) | ((color_bits & 4) >> 2)) + 8;
             bool shift_full = (color_reg & 0x01) != 0;
             bool shift_even = (color_reg & 0x02) != 0;
             bool double_size = (color_reg & 0x04) != 0;
@@ -1143,7 +1146,7 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
             
             if (ImGui::TreeNode((void*)(intptr_t)i, "Sprite %d", i)) {
                 ImGui::Text("Position: X=%d Y=%d", x, y);
-                ImGui::Text("Color: %d", color);
+                ImGui::Text("Color: %d (raw bits: %d)", color, color_bits);
                 ImGui::Text("Size: %s", double_size ? "16x16" : "8x8");
                 ImGui::Text("Shift: %s", shift_full ? "Full" : (shift_even ? "Even" : "None"));
                 
@@ -1161,7 +1164,9 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
                     uint8 pattern = vdc_state.registers[pattern_base + row];
                     
                     for (int col = 0; col < 8; col++) {
-                        bool pixel_on = (pattern & (0x80 >> col)) != 0;
+                        // IMPORTANT: Sprites use LSB-first bit order (bit 0 = leftmost)
+                        // This is different from characters which use MSB-first (bit 7 = leftmost)
+                        bool pixel_on = (pattern & (0x01 << col)) != 0;
                         ImU32 pixel_color = pixel_on ? sprite_color : bg_color;
                         
                         ImVec2 p_min(canvas_pos.x + col * pixel_size, canvas_pos.y + row * pixel_size);

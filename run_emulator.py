@@ -70,6 +70,11 @@ def convert_screenshots():
 def run_sdl_mode(exe_path, bios_path, rom_path, region):
     """Run emulator in SDL mode with debugger."""
     print("Running in SDL mode...")
+    print()
+    print("Note: For Course de Voitures ROM:")
+    print("  - Press '1' for Game 1: Course de Voitures (road racing)")
+    print("  - Press '2' for Game 2: Autodrome (top-down circuit racing)")
+    print()
     
     cmd = [
         exe_path,
@@ -86,6 +91,7 @@ def run_sdl_mode(exe_path, bios_path, rom_path, region):
 def run_headless_mode(exe_path, bios_path, rom_path, region):
     """Run emulator in headless mode with screenshot capture."""
     print("Running in HEADLESS mode...")
+    print("Note: Pressing '2' to select Game 2 (Autodrome)")
     
     setup_screenshots_dir()
     
@@ -95,7 +101,7 @@ def run_headless_mode(exe_path, bios_path, rom_path, region):
         "--headless",
         "--screenshot", "1",
         "--frames", "10",
-        "--press-key", "1", "5",
+        "--press-key", "1", "5",  # Press '2' at frame 5 to select game 2
         "--debug",
         "--trace",
         "--bios", bios_path,
@@ -154,8 +160,9 @@ Examples:
     parser.add_argument(
         "rom",
         nargs="?",
-        default="roms/Satellite Attack (1981)(Philips)(EU).bin",
-        help="Path to ROM file (default: Satellite Attack)"
+        default="roms/Course de Voitures + Autodrome + Cryptogramme (1980)(Philips)(FR).bin",
+        # default="roms/Satellite Attack (1981)(Philips)(EU).bin",
+        help="Path to ROM file (default: Course de Voitures / Autodrome)"
     )
     
     parser.add_argument(
