@@ -3,6 +3,43 @@
 #include <iostream>
 #include <iomanip>
 
+// ============================================================================
+// IMPORTANT: Pattern Bit Ordering (Undocumented Hardware Behavior)
+// ============================================================================
+//
+// The Intel 8245 VDC uses DIFFERENT bit ordering for characters vs sprites:
+//
+// CHARACTERS: MSB-first (bit 7 = leftmost pixel, bit 0 = rightmost pixel)
+//   Example: Pattern byte 0b10110000
+//            Renders as: ██ ██    
+//                        ^       ^
+//                      bit 7   bit 0
+//
+// SPRITES: LSB-first (bit 0 = leftmost pixel, bit 7 = rightmost pixel)
+//   Example: Pattern byte 0b00001101
+//            Renders as: █ ██    
+//                        ^       ^
+//                      bit 0   bit 7
+//
+// This difference is NOT documented in:
+// - o2doc.md section 4.3.2 (only says "each bit controls one column")
+// - o2doc.md section 4.4 (no bit ordering mentioned for characters)
+// - Intel 8245 datasheet (no explicit bit ordering specification)
+//
+// Discovery:
+// - Bug observed in Course de Voitures: cars faced wrong direction
+// - Sprites were horizontally flipped when using MSB-first order
+// - Confirmed by examining o2em reference emulator (doc/vdc.c):
+//   * Line 477: Characters use (d1 & 0x80) with left shift (MSB-first)
+//   * Line 548: Sprites use (d1 & 0x01) with right shift (LSB-first)
+//
+// Implementation:
+// - render_characters(): Uses (pattern & (0x80 >> x))
+// - render_sprites(): Uses (pattern & (0x01 << x))
+// - is_character_pixel_at(): Uses (pattern & (0x80 >> x))
+// - is_sprite_pixel_at(): Uses (pattern & (0x01 << x))
+// ============================================================================
+
 namespace videopac {
 
 // Constructor
@@ -689,6 +726,10 @@ void VDC::render_characters(int y) {
             int screen_x = char_x + x;
             
             // Get bit from pattern (bit 7 = leftmost pixel)
+            // IMPORTANT: Characters use MSB-first bit order (bit 7 = leftmost, bit 0 = rightmost)
+            // This is DIFFERENT from sprites which use LSB-first order (bit 0 = leftmost)
+            // This bit ordering is NOT documented in o2doc or Intel 8245 datasheet
+            // Reference: Verified by comparing with o2em source (doc/vdc.c line 477)
             bool pixel_on = (pattern & (0x80 >> x)) != 0;
             
             // Draw pixel if it's on
@@ -882,9 +923,22 @@ void VDC::render_sprites(int y) {
                 }
             }
             
-            // Get bit from pattern (bit 7 = leftmost pixel)
+            // Get bit from pattern
+            // IMPORTANT: Sprites use LSB-first bit order (bit 0 = leftmost, bit 7 = rightmost)
+            // This is DIFFERENT from characters which use MSB-first order (bit 7 = leftmost)
+            // 
+            // This bit ordering difference is NOT documented in:
+            // - o2doc.md section 4.3.2 (only says "each bit controls one column")
+            // - Intel 8245 datasheet
+            // 
+            // Discovery process:
+            // 1. Bug observed: Cars in Course de Voitures faced wrong direction
+            // 2. Testing showed sprites were horizontally flipped with MSB-first order
+            // 3. Confirmed by examining o2em reference emulator (doc/vdc.c):
+            //    - Line 477: Characters use (d1 & 0x80) with left shift (MSB-first)
+            //    - Line 548: Sprites use (d1 & 0x01) with right shift (LSB-first)
             int pattern_x = double_size ? (x / 2) : x;
-            bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;
+            bool pixel_on = (pattern & (0x01 << pattern_x)) != 0;
             
             // Draw pixel if it's on (sprites are transparent where pattern bit is 0)
             if (pixel_on) {
@@ -1822,8 +1876,21 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
         }
         
         // Get bit from pattern
+        // IMPORTANT: Sprites use LSB-first bit order (bit 0 = leftmost, bit 7 = rightmost)
+        // This is DIFFERENT from characters which use MSB-first order (bit 7 = leftmost)
+        // 
+        // This bit ordering difference is NOT documented in:
+        // - o2doc.md section 4.3.2 (only says "each bit controls one column")
+        // - Intel 8245 datasheet
+        // 
+        // Discovery process:
+        // 1. Bug observed: Cars in Course de Voitures faced wrong direction
+        // 2. Testing showed sprites were horizontally flipped with MSB-first order
+        // 3. Confirmed by examining o2em reference emulator (doc/vdc.c):
+        //    - Line 477: Characters use (d1 & 0x80) with left shift (MSB-first)
+        //    - Line 548: Sprites use (d1 & 0x01) with right shift (LSB-first)
         int pattern_x = double_size ? (pixel_x / 2) : pixel_x;
-        bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;
+        bool pixel_on = (pattern & (0x01 << pattern_x)) != 0;
         
         if (pixel_on) {
             // Sprite color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity

@@ -200,8 +200,8 @@ The emulator has multiple bugs affecting this game cartridge:
 - ✅ **Grid Color Bug (Bug #1)**: FIXED - Implemented hardware-accurate color mapping formulas
 - ✅ **Grid Rendering Bug (Bug #2)**: FIXED - Implemented correct column-based byte layout with proper corner connections
 - ✅ **Input Handling Bug (Bug #3)**: FIXED - Corrected joystick direction mapping (active-low logic)
+- ✅ **Sprite Direction Bug (Bug #4)**: FIXED - Corrected sprite pattern bit order (LSB-first instead of MSB-first)
 - ❌ **Remaining bugs**: Require investigation of:
-  - Sprite Direction Bug (Bug #4) - Cars face wrong direction
   - Collision detection system (Bug #5) - Affects both games
 
 ## Resolution: Grid Color Bug
@@ -300,3 +300,63 @@ The o2doc documentation was misleading, describing bytes as representing "horizo
 - `tests/test_input.cpp` - Updated tests for correct active-low behavior
 
 **Verification**: All tests passing.
+
+## Resolution: Sprite Direction Bug (Game 2)
+
+**Root Cause**: Sprite pattern bits were being read in the wrong order. The emulator was reading sprite patterns from MSB to LSB (bit 7 = leftmost pixel), but the hardware actually reads them from LSB to MSB (bit 0 = leftmost pixel). This caused all sprites to be horizontally flipped.
+
+**Hardware Behavior - Undocumented Bit Ordering**:
+
+The Intel 8245 VDC uses DIFFERENT bit ordering for characters vs sprites:
+
+**Characters**: MSB-first (bit 7 = leftmost pixel, bit 0 = rightmost pixel)
+```
+Pattern byte: 0b10110000
+Renders as:   ██ ██    
+              ^       ^
+            bit 7   bit 0
+```
+
+**Sprites**: LSB-first (bit 0 = leftmost pixel, bit 7 = rightmost pixel)
+```
+Pattern byte: 0b00001101
+Renders as:   █ ██    
+              ^       ^
+            bit 0   bit 7
+```
+
+**Why This Matters**:
+- This explains why `/` and `\` characters in Satellite Attack display correctly (they use character rendering with MSB-first)
+- But car sprites in Course de Voitures faced the wrong direction (they use sprite rendering with LSB-first)
+
+**Documentation Status**:
+This bit ordering difference is NOT documented in:
+- o2doc.md section 4.3.2 (only says "each bit controls one column" for sprites)
+- o2doc.md section 4.4 (no bit ordering mentioned for characters)
+- Intel 8245 datasheet (no explicit bit ordering specification)
+
+**Discovery Process**:
+1. Bug observed: Cars in Course de Voitures faced opposite direction when moving
+2. Testing showed sprites were horizontally flipped when using MSB-first order
+3. Confirmed by examining o2em reference emulator source code (doc/vdc.c):
+   - Line 477: Characters use `(d1 & 0x80)` with left shift (MSB-first)
+   - Line 548: Sprites use `(d1 & 0x01)` with right shift (LSB-first)
+
+**Fix Applied**: Updated `src/vdc.cpp` in both `render_sprites()` and `is_sprite_pixel_at()` functions:
+
+Changed from:
+```cpp
+bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;  // MSB-first (wrong for sprites)
+```
+
+To:
+```cpp
+bool pixel_on = (pattern & (0x01 << pattern_x)) != 0;  // LSB-first (correct for sprites)
+```
+
+**Result**: Cars in game 2 (Autodrome) now face the correct direction when moving. Pressing left makes them face left, pressing right makes them face right.
+
+**Files Modified**:
+- `src/vdc.cpp` - Sprite pattern bit extraction with comprehensive documentation of this undocumented hardware behavior
+
+**Verification**: Tested with Course de Voitures game - sprites now render correctly.
