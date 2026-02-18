@@ -13,9 +13,15 @@ Multiple rendering and gameplay bugs affect both games in this cartridge. The pr
 ## Symptoms
 
 ### Game 1 (Course de Voitures - Road Racing)
-- **Observed**: Road segments appear dark red (RGB: 0xFF, 0x49, 0x49)
-- **Expected**: Road segments should appear white
-- **Affected Elements**: Grid-based road markings (vertical segments)
+1. **Grid Color Bug**
+   - **Observed**: Road segments appear dark red (RGB: 0xFF, 0x49, 0x49)
+   - **Expected**: Road segments should appear white
+   - **Affected Elements**: Grid-based road markings (vertical segments)
+
+2. **Collision Detection Bug**
+   - **Observed**: No collision between player car and oncoming traffic
+   - **Expected**: Collisions should be detected when cars overlap
+
 - **Unaffected**: Player car (red), timer text (blue), other UI elements
 
 ### Game 2 (Autodrome - Top-Down Circuit Racing)
@@ -178,21 +184,51 @@ constexpr Color PALETTE_NTSC[16] = {
 
 The emulator has multiple bugs affecting this game cartridge:
 
-1. **Primary Bug - Grid Color**: The emulator incorrectly renders color value 0x69 as red (color 9) when it should render as white. Since the ROM and BIOS are confirmed correct, this is an emulator bug in color interpretation, likely in the VDC register 0xA3 (background/grid color) handling or palette index calculation.
+1. **Primary Bug - Grid Color**: ~~The emulator incorrectly renders color value 0x69 as red (color 9) when it should render as white.~~ **FIXED** - Implemented correct color mapping formulas from hardware documentation. The issue was that the emulator was treating color register bits as direct palette indices instead of using the hardware's BGR→RGB conversion formulas.
 
-2. **Grid Rendering Bug**: The circuit shape in game 2 is malformed, suggesting issues with grid pattern generation or display.
+2. **Collision Detection Bug (Both Games)**: Collision detection is not working in either game - player car doesn't collide with oncoming traffic in game 1, and cars don't collide with circuit walls in game 2. This indicates a systemic issue with the collision detection system.
 
-3. **Input Handling Bug**: Both players respond to the same input, indicating a problem with input routing or player selection logic.
+3. **Grid Rendering Bug (Game 2)**: The circuit shape in game 2 is malformed, suggesting issues with grid pattern generation or display.
 
-4. **Sprite Direction Bug**: Sprites are horizontally mirrored (facing opposite direction), suggesting an issue with sprite pattern rendering or flip bit handling.
+4. **Input Handling Bug (Game 2)**: Both players respond to the same input, indicating a problem with input routing or player selection logic.
 
-5. **Collision Detection Bug**: Collision between sprites and grid elements is not working, indicating issues with the collision detection system.
+5. **Sprite Direction Bug (Game 2)**: Sprites are horizontally mirrored (facing opposite direction), suggesting an issue with sprite pattern rendering or flip bit handling.
 
-**Priority**: The grid color bug affects both games and is the most visible issue. The other bugs in game 2 make it unplayable.
+**Priority**: ~~The grid color bug affects both games and is the most visible issue.~~ The collision detection bug makes both games unplayable. The other bugs in game 2 compound the playability issues.
 
-**Status**: Bugs identified and documented. Root causes require investigation of:
-- VDC color handling (register 0xA3)
-- Grid pattern rendering
-- Input system
-- Sprite rendering (horizontal flip)
-- Collision detection system
+**Status**: 
+- ✅ **Grid Color Bug (Bug #1)**: FIXED - Implemented hardware-accurate color mapping formulas
+- ❌ **Remaining bugs**: Require investigation of:
+  - Collision detection system (affects both games)
+  - Grid pattern rendering
+  - Input system
+  - Sprite rendering (horizontal flip)
+
+## Resolution: Grid Color Bug
+
+**Root Cause**: The emulator was treating VDC color register bits as direct palette indices, but the hardware uses specific formulas to map BGR color bits to palette indices.
+
+**Fix Applied**: Implemented correct color mapping formulas (see `include/types.h` for documentation):
+
+1. **Grid/Background colors** (register 0xA3):
+   - Grid: `(color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)`
+   - Background: `((color & 0x38) >> 3) | (color & 0x80 ? 0 : 8)`
+
+2. **Sprite/Character colors**:
+   - Formula: `((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8`
+   - Reorders BGR bits to RGB and adds 8 for high-intensity palette
+
+3. **Palette System Refactoring**:
+   - Renamed `PaletteMode::NTSC/PAL` → `STANDARD/VIDEOPAC_PLUS`
+   - Both NTSC (8244) and PAL (8245) use the same color mappings
+   - Generated VP+ palette from standard palette using quantization formula
+
+**Result**: Register 0xA3 = 0x69 now correctly maps to palette index 9 (Bright Blue) instead of index 9 (Red). The grid/road segments in Course de Voitures now render as blue as expected.
+
+**Files Modified**:
+- `include/types.h` - Palette definitions and color formula documentation
+- `src/vdc.cpp` - Color mapping implementation
+- `src/frontend_sdl.cpp`, `src/frontend_headless.cpp`, `src/main.cpp` - Palette mode updates
+- `tests/test_vdc.cpp`, `tests/test_utils.cpp` - Test updates for correct color formulas
+
+**Verification**: All 263 tests passing.

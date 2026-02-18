@@ -408,7 +408,7 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
         file << "P6\n" << output_width << " " << output_height << "\n255\n";
         
         // Select palette based on configuration
-        const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
+        const Color* palette = (config_.palette_mode == PaletteMode::STANDARD) ? PALETTE_STANDARD : PALETTE_VIDEOPAC_PLUS;
         
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -431,7 +431,7 @@ void HeadlessFrontend::write_ppm(const std::string& filename, const uint8* frame
         file << "P6\n" << output_width << " " << output_height << "\n255\n";
         
         // Select palette based on configuration
-        const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
+        const Color* palette = (config_.palette_mode == PaletteMode::STANDARD) ? PALETTE_STANDARD : PALETTE_VIDEOPAC_PLUS;
         
         // Calculate horizontal scaling factor
         int h_scale = output_width / width;

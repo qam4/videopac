@@ -791,8 +791,8 @@ void SDLFrontend::update_texture() {
     for (int y = 0; y < FRAMEBUFFER_HEIGHT; y++) {
         for (int x = 0; x < FRAMEBUFFER_WIDTH; x++) {
             uint8 palette_index = framebuffer[y * FRAMEBUFFER_WIDTH + x];
-            // Use NTSC or PAL palette based on palette mode (not video standard)
-            const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
+            // Use Standard or Videopac+ palette based on palette mode
+            const Color* palette = (config_.palette_mode == PaletteMode::STANDARD) ? PALETTE_STANDARD : PALETTE_VIDEOPAC_PLUS;
             Color color = palette[palette_index % 16];
             
             int pixel_offset = (y * pitch) + (x * 3);
@@ -1136,8 +1136,8 @@ void SDLFrontend::dump_framebuffer(const std::string& filename) {
     for (int y = 0; y < FRAMEBUFFER_HEIGHT; y++) {
         for (int x = 0; x < FRAMEBUFFER_WIDTH; x++) {
             uint8 palette_index = framebuffer[y * FRAMEBUFFER_WIDTH + x];
-            // Use NTSC or PAL palette based on palette mode (not video standard)
-            const Color* palette = (config_.palette_mode == PaletteMode::NTSC) ? PALETTE_NTSC : PALETTE_PAL;
+            // Use Standard or Videopac+ palette based on palette mode
+            const Color* palette = (config_.palette_mode == PaletteMode::STANDARD) ? PALETTE_STANDARD : PALETTE_VIDEOPAC_PLUS;
             Color color = palette[palette_index % 16];
             file.put(color.r);
             file.put(color.g);

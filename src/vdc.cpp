@@ -270,25 +270,37 @@ void VDC::render_current_pixel() {
     // Reference: Requirements 12.1, 12.2, 12.3, 12.4
     
     // Start with background color
+    // Background color formula (see types.h for details)
+    // Formula: (color & 0x38) >> 3 | (color & 0x80 ? 0 : 8)
+    // Bits 3-5: BGR components, Bit 7: inverted luminance (0=bright, 1=dark)
     uint8 color_reg = state_.registers[VDCRegisters::COLOR];
-    uint8 bg_color = (color_reg >> 3) & 0x07;
+    uint8 bg_color = ((color_reg & 0x38) >> 3) | (color_reg & 0x80 ? 0 : 8);
     uint8 pixel_color = bg_color;
     
     // Check grid at this position (if enabled)
+    // Grid color formula (see types.h for details)
+    // Formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
+    // Bits 0-2: BGR components, Bit 6: luminance, Bit 7: inverted luminance
     if (state_.grid_enabled) {
-        uint8 grid_color = color_reg & 0x07;
         if (is_grid_pixel_at(x, y)) {
+            uint8 grid_color = (color_reg & 0x07) | ((color_reg & 0x40) >> 3) | (color_reg & 0x80 ? 0 : 8);
             pixel_color = grid_color;
         }
     }
     
     // Check characters at this position
+    // Character color formula (see types.h for details)
+    // Formula: ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8
+    // Reorders BGR bits to RGB and adds 8 for high-intensity palette
     uint8 char_color;
     if (is_character_pixel_at(x, y, char_color)) {
         pixel_color = char_color;
     }
     
     // Check sprites at this position (highest priority)
+    // Sprite color formula (see types.h for details)
+    // Formula: ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8
+    // Reorders BGR bits to RGB and adds 8 for high-intensity palette
     uint8 sprite_color;
     if (is_sprite_pixel_at(x, y, sprite_color)) {
         pixel_color = sprite_color;
@@ -392,9 +404,12 @@ void VDC::calculate_timing() {
 // During normal emulation, background rendering happens in render_current_pixel().
 // Reference: doc/o2doc.md section 4.9, doc/8245.md lines 440-470
 void VDC::render_background(int y) {
-    // Get background color from color register (bits 3-5)
+    // Get background color from color register
+    // Background color formula (see types.h for details)
+    // Formula: (color & 0x38) >> 3 | (color & 0x80 ? 0 : 8)
+    // Bits 3-5: BGR components, Bit 7: inverted luminance (0=bright, 1=dark)
     uint8 color_reg = state_.registers[VDCRegisters::COLOR];
-    uint8 bg_color = (color_reg >> 3) & 0x07;
+    uint8 bg_color = ((color_reg & 0x38) >> 3) | (color_reg & 0x80 ? 0 : 8);
     
     // Fill entire scanline with background color
     for (int x = 0; x < FRAMEBUFFER_WIDTH; x++) {
@@ -419,9 +434,12 @@ void VDC::render_grid(int y) {
         return;
     }
     
-    // Get grid color from color register (bits 0-2)
+    // Get grid color from color register
+    // Grid color formula (see types.h for details)
+    // Formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
+    // Bits 0-2: BGR components, Bit 6: luminance, Bit 7: inverted luminance
     uint8 color_reg = state_.registers[VDCRegisters::COLOR];
-    uint8 grid_color = color_reg & 0x07;
+    uint8 grid_color = (color_reg & 0x07) | ((color_reg & 0x40) >> 3) | (color_reg & 0x80 ? 0 : 8);
     
     // Check control register for grid modes
     uint8 control = state_.registers[VDCRegisters::CONTROL];
@@ -577,7 +595,9 @@ void VDC::render_characters(int y) {
         
         // Extract character attributes
         uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);  // 9-bit character pointer
-        uint8 color = ((char_attr >> 1) & 0x07) + 8;  // Bits 1-3: color (high-intensity for characters)
+        // Character color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity
+        uint8 cl = (char_attr >> 1) & 0x07;
+        uint8 color = ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8;
         
         // Characters are 8x7 (8 pixels wide, 7 lines tall, but stored as 8 bytes)
         // Check if current scanline intersects this character
@@ -684,7 +704,9 @@ void VDC::render_characters(int y) {
             
             // Extract character attributes
             uint16 char_ptr = char_ptr_low | ((char_attr & 0x01) << 8);
-            uint8 color = ((char_attr >> 1) & 0x07) + 8;  // High-intensity for characters
+            // Character color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity
+            uint8 cl = (char_attr >> 1) & 0x07;
+            uint8 color = ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8;
             
             // Check if current scanline intersects this character
             if (y < char_y || y >= char_y + 14) {
@@ -751,7 +773,9 @@ void VDC::render_sprites(int y) {
         
         // Extract sprite attributes from color register
         // Reference: doc/o2doc.md section 4.3.1
-        uint8 color = ((sprite_color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT) + 8;  // Sprites use high-intensity palette
+        uint8 sprite_color_bits = (sprite_color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT;
+        // Sprite color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity
+        uint8 color = ((sprite_color_bits & 2) | ((sprite_color_bits & 1) << 2) | ((sprite_color_bits & 4) >> 2)) + 8;
         bool double_size = (sprite_color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
         bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
         bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
@@ -928,7 +952,7 @@ void VDC::shift_audio_register() {
 // Character ROM data (64 characters, 8 bytes each = 512 bytes total)
 // Reference: doc/o2doc.md Appendix C
 // Character patterns from Intel 8245 VDC internal ROM
-// Source: O2EM emulator character set data
+// Source: Intel 8245 datasheet character set data
 const uint8 VDC::character_rom_[64 * 8] = {
     // Character 0: '0'
     0x7C,0xC6,0xC6,0xC6,0xC6,0xC6,0x7C,0x00,
@@ -1506,9 +1530,14 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
         uint8 char_attr = state_.registers[base_addr + 3];
         
         // Check if pixel is within character bounds
-        // Calculate how many rows to render based on o2em logic
+        // Character height calculation (see doc/reference/o2doc.md section 4.4)
+        // Characters can be "cut off" at the top based on Y position and pattern pointer alignment
+        // This calculates how many of the 8 pattern rows are actually visible
         int ypos_half = char_y / 2;
         int n = 8 - (ypos_half % 8) - (char_ptr_low % 8);
+        if (n < 3) {
+            n = n + 7;  // Minimum 3 rows, wraps around for very small values
+        }
         if (n < 3) {
             n = n + 7;
         }
@@ -1565,9 +1594,14 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
             int char_x = quad_x + (sub_char * 16);  // 8 pixels character + 8 pixels space
             int char_y = quad_y;  // All sub-characters use the quad's Y position
             
-            // Calculate how many rows to render based on o2em logic
+            // Character height calculation (see doc/reference/o2doc.md section 4.5)
+            // Characters can be "cut off" at the top based on Y position and pattern pointer alignment
+            // This calculates how many of the 8 pattern rows are actually visible
             int ypos_half = char_y / 2;
             int n = 8 - (ypos_half % 8) - (char_ptr_low % 8);
+            if (n < 3) {
+                n = n + 7;  // Minimum 3 rows, wraps around for very small values
+            }
             if (n < 3) {
                 n = n + 7;
             }
@@ -1602,7 +1636,9 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
             bool pixel_on = (pattern & (0x80 >> pixel_x)) != 0;
             
             if (pixel_on) {
-                color = ((char_attr >> 1) & 0x07) + 8;  // Characters use high-intensity palette
+                // Character color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity
+                uint8 cl = (char_attr >> 1) & 0x07;
+                color = ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8;
                 return true;
             }
         }
@@ -1671,7 +1707,8 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
         bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;
         
         if (pixel_on) {
-            color = sprite_color + 8;  // Sprites use high-intensity palette
+            // Sprite color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity
+            color = ((sprite_color & 2) | ((sprite_color & 1) << 2) | ((sprite_color & 4) >> 2)) + 8;
             return true;
         }
     }

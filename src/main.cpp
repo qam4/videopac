@@ -74,17 +74,17 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--region") == 0 && i + 1 < argc) {
             std::string region = argv[++i];
             if (region == "usa") {
-                // USA: NTSC timing (60Hz) + NTSC colors (red ship) - Odyssey 2
+                // USA: NTSC timing (60Hz) + Standard O2 palette - Odyssey 2
                 config.video_standard = VideoStandard::NTSC;
-                config.palette_mode = PaletteMode::NTSC;
+                config.palette_mode = PaletteMode::STANDARD;
             } else if (region == "europe") {
-                // Europe: PAL timing (50Hz) + PAL colors (blue ship) - Videopac G7000
+                // Europe: PAL timing (50Hz) + Standard O2 palette - Videopac G7000
                 config.video_standard = VideoStandard::PAL;
-                config.palette_mode = PaletteMode::PAL;
+                config.palette_mode = PaletteMode::STANDARD;
             } else if (region == "france") {
-                // France: PAL timing (50Hz) + NTSC colors (red ship) - C52 SECAM
+                // France: PAL timing (50Hz) + Standard O2 palette - C52 SECAM
                 config.video_standard = VideoStandard::PAL;
-                config.palette_mode = PaletteMode::NTSC;
+                config.palette_mode = PaletteMode::STANDARD;
             } else {
                 std::cerr << "Unknown region: " << region << " (valid: usa, europe, france)" << std::endl;
                 return 1;

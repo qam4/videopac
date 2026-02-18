@@ -42,8 +42,9 @@ TEST(VDCTest, SpriteRendering) {
     vdc.render_scanline();
     
     // Check that sprite pixel is rendered with high-intensity color
+    // BGR color 3 (0b011 = Blue+Green) → RGB via formula (see types.h): ((3&2)|((3&1)<<2)|((3&4)>>2))+8 = 14
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 11);  // Color 3 + 8 (high-intensity)
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 14);  // BGR 3 → RGB 6, +8 = 14 (Bright Yellow)
 }
 
 // Test double-size sprite
@@ -68,9 +69,10 @@ TEST(VDCTest, DoubleSizeSprite) {
     vdc.render_scanline();
     
     // Check that sprite is 16 pixels wide (double size) with high-intensity color
+    // BGR color 3 (0b011 = Blue+Green) → RGB via formula (see types.h): ((3&2)|((3&1)<<2)|((3&4)>>2))+8 = 14
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 11);  // Color 3 + 8 (high-intensity)
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 65], 11);  // Should extend to x+15
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 14);  // BGR 3 → RGB 6, +8 = 14 (Bright Yellow)
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 65], 14);  // Should extend to x+15
 }
 
 // Test grid rendering in different modes
@@ -93,8 +95,10 @@ TEST(VDCTest, GridRendering) {
     vdc.render_scanline();
     
     // Check that grid is rendered
+    // Grid color formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
+    // Color 5 (0b101): (5 & 0x07) | 0 | 8 = 13 (Bright Magenta)
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 10], 5);  // Grid starts at x=10
+    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 10], 13);  // Grid starts at x=10
 }
 
 // Test grid fill mode
@@ -118,9 +122,11 @@ TEST(VDCTest, GridFillMode) {
     vdc.render_scanline();
     
     // Check that vertical line is 16 pixels wide in fill mode
+    // Grid color formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
+    // Color 2 (0b010): (2 & 0x07) | 0 | 8 = 10 (Bright Green)
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 10], 2);
-    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 25], 2);  // Should extend 16 pixels
+    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 10], 10);
+    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 25], 10);  // Should extend 16 pixels
 }
 
 // Test collision detection between objects

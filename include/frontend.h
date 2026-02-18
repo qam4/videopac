@@ -52,7 +52,7 @@ struct FrontendConfig {
     
     FrontendConfig() 
         : video_standard(VideoStandard::NTSC)
-        , palette_mode(PaletteMode::NTSC)  // Default to NTSC palette
+        , palette_mode(PaletteMode::STANDARD)  // Default to Standard O2 palette
         , display_scale(2)
         , fullscreen(false)
         , vsync(true)

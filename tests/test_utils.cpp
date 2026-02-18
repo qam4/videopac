@@ -65,59 +65,64 @@ TEST(UtilsTest, ChecksumCalculation) {
 }
 
 TEST(TypesTest, ColorPalette) {
-    // Test 16-color RGBI palettes - Intel 8244/8245 VDC
-    // NTSC (8244) and PAL (8245) have different color mappings
+    // Test 16-color palettes
+    // Standard O2/Videopac palette (Intel 8244/8245) - same colors for all regions
+    // Videopac+ G7400 palette (EF9340/EF9341) - enhanced colors
     
-    // NTSC Palette - Color 1 = RED
-    EXPECT_EQ(PALETTE_NTSC[0].r, 0x00);  // 0: Black
-    EXPECT_EQ(PALETTE_NTSC[0].g, 0x00);
-    EXPECT_EQ(PALETTE_NTSC[0].b, 0x00);
+    // Standard Palette
+    EXPECT_EQ(PALETTE_STANDARD[0].r, 0x00);  // 0: Black
+    EXPECT_EQ(PALETTE_STANDARD[0].g, 0x00);
+    EXPECT_EQ(PALETTE_STANDARD[0].b, 0x00);
     
-    EXPECT_EQ(PALETTE_NTSC[1].r, 0xC6);  // 1: Dark Red (NTSC)
-    EXPECT_EQ(PALETTE_NTSC[1].g, 0x00);
-    EXPECT_EQ(PALETTE_NTSC[1].b, 0x08);
+    EXPECT_EQ(PALETTE_STANDARD[1].r, 0x08);  // 1: Dark Blue
+    EXPECT_EQ(PALETTE_STANDARD[1].g, 0x39);
+    EXPECT_EQ(PALETTE_STANDARD[1].b, 0xD6);
     
-    EXPECT_EQ(PALETTE_NTSC[4].r, 0x08);  // 4: Dark Blue (NTSC)
-    EXPECT_EQ(PALETTE_NTSC[4].g, 0x39);
-    EXPECT_EQ(PALETTE_NTSC[4].b, 0xD6);
+    EXPECT_EQ(PALETTE_STANDARD[2].r, 0x00);  // 2: Dark Green
+    EXPECT_EQ(PALETTE_STANDARD[2].g, 0x9C);
+    EXPECT_EQ(PALETTE_STANDARD[2].b, 0x18);
     
-    EXPECT_EQ(PALETTE_NTSC[7].r, 0xCE);  // 7: Grey
-    EXPECT_EQ(PALETTE_NTSC[7].g, 0xCE);
-    EXPECT_EQ(PALETTE_NTSC[7].b, 0xCE);
+    EXPECT_EQ(PALETTE_STANDARD[4].r, 0xC6);  // 4: Dark Red
+    EXPECT_EQ(PALETTE_STANDARD[4].g, 0x00);
+    EXPECT_EQ(PALETTE_STANDARD[4].b, 0x08);
+    
+    EXPECT_EQ(PALETTE_STANDARD[7].r, 0xCE);  // 7: Grey
+    EXPECT_EQ(PALETTE_STANDARD[7].g, 0xCE);
+    EXPECT_EQ(PALETTE_STANDARD[7].b, 0xCE);
     
     // High-intensity colors (8-15): Sprites/Characters
-    EXPECT_EQ(PALETTE_NTSC[8].r, 0x49);  // 8: Light Grey
-    EXPECT_EQ(PALETTE_NTSC[8].g, 0x49);
-    EXPECT_EQ(PALETTE_NTSC[8].b, 0x49);
+    EXPECT_EQ(PALETTE_STANDARD[8].r, 0x49);  // 8: Light Grey
+    EXPECT_EQ(PALETTE_STANDARD[8].g, 0x49);
+    EXPECT_EQ(PALETTE_STANDARD[8].b, 0x49);
     
-    EXPECT_EQ(PALETTE_NTSC[9].r, 0xFF);  // 9: Red (NTSC high-intensity)
-    EXPECT_EQ(PALETTE_NTSC[9].g, 0x49);
-    EXPECT_EQ(PALETTE_NTSC[9].b, 0x49);
+    EXPECT_EQ(PALETTE_STANDARD[9].r, 0x49);  // 9: Bright Blue
+    EXPECT_EQ(PALETTE_STANDARD[9].g, 0x49);
+    EXPECT_EQ(PALETTE_STANDARD[9].b, 0xFF);
     
-    EXPECT_EQ(PALETTE_NTSC[12].r, 0x49);  // 12: Blue (NTSC high-intensity)
-    EXPECT_EQ(PALETTE_NTSC[12].g, 0x49);
-    EXPECT_EQ(PALETTE_NTSC[12].b, 0xFF);
+    EXPECT_EQ(PALETTE_STANDARD[12].r, 0xFF);  // 12: Bright Red
+    EXPECT_EQ(PALETTE_STANDARD[12].g, 0x49);
+    EXPECT_EQ(PALETTE_STANDARD[12].b, 0x49);
     
-    EXPECT_EQ(PALETTE_NTSC[15].r, 0xFF);  // 15: White
-    EXPECT_EQ(PALETTE_NTSC[15].g, 0xFF);
-    EXPECT_EQ(PALETTE_NTSC[15].b, 0xFF);
+    EXPECT_EQ(PALETTE_STANDARD[15].r, 0xFF);  // 15: White
+    EXPECT_EQ(PALETTE_STANDARD[15].g, 0xFF);
+    EXPECT_EQ(PALETTE_STANDARD[15].b, 0xFF);
     
-    // PAL Palette - Color 1 = BLUE
-    EXPECT_EQ(PALETTE_PAL[1].r, 0x08);  // 1: Dark Blue (PAL)
-    EXPECT_EQ(PALETTE_PAL[1].g, 0x39);
-    EXPECT_EQ(PALETTE_PAL[1].b, 0xD6);
+    // Videopac+ Palette - quantized from Standard palette
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[1].r, 0x00);  // 1: Blue
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[1].g, 0x00);
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[1].b, 0xB6);
     
-    EXPECT_EQ(PALETTE_PAL[4].r, 0xC6);  // 4: Dark Red (PAL)
-    EXPECT_EQ(PALETTE_PAL[4].g, 0x00);
-    EXPECT_EQ(PALETTE_PAL[4].b, 0x08);
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[4].r, 0xB6);  // 4: Red
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[4].g, 0x00);
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[4].b, 0x00);
     
-    EXPECT_EQ(PALETTE_PAL[9].r, 0x49);  // 9: Blue (PAL high-intensity)
-    EXPECT_EQ(PALETTE_PAL[9].g, 0x49);
-    EXPECT_EQ(PALETTE_PAL[9].b, 0xFF);
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[9].r, 0x49);  // 9: Bright Blue
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[9].g, 0x49);
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[9].b, 0xFF);
     
-    EXPECT_EQ(PALETTE_PAL[12].r, 0xFF);  // 12: Red (PAL high-intensity)
-    EXPECT_EQ(PALETTE_PAL[12].g, 0x49);
-    EXPECT_EQ(PALETTE_PAL[12].b, 0x49);
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[12].r, 0xFF);  // 12: Bright Red
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[12].g, 0x49);
+    EXPECT_EQ(PALETTE_VIDEOPAC_PLUS[12].b, 0x49);
 }
 
 TEST(TypesTest, ResultType) {
