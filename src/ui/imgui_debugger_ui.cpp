@@ -1308,27 +1308,123 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
         ImGui::TreePop();
     }
     
-    // Grid control registers
+    // Grid control registers with visual representation
     if (ImGui::TreeNode("Grid Control")) {
-        ImGui::Text("Horizontal Grid Lines:");
-        for (int i = 0; i < 9; i++) {
-            uint8 grid_val = vdc_state.registers[0xC0 + i];
-            ImGui::Text("  Line %d (0x%02X): 0x%02X", i, 0xC0 + i, grid_val);
+        ImGui::TextWrapped("Grid layout: 9 rows x 9 columns of horizontal bars, 10 columns x 8 rows of vertical bars");
+        ImGui::TextWrapped("Bytes = COLUMNS (left to right), Bits = ROWS (top to bottom)");
+        ImGui::Separator();
+        
+        // Horizontal grid visualization
+        if (ImGui::TreeNode("Horizontal Bars (C0-C8, D0-D8)")) {
+            ImGui::Text("9 rows x 9 columns = 81 segments");
+            ImGui::Spacing();
+            
+            // Visual grid representation
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+            float cell_size = 16.0f;
+            
+            // Draw grid cells
+            for (int row = 0; row < 9; row++) {
+                for (int col = 0; col < 9; col++) {
+                    bool segment_on = false;
+                    
+                    if (row < 8) {
+                        // Rows 0-7: Check bit 'row' of register C0+col
+                        segment_on = (vdc_state.registers[0xC0 + col] & (1 << row)) != 0;
+                    } else {
+                        // Row 8: Check bit 0 of register D0+col
+                        segment_on = (vdc_state.registers[0xD0 + col] & 0x01) != 0;
+                    }
+                    
+                    ImVec2 p_min(canvas_pos.x + col * cell_size, canvas_pos.y + row * cell_size);
+                    ImVec2 p_max(p_min.x + cell_size, p_min.y + cell_size);
+                    
+                    ImU32 cell_color = segment_on ? IM_COL32(0, 150, 255, 255) : IM_COL32(40, 40, 40, 255);
+                    draw_list->AddRectFilled(p_min, p_max, cell_color);
+                    draw_list->AddRect(p_min, p_max, IM_COL32(80, 80, 80, 255));
+                }
+            }
+            
+            ImGui::Dummy(ImVec2(9 * cell_size, 9 * cell_size));
+            ImGui::Spacing();
+            
+            // Register values
+            ImGui::Text("Registers C0-C8 (rows 0-7):");
+            for (int i = 0; i < 9; i++) {
+                uint8 grid_val = vdc_state.registers[0xC0 + i];
+                ImGui::Text("  Col %d (0xC%X): 0x%02X  %c%c%c%c%c%c%c%c", 
+                           i, i, grid_val,
+                           (grid_val & 0x80) ? '1' : '0',
+                           (grid_val & 0x40) ? '1' : '0',
+                           (grid_val & 0x20) ? '1' : '0',
+                           (grid_val & 0x10) ? '1' : '0',
+                           (grid_val & 0x08) ? '1' : '0',
+                           (grid_val & 0x04) ? '1' : '0',
+                           (grid_val & 0x02) ? '1' : '0',
+                           (grid_val & 0x01) ? '1' : '0');
+            }
+            
+            ImGui::Spacing();
+            ImGui::Text("Registers D0-D8 (row 8, bit 0 only):");
+            for (int i = 0; i < 9; i++) {
+                uint8 grid_val = vdc_state.registers[0xD0 + i];
+                ImGui::Text("  Col %d (0xD%X): 0x%02X  [%c]", 
+                           i, i, grid_val,
+                           (grid_val & 0x01) ? '1' : '0');
+            }
+            
+            ImGui::TreePop();
         }
         
         ImGui::Separator();
-        ImGui::Text("Horizontal Grid Line 9:");
-        for (int i = 0; i < 9; i++) {
-            uint8 grid_val = vdc_state.registers[0xD0 + i];
-            ImGui::Text("  Segment %d (0x%02X): 0x%02X", i, 0xD0 + i, grid_val);
+        
+        // Vertical grid visualization
+        if (ImGui::TreeNode("Vertical Bars (E0-E9)")) {
+            ImGui::Text("10 columns x 8 rows = 80 segments");
+            ImGui::Spacing();
+            
+            // Visual grid representation
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+            float cell_size = 16.0f;
+            
+            // Draw grid cells
+            for (int row = 0; row < 8; row++) {
+                for (int col = 0; col < 10; col++) {
+                    bool segment_on = (vdc_state.registers[0xE0 + col] & (1 << row)) != 0;
+                    
+                    ImVec2 p_min(canvas_pos.x + col * cell_size, canvas_pos.y + row * cell_size);
+                    ImVec2 p_max(p_min.x + cell_size, p_min.y + cell_size);
+                    
+                    ImU32 cell_color = segment_on ? IM_COL32(0, 255, 150, 255) : IM_COL32(40, 40, 40, 255);
+                    draw_list->AddRectFilled(p_min, p_max, cell_color);
+                    draw_list->AddRect(p_min, p_max, IM_COL32(80, 80, 80, 255));
+                }
+            }
+            
+            ImGui::Dummy(ImVec2(10 * cell_size, 8 * cell_size));
+            ImGui::Spacing();
+            
+            // Register values
+            ImGui::Text("Registers E0-E9:");
+            for (int i = 0; i < 10; i++) {
+                uint8 grid_val = vdc_state.registers[0xE0 + i];
+                ImGui::Text("  Col %d (0xE%X): 0x%02X  %c%c%c%c%c%c%c%c", 
+                           i, (i < 10) ? i : (i - 10 + 'A'), grid_val,
+                           (grid_val & 0x80) ? '1' : '0',
+                           (grid_val & 0x40) ? '1' : '0',
+                           (grid_val & 0x20) ? '1' : '0',
+                           (grid_val & 0x10) ? '1' : '0',
+                           (grid_val & 0x08) ? '1' : '0',
+                           (grid_val & 0x04) ? '1' : '0',
+                           (grid_val & 0x02) ? '1' : '0',
+                           (grid_val & 0x01) ? '1' : '0');
+            }
+            
+            ImGui::TreePop();
         }
         
-        ImGui::Separator();
-        ImGui::Text("Vertical Grid Lines:");
-        for (int i = 0; i < 10; i++) {
-            uint8 grid_val = vdc_state.registers[0xE0 + i];
-            ImGui::Text("  Line %d (0x%02X): 0x%02X", i, 0xE0 + i, grid_val);
-        }
         ImGui::TreePop();
     }
     
