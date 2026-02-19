@@ -42,10 +42,10 @@ void MenuSystem::build_main_menu() {
     // File menu items
     main_menu_.push_back(MenuItem("Load BIOS", MenuAction::LoadBIOS));
     main_menu_.push_back(MenuItem("Load ROM", MenuAction::LoadROM));
-    main_menu_.push_back(MenuItem("Reset", MenuAction::Reset));
+    main_menu_.push_back(MenuItem("Reset (F5)", MenuAction::Reset));
 
     // Save state menu
-    MenuItem save_state_menu("Save State", MenuAction::SaveState);
+    MenuItem save_state_menu("Save State (F6=Slot 0)", MenuAction::SaveState);
     save_state_menu.has_submenu = true;
     for (int i = 0; i < 10; i++) {
         MenuItem slot_item("Slot " + std::to_string(i), MenuAction::SaveState);
@@ -55,7 +55,7 @@ void MenuSystem::build_main_menu() {
     main_menu_.push_back(save_state_menu);
 
     // Load state menu
-    MenuItem load_state_menu("Load State", MenuAction::LoadState);
+    MenuItem load_state_menu("Load State (F7=Slot 0)", MenuAction::LoadState);
     load_state_menu.has_submenu = true;
     for (int i = 0; i < 10; i++) {
         MenuItem slot_item("Slot " + std::to_string(i), MenuAction::LoadState);
