@@ -814,8 +814,128 @@ void ImGuiDebuggerUI::render_memory_panel() {
         return;
     }
     
-    // Get memory state from emulator
+    // Get memory and CPU state from emulator
     MemoryState mem_state = emulator_->get_memory_state();
+    CPUState cpu_state = emulator_->get_cpu_state();
+    
+    // Memory region tabs
+    static int selected_tab = 0;
+    if (ImGui::BeginTabBar("MemoryTabs")) {
+        if (ImGui::BeginTabItem("Internal RAM")) {
+            selected_tab = 0;
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("External RAM")) {
+            selected_tab = 1;
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Program Memory")) {
+            selected_tab = 2;
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+    
+    ImGui::Separator();
+    
+    // Render selected memory region
+    if (selected_tab == 0) {
+        render_internal_ram(cpu_state);
+    } else if (selected_tab == 1) {
+        render_external_ram(mem_state);
+    } else {
+        render_program_memory(mem_state);
+    }
+    
+    ImGui::End();
+}
+
+void ImGuiDebuggerUI::render_internal_ram(const CPUState& cpu_state) {
+    ImGui::Text("CPU Internal RAM (64 bytes, 0x00-0x3F)");
+    ImGui::Separator();
+    
+    // Display in 16 bytes per row
+    const int bytes_per_row = 16;
+    const int total_rows = 64 / bytes_per_row;  // 4 rows
+    
+    for (int row = 0; row < total_rows; row++) {
+        uint8 address = row * bytes_per_row;
+        
+        // Display address
+        ImGui::Text("0x%02X", address);
+        ImGui::SameLine();
+        
+        // Display hex values
+        for (int i = 0; i < bytes_per_row; i++) {
+            uint8 byte_addr = address + i;
+            uint8 value = cpu_state.ram[byte_addr];
+            
+            ImGui::Text("%02X", value);
+            if (i < bytes_per_row - 1) {
+                ImGui::SameLine();
+            }
+        }
+        
+        // Display ASCII representation
+        ImGui::SameLine();
+        ImGui::Text(" | ");
+        ImGui::SameLine();
+        for (int i = 0; i < bytes_per_row; i++) {
+            uint8 byte_addr = address + i;
+            uint8 value = cpu_state.ram[byte_addr];
+            char c = (value >= 32 && value < 127) ? value : '.';
+            ImGui::Text("%c", c);
+            if (i < bytes_per_row - 1) {
+                ImGui::SameLine();
+            }
+        }
+    }
+}
+
+void ImGuiDebuggerUI::render_external_ram(const MemoryState& mem_state) {
+    ImGui::Text("External RAM (128 bytes, mapped at 0xF000-0xF07F)");
+    ImGui::Separator();
+    
+    // Display in 16 bytes per row
+    const int bytes_per_row = 16;
+    const int total_rows = 128 / bytes_per_row;  // 8 rows
+    
+    for (int row = 0; row < total_rows; row++) {
+        uint8 address = row * bytes_per_row;
+        uint16 mapped_address = 0xF000 + address;
+        
+        // Display address
+        ImGui::Text("0x%04X", mapped_address);
+        ImGui::SameLine();
+        
+        // Display hex values
+        for (int i = 0; i < bytes_per_row; i++) {
+            uint8 byte_addr = address + i;
+            uint8 value = mem_state.external_ram[byte_addr];
+            
+            ImGui::Text("%02X", value);
+            if (i < bytes_per_row - 1) {
+                ImGui::SameLine();
+            }
+        }
+        
+        // Display ASCII representation
+        ImGui::SameLine();
+        ImGui::Text(" | ");
+        ImGui::SameLine();
+        for (int i = 0; i < bytes_per_row; i++) {
+            uint8 byte_addr = address + i;
+            uint8 value = mem_state.external_ram[byte_addr];
+            char c = (value >= 32 && value < 127) ? value : '.';
+            ImGui::Text("%c", c);
+            if (i < bytes_per_row - 1) {
+                ImGui::SameLine();
+            }
+        }
+    }
+}
+
+void ImGuiDebuggerUI::render_program_memory(const MemoryState& mem_state) {
     
     // Goto address functionality
     static char goto_buffer[16] = "";
@@ -1087,7 +1207,6 @@ void ImGuiDebuggerUI::render_memory_panel() {
     }
     
     ImGui::EndChild();
-    ImGui::End();
 }
 
 void ImGuiDebuggerUI::render_vdc_registers_panel() {

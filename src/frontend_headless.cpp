@@ -59,6 +59,9 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
         std::cout << "  ROM loaded: " << config.rom_path << std::endl;
     }
     
+    // Reset emulator after loading ROM (to match SDL frontend behavior)
+    emulator_->reset();
+    
     // Initialize debugger if enabled
     if (config.enable_debugger) {
         debugger_ = std::make_unique<Debugger>(emulator_.get());
@@ -237,6 +240,18 @@ void HeadlessFrontend::run() {
     }
     
     std::cout << std::endl;
+    
+    // Debug: Dump internal RAM values for debugging
+    CPUState final_cpu_state = emulator_->get_cpu_state();
+    std::cout << "\n=== Internal RAM Dump ===" << std::endl;
+    std::cout << "0x30 = 0x" << std::hex << std::setw(2) << std::setfill('0') 
+              << static_cast<int>(final_cpu_state.ram[0x30]) << std::endl;
+    std::cout << "0x31 = 0x" << std::hex << std::setw(2) << std::setfill('0') 
+              << static_cast<int>(final_cpu_state.ram[0x31]) << std::endl;
+    std::cout << "0x3E = 0x" << std::hex << std::setw(2) << std::setfill('0') 
+              << static_cast<int>(final_cpu_state.ram[0x3E]) << std::endl;
+    std::cout << "0x3F = 0x" << std::hex << std::setw(2) << std::setfill('0') 
+              << static_cast<int>(final_cpu_state.ram[0x3F]) << std::dec << std::endl;
 }
 
 void HeadlessFrontend::render_frame() {

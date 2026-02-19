@@ -43,6 +43,7 @@ SDLFrontend::SDLFrontend()
     , windowed_y_(0)
     , current_rom_name_("")
     , current_bios_name_("")
+    , disable_sdl_input_(false)
     , audio_write_pos_(0)
     , audio_read_pos_(0)
 {
@@ -261,6 +262,8 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
                 std::cerr << "Unknown trace level: " << config_.trace_level << ", using 'full'" << std::endl;
             }
             debugger_->set_trace_level(level);
+            // Disable trace limit in SDL mode to capture complete trace for debugging
+            debugger_->set_trace_limit(false);
         }
         
         // Set breakpoints from config
@@ -502,8 +505,38 @@ void SDLFrontend::toggle_fullscreen() {
 
 void SDLFrontend::run() {
     try {
+        // BUGFIX: Clear SDL event queue before starting main loop
+        // SDL can generate spurious events during window initialization (focus, mouse enter, etc.)
+        // or may have buffered keyboard events. Clear the queue to ensure clean start.
+        SDL_Event event;
+        int cleared_events = 0;
+        while (SDL_PollEvent(&event)) {
+            cleared_events++;
+        }
+        if (cleared_events > 0) {
+            std::cout << "Cleared " << cleared_events << " pending SDL events from initialization" << std::endl;
+        }
+        
         while (running_) {
             uint32 frame_start = SDL_GetTicks();
+            
+            // Check for scheduled key presses that should trigger this frame
+            if (!active_keys_.empty() || !config_.scheduled_keys.empty()) {
+                for (auto it = config_.scheduled_keys.begin(); it != config_.scheduled_keys.end(); ) {
+                    if (frame_count_ >= static_cast<uint32_t>(it->trigger_frame)) {
+                        // Trigger the key press
+                        InputHandler& input = emulator_->get_input_handler();
+                        VidKey key = static_cast<VidKey>(it->key_code);
+                        input.set_key_state(key, true);
+                        active_keys_.push_back({key, it->duration_frames});
+                        std::cout << "[Frame " << frame_count_ << "] Pressing key " 
+                                  << it->key_code << " for " << it->duration_frames << " frames" << std::endl;
+                        it = config_.scheduled_keys.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+            }
             
             // Process input
             process_input();
@@ -830,8 +863,42 @@ void SDLFrontend::process_audio() {
 }
 
 void SDLFrontend::process_input() {
+    // Process scheduled key presses first
+    if (!emulator_) {
+        return;
+    }
+    
+    InputHandler& input = emulator_->get_input_handler();
+    
+    // Update active keys and release expired ones
+    for (auto it = active_keys_.begin(); it != active_keys_.end(); ) {
+        it->frames_remaining--;
+        
+        if (it->frames_remaining <= 0) {
+            // Release the key
+            input.set_key_state(it->key, false);
+            std::cout << "[Frame " << frame_count_ << "] Releasing key " 
+                      << static_cast<int>(it->key) << std::endl;
+            it = active_keys_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    // If SDL input is disabled, skip SDL event processing
+    if (disable_sdl_input_) {
+        return;
+    }
+    
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        // Debug: Log all keyboard events
+        if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
+            const char* event_type = (event.type == SDL_KEYDOWN) ? "DOWN" : "UP";
+            std::cout << "SDL Key " << event_type << ": " << SDL_GetKeyName(event.key.keysym.sym) 
+                      << " (scancode: " << event.key.keysym.scancode << ")" << std::endl;
+        }
+        
         // Handle F12 (debugger toggle) BEFORE ImGui to prevent double-processing
         if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F12 && event.key.repeat == 0) {
             if (imgui_debugger_ui_) {
@@ -2220,6 +2287,17 @@ std::string SDLFrontend::handle_zip_file(const std::string& zip_path) {
     }
     
     return extracted_path;
+}
+
+void SDLFrontend::schedule_key_press(VidKey key, int trigger_frame, int duration_frames) {
+    ScheduledKey sk;
+    sk.key_code = static_cast<int>(key);
+    sk.trigger_frame = trigger_frame;
+    sk.duration_frames = duration_frames;
+    config_.scheduled_keys.push_back(sk);
+    std::cout << "Scheduled key " << sk.key_code 
+              << " to be pressed at frame " << trigger_frame 
+              << " for " << duration_frames << " frames" << std::endl;
 }
 
 } // namespace videopac

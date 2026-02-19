@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
             int key_code = std::atoi(argv[++i]);
             int frame = std::atoi(argv[++i]);
             scheduled_keys.push_back({key_code, frame});
-            force_headless = true;  // Key press implies headless
+            // Don't force headless - allow SDL mode with programmatic keys for testing
         } else if (strcmp(argv[i], "--debug") == 0) {
             config.enable_debugger = true;
         } else if (strncmp(argv[i], "--trace", 7) == 0) {
@@ -149,10 +149,21 @@ int main(int argc, char* argv[]) {
     config.breakpoints = breakpoints;
     config.watch_conditions = watch_conditions;
     
+    // Convert scheduled_keys to ScheduledKey format
+    for (const auto& sk : scheduled_keys) {
+        config.scheduled_keys.push_back(ScheduledKey(sk.key_code, sk.frame, 5));
+    }
+    
     // Determine which frontend to use
 #ifdef ENABLE_SDL
     if (!force_headless) {
         SDLFrontend frontend;
+        
+        // If there are scheduled keys, disable SDL input to avoid interference
+        if (!scheduled_keys.empty()) {
+            frontend.set_disable_sdl_input(true);
+            std::cout << "SDL input disabled - using scheduled key presses" << std::endl;
+        }
         
         if (!frontend.initialize(config)) {
             std::cerr << "Failed to initialize SDL frontend" << std::endl;

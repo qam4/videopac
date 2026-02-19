@@ -91,24 +91,32 @@ def run_sdl_mode(exe_path, bios_path, rom_path, region):
 def run_headless_mode(exe_path, bios_path, rom_path, region):
     """Run emulator in headless mode with screenshot capture."""
     print("Running in HEADLESS mode...")
-    print("Note: Pressing '2' to select Game 2 (Autodrome)")
+    print("Note: Pressing '1' to select Game 1 (Course de Voitures)")
+    print("Watching memory address 0x3F for writes")
+    print()
     
     setup_screenshots_dir()
     
     cmd = [
         exe_path,
-        "--region", region,
         "--headless",
         "--screenshot", "1",
-        "--frames", "10",
-        "--press-key", "1", "5",  # Press '2' at frame 5 to select game 2
+        "--frames", "200",
+        "--press-key", "1", "5",   # Press '1' at frame 5 to start game selection
+        "--press-key", "1", "10",  # Press '1' at frame 10 to select game level 1
         "--debug",
         "--trace",
         "--bios", bios_path,
         rom_path
     ]
     
-    subprocess.run(cmd)
+    print("Running emulator (output will appear below)...")
+    print("=" * 60)
+    result = subprocess.run(cmd)
+    print("=" * 60)
+    print(f"Emulator exited with code: {result.returncode}")
+    print()
+    
     convert_screenshots()
 
 
@@ -142,6 +150,7 @@ Examples:
   %(prog)s                                    # SDL mode with default ROM
   %(prog)s sdl                                # SDL mode with default ROM
   %(prog)s headless                           # Headless mode with default ROM
+  %(prog)s debug-scroll                       # Debug scroll issue
   %(prog)s dcv                                # DCV mode with default ROM
   %(prog)s sdl "roms/game.bin"                # SDL mode with custom ROM
   %(prog)s headless "roms/game.bin"           # Headless mode with custom ROM
@@ -153,8 +162,8 @@ Examples:
         "mode",
         nargs="?",
         default="sdl",
-        choices=["sdl", "headless", "hl", "dcv"],
-        help="Emulator mode: sdl (default), headless/hl, or dcv"
+        choices=["sdl", "headless", "hl", "debug-scroll", "dcv"],
+        help="Emulator mode: sdl (default), headless/hl, debug-scroll, or dcv"
     )
     
     parser.add_argument(
@@ -194,6 +203,8 @@ Examples:
     # Run appropriate mode
     if mode == "headless":
         run_headless_mode(exe_path, args.bios, args.rom, args.region)
+    elif mode == "debug-scroll":
+        run_debug_scroll_mode(exe_path, args.bios, args.rom, args.region)
     elif mode == "dcv":
         run_dcv_mode(exe_path, args.bios, args.rom, args.region)
     else:  # sdl

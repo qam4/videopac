@@ -142,6 +142,16 @@ This handbook uses anchor links for easy navigation. Click any section in the Ta
 
 This handbook provides comprehensive guidance for debugging the Videopac/Odyssey2 emulator. It covers systematic approaches, tools, and workflows for investigating BIOS, ROM files, and emulator behavior across all games in the Videopac library.
 
+**CRITICAL DEBUGGING PRINCIPLE:**
+
+**ROMs and BIOS files are commercial software that worked correctly on real hardware. When debugging issues, always assume the bug is in the EMULATOR, not in the ROM/BIOS.** These games were professionally developed, tested, and sold commercially. If a game exhibits incorrect behavior in the emulator but worked on real hardware, the emulator is not accurately reproducing the hardware behavior.
+
+This principle is fundamental to effective debugging:
+- Do not assume game code has bugs or missing initialization
+- Do not assume the BIOS has errors
+- Focus investigation on what the emulator is doing differently from real hardware
+- Compare emulator behavior against hardware specifications and real hardware traces when available
+
 **What This Handbook Covers:**
 - Debugging tools and their usage
 - Disassembly and trace analysis workflows

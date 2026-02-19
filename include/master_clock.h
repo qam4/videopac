@@ -40,6 +40,7 @@ public:
     double get_cpu_cycle_debt() const { return cpu_cycle_debt_; }
     double get_vdc_cycle_debt() const { return vdc_cycle_debt_; }
     uint32 get_frame_cycle_count() const { return frame_cycle_count_; }
+    uint32 get_cycles_per_frame() const { return cycles_per_frame_; }
     
 private:
     VideoStandard standard_;

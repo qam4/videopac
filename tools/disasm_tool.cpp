@@ -151,7 +151,7 @@ int main(int argc, char* argv[]) {
         // Format instruction
         std::string formatted = disasm.format_instruction(instr);
         
-        // Replace hex addresses with labels in the operand
+        // Replace hex addresses with labels in the operand ONLY (not in the address prefix)
         // Check if this instruction has a jump/call target
         if (instr.operand_text.find("0x") == 0) {
             uint16_t target = std::strtol(instr.operand_text.c_str() + 2, nullptr, 16);
@@ -168,10 +168,17 @@ int main(int argc, char* argv[]) {
             }
             
             // Replace the address with the label if we found one
+            // IMPORTANT: Only replace in the operand part (after the mnemonic), not the address prefix
             if (!label.empty()) {
-                size_t pos = formatted.find(instr.operand_text);
-                if (pos != std::string::npos) {
-                    formatted.replace(pos, instr.operand_text.length(), label);
+                // Find the operand text in the formatted string (it appears after the mnemonic)
+                // The format is: "0xADDR: OP OP  MNEMONIC OPERAND"
+                // We want to replace OPERAND, not the address prefix
+                size_t mnemonic_pos = formatted.find(instr.mnemonic);
+                if (mnemonic_pos != std::string::npos) {
+                    size_t operand_pos = formatted.find(instr.operand_text, mnemonic_pos);
+                    if (operand_pos != std::string::npos) {
+                        formatted.replace(operand_pos, instr.operand_text.length(), label);
+                    }
                 }
             }
         }

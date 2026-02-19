@@ -17,6 +17,16 @@ struct BreakpointConfig {
     BreakpointConfig(uint16 addr, const std::string& cond) : address(addr), condition(cond) {}
 };
 
+struct ScheduledKey {
+    int key_code;
+    int trigger_frame;
+    int duration_frames;
+    
+    ScheduledKey() : key_code(0), trigger_frame(0), duration_frames(5) {}
+    ScheduledKey(int key, int frame, int duration = 5) 
+        : key_code(key), trigger_frame(frame), duration_frames(duration) {}
+};
+
 struct FrontendConfig {
     // Video settings
     VideoStandard video_standard;
@@ -43,6 +53,7 @@ struct FrontendConfig {
     bool enable_profile;            // Enable performance profiling
     std::vector<BreakpointConfig> breakpoints;
     std::vector<std::string> watch_conditions;  // Condition-only breakpoints
+    std::vector<ScheduledKey> scheduled_keys;   // Scheduled key presses for testing
     
     // File paths
     std::string bios_path;

@@ -93,6 +93,9 @@ private:
     // Panel rendering methods
     void render_cpu_state_panel();
     void render_memory_panel();
+    void render_internal_ram(const videopac::CPUState& cpu_state);
+    void render_external_ram(const videopac::MemoryState& mem_state);
+    void render_program_memory(const videopac::MemoryState& mem_state);
     void render_vdc_registers_panel();
     void render_breakpoints_panel();
     void render_disassembly_panel();

@@ -47,6 +47,10 @@ public:
     void save_screenshot(const std::string& filename) override;
     void dump_framebuffer(const std::string& filename) override;
     
+    // Testing/debugging methods
+    void schedule_key_press(VidKey key, int trigger_frame, int duration_frames);
+    void set_disable_sdl_input(bool disable) { disable_sdl_input_ = disable; }
+    
 private:
     // SDL resources
     SDL_Window* window_;
@@ -103,6 +107,14 @@ private:
     // Current file names
     std::string current_rom_name_;
     std::string current_bios_name_;
+    
+    // Scheduled key presses (for testing/debugging)
+    struct KeyPress {
+        VidKey key;
+        int frames_remaining;
+    };
+    std::vector<KeyPress> active_keys_;
+    bool disable_sdl_input_;  // Flag to disable SDL input processing
     
     // Audio buffer
     std::vector<int16> audio_buffer_;
