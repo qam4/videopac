@@ -44,7 +44,9 @@ TEST(VDCTest, SpriteRendering) {
     // Check that sprite pixel is rendered with high-intensity color
     // BGR color 3 (0b011 = Blue+Green) → RGB via formula (see types.h): ((3&2)|((3&1)<<2)|((3&4)>>2))+8 = 14
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 14);  // BGR 3 → RGB 6, +8 = 14 (Bright Yellow)
+    // Sprite uses LSB-first bit order, so bit 0 (0x80 & 0x01 = 0) is leftmost pixel = no pixel at x=50
+    // First pixel is at x=57 (bit 7 of pattern 0x80)
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 57], 14);  // BGR 3 → RGB 6, +8 = 14 (Bright Yellow)
 }
 
 // Test double-size sprite
@@ -312,21 +314,15 @@ TEST(VDCTest, BothSpritesGetCollisionBits) {
     advance_to_scanline(vdc, 50);
     vdc.render_scanline();
     
-    // Read collision register - BOTH sprite bits should be set
+    // Read collision register
+    // When both sprites are enabled and collide, each reports the OTHER sprite
+    // So we should see BOTH bits set (sprite 0 reports sprite 1, sprite 1 reports sprite 0)
     uint8 collision = vdc.read_register(VDCRegisters::COLLISION);
     
-    // Debug output
-    if ((collision & CollisionBits::SPRITE0) == 0) {
-        std::cout << "ERROR: Sprite 0 collision bit NOT set! collision=0x" 
-                  << std::hex << (int)collision << std::dec << std::endl;
-    }
-    if ((collision & CollisionBits::SPRITE1) == 0) {
-        std::cout << "ERROR: Sprite 1 collision bit NOT set! collision=0x" 
-                  << std::hex << (int)collision << std::dec << std::endl;
-    }
-    
-    EXPECT_EQ(collision & CollisionBits::SPRITE0, CollisionBits::SPRITE0) << "Sprite 0 collision bit should be set";
-    EXPECT_EQ(collision & CollisionBits::SPRITE1, CollisionBits::SPRITE1) << "Sprite 1 collision bit should be set";
+    // Both bits should be set due to bidirectional reporting
+    EXPECT_EQ(collision & (CollisionBits::SPRITE0 | CollisionBits::SPRITE1), 
+              CollisionBits::SPRITE0 | CollisionBits::SPRITE1) 
+        << "Both sprite collision bits should be set when both are enabled and colliding";
 }
 
 // Test sprite vs character collision - both bits should be set
@@ -358,13 +354,14 @@ TEST(VDCTest, SpriteCharacterCollisionBothBitsSet) {
     advance_to_scanline(vdc, 50);
     vdc.render_scanline();
     
-    // Read collision register - BOTH sprite 0 and character bits should be set
+    // Read collision register
+    // When both sprite and character are enabled and collide, each reports the OTHER
+    // So we should see BOTH bits set (sprite reports character, character reports sprite)
     uint8 collision = vdc.read_register(VDCRegisters::COLLISION);
     
-    EXPECT_EQ(collision & CollisionBits::SPRITE0, CollisionBits::SPRITE0) 
-        << "Sprite 0 collision bit should be set when colliding with character";
-    EXPECT_EQ(collision & CollisionBits::CHARACTERS, CollisionBits::CHARACTERS) 
-        << "Character collision bit should be set when colliding with sprite";
+    EXPECT_EQ(collision & (CollisionBits::SPRITE0 | CollisionBits::CHARACTERS), 
+              CollisionBits::SPRITE0 | CollisionBits::CHARACTERS) 
+        << "Both sprite and character collision bits should be set when both are enabled and colliding";
 }
 
 // Test collision register auto-clear on read

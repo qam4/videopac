@@ -989,22 +989,23 @@ void VDC::detect_collisions(int y) {
     uint8 object_buffer[FRAMEBUFFER_WIDTH];
     std::memset(object_buffer, 0, sizeof(object_buffer));
 
-    // Track grid objects first (lowest priority)
-    if (collision_enable & (CollisionBits::VERT_GRID | CollisionBits::HORIZ_GRID)) {
-        track_grid_objects(y, object_buffer, collision_enable);
-    }
-
-    // Track character objects
-    if (collision_enable & CollisionBits::CHARACTERS) {
-        track_character_objects(y, object_buffer, collision_enable);
-    }
-
-    // Track sprite objects (highest priority)
+    // IMPORTANT: Track ALL objects, not just enabled ones!
+    // The collision_enable mask determines which objects we're asking about,
+    // but ALL objects participate in collision detection.
+    // Example: If tracking sprite 0 (enable=0x01), and sprite 0 collides with sprite 1,
+    // we need sprite 1 to be in the object_buffer to detect the collision.
+    
+    // Always track grid objects (so sprites/characters can collide with them)
+    track_grid_objects(y, object_buffer, collision_enable);
+    
+    // Always track character objects (so sprites can collide with them)
+    track_character_objects(y, object_buffer, collision_enable);
+    
+    // Track ALL sprite objects (not just enabled ones)
+    // This is necessary because if we're tracking sprite 0, we need to know
+    // where sprite 1 is to detect collisions between them
     for (int sprite_num = 0; sprite_num < 4; sprite_num++) {
-        uint8 sprite_bit = (1 << sprite_num);
-        if (collision_enable & sprite_bit) {
-            track_sprite_object(y, sprite_num, object_buffer, collision_enable);
-        }
+        track_sprite_object(y, sprite_num, object_buffer, collision_enable);
     }
 
     // The collision bits are accumulated during the frame
@@ -1230,37 +1231,53 @@ void VDC::track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable
     const int GRID_START_X = 10;
     const int GRID_COL_WIDTH = 16;
     const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
+    
+    bool h_grid_enabled = (collision_enable & CollisionBits::HORIZ_GRID) != 0;
+    bool v_grid_enabled = (collision_enable & CollisionBits::VERT_GRID) != 0;
 
     // Track horizontal grid lines
-    if ((collision_enable & CollisionBits::HORIZ_GRID) && y >= GRID_START_Y) {
+    if (y >= GRID_START_Y) {
         int y_offset = y - GRID_START_Y;
         int grid_row = y_offset / GRID_ROW_HEIGHT;
         int row_offset = y_offset % GRID_ROW_HEIGHT;
 
         if (grid_row < 9 && row_offset < GRID_LINE_HEIGHT) {
-            uint8 h_line_data;
-            if (grid_row < 8) {
-                h_line_data = state_.registers[VDCRegisters::GRID_H_BASE + grid_row];
-            } else {
-                h_line_data = 0;
-                for (int col = 0; col < 9; col++) {
-                    if (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) {
-                        h_line_data |= (1 << col);
-                    }
-                }
-            }
-
+            // Loop through columns (0-8) and check if segment at this row is enabled
+            // Grid uses column-based layout: bytes = columns, bits = rows
+            // This matches the rendering logic in render_grid()
             for (int col = 0; col < 9; col++) {
-                if (h_line_data & (1 << col)) {
+                bool segment_on = false;
+                
+                if (grid_row < 8) {
+                    // Rows 0-7: Check bit grid_row of byte C0+col
+                    segment_on = (state_.registers[VDCRegisters::GRID_H_BASE + col] & (1 << grid_row)) != 0;
+                } else {
+                    // Row 8: Check bit 0 of byte D0+col
+                    segment_on = (state_.registers[VDCRegisters::GRID_H9_BASE + col] & 0x01) != 0;
+                }
+                
+                if (segment_on) {
                     int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                    int x_end = x_start + 14;
+                    int x_end = x_start + 16;  // Match rendering code (was 14, causing 2-pixel gap)
 
                     for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
                         // Check for collision with existing objects
                         if (object_buffer[x] != 0) {
-                            state_.collision_state |= CollisionBits::HORIZ_GRID;
-                            state_.collision_detected = true;
+                            // Check if ANY enabled object is involved in this collision
+                            uint8 enabled_objects_in_collision = object_buffer[x] & collision_enable;
+                            
+                            if (h_grid_enabled) {
+                                // Horizontal grid is enabled, so report what it collided with
+                                state_.collision_state |= object_buffer[x];
+                                state_.collision_detected = true;
+                            } else if (enabled_objects_in_collision != 0) {
+                                // Grid is not enabled, but it's colliding with an enabled object
+                                // So report the grid to the enabled object
+                                state_.collision_state |= CollisionBits::HORIZ_GRID;
+                                state_.collision_detected = true;
+                            }
                         }
+                        // Always add grid to buffer (for other objects to collide with)
                         object_buffer[x] |= CollisionBits::HORIZ_GRID;
                     }
                 }
@@ -1269,22 +1286,71 @@ void VDC::track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable
     }
 
     // Track vertical grid lines
-    if ((collision_enable & CollisionBits::VERT_GRID) && y >= GRID_START_Y) {
+    if (y >= GRID_START_Y) {
         int y_offset = y - GRID_START_Y;
         int grid_row = y_offset / GRID_ROW_HEIGHT;
+        int row_offset = y_offset % GRID_ROW_HEIGHT;
 
         if (grid_row < 8) {
             for (int col = 0; col < 10; col++) {
                 uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+                bool segment_on = false;
+                
+                // Check if vertical bar at current row is enabled
+                segment_on = (v_line_data & (1 << grid_row)) != 0;
+                
+                // ALSO check if previous row's vertical bar extends down into this row's h-bar area
+                if (!segment_on && grid_row > 0 && row_offset < GRID_LINE_HEIGHT) {
+                    segment_on = (v_line_data & (1 << (grid_row - 1))) != 0;
+                }
 
-                if (v_line_data & (1 << grid_row)) {
+                if (segment_on) {
                     int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
                     int x_end = x_start + VERT_LINE_WIDTH;
 
                     for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
                         if (object_buffer[x] != 0) {
-                            state_.collision_state |= CollisionBits::VERT_GRID;
-                            state_.collision_detected = true;
+                            // Check if ANY enabled object is involved in this collision
+                            uint8 enabled_objects_in_collision = object_buffer[x] & collision_enable;
+                            
+                            if (v_grid_enabled) {
+                                // Vertical grid is enabled, so report what it collided with
+                                state_.collision_state |= object_buffer[x];
+                                state_.collision_detected = true;
+                            } else if (enabled_objects_in_collision != 0) {
+                                // Grid is not enabled, but it's colliding with an enabled object
+                                // So report the grid to the enabled object
+                                state_.collision_state |= CollisionBits::VERT_GRID;
+                                state_.collision_detected = true;
+                            }
+                        }
+                        // Always add grid to buffer (for other objects to collide with)
+                        object_buffer[x] |= CollisionBits::VERT_GRID;
+                    }
+                }
+            }
+        } else if (grid_row == 8 && row_offset < GRID_LINE_HEIGHT) {
+            // Row 8, first 3 scanlines (horizontal bar area):
+            // Check if vertical bar from row 7 extends down to connect
+            for (int col = 0; col < 10; col++) {
+                uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
+                bool segment_on = (v_line_data & (1 << 7)) != 0;
+                
+                if (segment_on) {
+                    int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                    int x_end = x_start + VERT_LINE_WIDTH;
+
+                    for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                        if (object_buffer[x] != 0) {
+                            uint8 enabled_objects_in_collision = object_buffer[x] & collision_enable;
+                            
+                            if (v_grid_enabled) {
+                                state_.collision_state |= object_buffer[x];
+                                state_.collision_detected = true;
+                            } else if (enabled_objects_in_collision != 0) {
+                                state_.collision_state |= CollisionBits::VERT_GRID;
+                                state_.collision_detected = true;
+                            }
                         }
                         object_buffer[x] |= CollisionBits::VERT_GRID;
                     }
@@ -1294,7 +1360,7 @@ void VDC::track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable
     }
 
     // Track dot grid
-    if ((collision_enable & CollisionBits::HORIZ_GRID) && dot_mode && y >= GRID_START_Y) {
+    if (dot_mode && y >= GRID_START_Y) {
         int y_offset = y - GRID_START_Y;
         int grid_row = y_offset / GRID_ROW_HEIGHT;
         int row_offset = y_offset % GRID_ROW_HEIGHT;
@@ -1306,9 +1372,21 @@ void VDC::track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable
 
                 for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
                     if (object_buffer[x] != 0) {
-                        state_.collision_state |= CollisionBits::HORIZ_GRID;
-                        state_.collision_detected = true;
+                        // Check if ANY enabled object is involved in this collision
+                        uint8 enabled_objects_in_collision = object_buffer[x] & collision_enable;
+                        
+                        if (h_grid_enabled) {
+                            // Horizontal grid is enabled, so report what it collided with
+                            state_.collision_state |= object_buffer[x];
+                            state_.collision_detected = true;
+                        } else if (enabled_objects_in_collision != 0) {
+                            // Grid is not enabled, but it's colliding with an enabled object
+                            // So report the grid to the enabled object
+                            state_.collision_state |= CollisionBits::HORIZ_GRID;
+                            state_.collision_detected = true;
+                        }
                     }
+                    // Always add grid to buffer (for other objects to collide with)
                     object_buffer[x] |= CollisionBits::HORIZ_GRID;
                 }
             }
@@ -1318,12 +1396,13 @@ void VDC::track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable
 
 // Collision tracking helper: Track character objects
 // Reference: doc/o2doc.md section 4.8
-void VDC::track_character_objects(int y, uint8* object_buffer, uint8 /* collision_enable */) {
+void VDC::track_character_objects(int y, uint8* object_buffer, uint8 collision_enable) {
     if (!state_.display_enabled) {
         return;
     }
 
     bool char_to_char_collision = false;
+    bool is_enabled = (collision_enable & CollisionBits::CHARACTERS) != 0;
 
     // Track single characters
     for (int char_num = 0; char_num < 12; char_num++) {
@@ -1359,14 +1438,26 @@ void VDC::track_character_objects(int y, uint8* object_buffer, uint8 /* collisio
             if (pixel_on) {
                 // Check for collision with existing objects
                 if (object_buffer[screen_x] != 0) {
-                    state_.collision_state |= CollisionBits::CHARACTERS;
-                    state_.collision_detected = true;
+                    // Check if ANY enabled object is involved in this collision
+                    uint8 enabled_objects_in_collision = object_buffer[screen_x] & collision_enable;
+                    
+                    if (is_enabled) {
+                        // Characters are enabled, so report what they collided with
+                        state_.collision_state |= object_buffer[screen_x];
+                        state_.collision_detected = true;
+                    } else if (enabled_objects_in_collision != 0) {
+                        // Characters not enabled, but colliding with an enabled object
+                        // So report the character to the enabled object
+                        state_.collision_state |= CollisionBits::CHARACTERS;
+                        state_.collision_detected = true;
+                    }
 
                     // Check for character-to-character collision
                     if (object_buffer[screen_x] & CollisionBits::CHARACTERS) {
                         char_to_char_collision = true;
                     }
                 }
+                // Always add character to buffer (for other objects to collide with)
                 object_buffer[screen_x] |= CollisionBits::CHARACTERS;
             }
         }
@@ -1414,13 +1505,25 @@ void VDC::track_character_objects(int y, uint8* object_buffer, uint8 /* collisio
 
                 if (pixel_on) {
                     if (object_buffer[screen_x] != 0) {
-                        state_.collision_state |= CollisionBits::CHARACTERS;
-                        state_.collision_detected = true;
+                        // Check if ANY enabled object is involved in this collision
+                        uint8 enabled_objects_in_collision = object_buffer[screen_x] & collision_enable;
+                        
+                        if (is_enabled) {
+                            // Characters are enabled, so report what they collided with
+                            state_.collision_state |= object_buffer[screen_x];
+                            state_.collision_detected = true;
+                        } else if (enabled_objects_in_collision != 0) {
+                            // Characters not enabled, but colliding with an enabled object
+                            // So report the character to the enabled object
+                            state_.collision_state |= CollisionBits::CHARACTERS;
+                            state_.collision_detected = true;
+                        }
 
                         if (object_buffer[screen_x] & CollisionBits::CHARACTERS) {
                             char_to_char_collision = true;
                         }
                     }
+                    // Always add character to buffer (for other objects to collide with)
                     object_buffer[screen_x] |= CollisionBits::CHARACTERS;
                 }
             }
@@ -1436,7 +1539,7 @@ void VDC::track_character_objects(int y, uint8* object_buffer, uint8 /* collisio
 
 // Collision tracking helper: Track sprite object
 // Reference: doc/o2doc.md section 4.8
-void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8 /* collision_enable */) {
+void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8 collision_enable) {
     if (!state_.display_enabled) {
         return;
     }
@@ -1450,21 +1553,25 @@ void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8
     bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
     bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
 
-    int sprite_height = double_size ? 16 : 8;
+    // Use correct sprite height (same as rendering code)
+    // Normal sprites: 8 pattern rows × 2 scanlines per row = 16 scanlines
+    // Double-size sprites: 8 pattern rows × 4 scanlines per row = 32 scanlines
+    int sprite_height = double_size ? 32 : 16;
     if (y < sprite_y || y >= sprite_y + sprite_height) {
         return;
     }
 
-    int sprite_row = y - sprite_y;
-    if (double_size) {
-        sprite_row /= 2;
-    }
+    // Calculate which row of the sprite pattern (same as rendering code)
+    int sprite_row = (y - sprite_y) / (double_size ? 4 : 2);
 
     uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (sprite_num * 8) + sprite_row;
     uint8 pattern = state_.registers[pattern_addr];
 
     uint8 sprite_bit = (1 << sprite_num);
     int sprite_width = double_size ? 16 : 8;
+    
+    // Check if this sprite is enabled for collision tracking
+    bool is_enabled = (collision_enable & sprite_bit) != 0;
 
     for (int x = 0; x < sprite_width; x++) {
         int screen_x = sprite_x + x;
@@ -1483,39 +1590,28 @@ void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8
         }
 
         int pattern_x = double_size ? (x / 2) : x;
-        bool pixel_on = (pattern & (0x80 >> pattern_x)) != 0;
+        // Use LSB-first bit order for sprites (same as rendering code)
+        bool pixel_on = (pattern & (0x01 << pattern_x)) != 0;
 
         if (pixel_on) {
             // Check for collision with existing objects
             if (object_buffer[screen_x] != 0) {
-                // Set collision bit for current sprite
-                state_.collision_state |= sprite_bit;
-                state_.collision_detected = true;
+                // Check if ANY enabled object is involved in this collision
+                // If this sprite is enabled, or if any object in the buffer is enabled
+                uint8 enabled_objects_in_collision = object_buffer[screen_x] & collision_enable;
                 
-                // Also set collision bits for any other objects at this pixel
-                // This ensures both objects in a collision get their bits set
-                
-                // Check for other sprites
-                for (int other_sprite = 0; other_sprite < 4; other_sprite++) {
-                    uint8 other_bit = (1 << other_sprite);
-                    if (object_buffer[screen_x] & other_bit) {
-                        state_.collision_state |= other_bit;
-                    }
-                }
-                
-                // Check for characters
-                if (object_buffer[screen_x] & CollisionBits::CHARACTERS) {
-                    state_.collision_state |= CollisionBits::CHARACTERS;
-                }
-                
-                // Check for grid objects
-                if (object_buffer[screen_x] & CollisionBits::VERT_GRID) {
-                    state_.collision_state |= CollisionBits::VERT_GRID;
-                }
-                if (object_buffer[screen_x] & CollisionBits::HORIZ_GRID) {
-                    state_.collision_state |= CollisionBits::HORIZ_GRID;
+                if (is_enabled) {
+                    // This sprite is enabled, so report what it collided with
+                    state_.collision_state |= object_buffer[screen_x];
+                    state_.collision_detected = true;
+                } else if (enabled_objects_in_collision != 0) {
+                    // This sprite is not enabled, but it's colliding with an enabled object
+                    // So report this sprite to the enabled object
+                    state_.collision_state |= sprite_bit;
+                    state_.collision_detected = true;
                 }
             }
+            // Always add this sprite to the buffer (for other objects to collide with)
             object_buffer[screen_x] |= sprite_bit;
         }
     }

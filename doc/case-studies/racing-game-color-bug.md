@@ -201,8 +201,7 @@ The emulator has multiple bugs affecting this game cartridge:
 - ✅ **Grid Rendering Bug (Bug #2)**: FIXED - Implemented correct column-based byte layout with proper corner connections
 - ✅ **Input Handling Bug (Bug #3)**: FIXED - Corrected joystick direction mapping (active-low logic)
 - ✅ **Sprite Direction Bug (Bug #4)**: FIXED - Corrected sprite pattern bit order (LSB-first instead of MSB-first)
-- ❌ **Remaining bugs**: Require investigation of:
-  - Collision detection system (Bug #5) - Affects both games
+- ✅ **Collision Detection Bug (Bug #5)**: FIXED - Corrected collision tracking to match rendering logic
 
 ## Resolution: Grid Color Bug
 
@@ -363,3 +362,66 @@ bool pixel_on = (pattern & (0x01 << pattern_x)) != 0;  // LSB-first (correct for
 - `src/vdc.cpp` - Sprite pattern bit extraction with comprehensive documentation of this undocumented hardware behavior
 
 **Verification**: Tested with Course de Voitures game - sprites now render correctly.
+
+
+## Resolution: Collision Detection Bug (Both Games)
+
+**Root Cause**: Multiple issues in the collision detection system caused it to fail to detect collisions between sprites and grid elements:
+
+1. **Sprite Height Mismatch**: Collision tracking used incorrect sprite heights (8/16 scanlines) instead of the correct heights (16/32 scanlines) that match rendering
+2. **Sprite Bit Order Mismatch**: Collision tracking used MSB-first bit order instead of LSB-first, causing horizontal position misalignment
+3. **Collision Reporting Logic**: The collision register semantics were misunderstood - when tracking object A, the hardware should return bits for objects that A collided with, not A's own bit
+4. **Horizontal Grid Position Mismatch**: Horizontal grid collision tracking read registers incorrectly, treating bytes as rows instead of columns
+
+**Hardware Specification**:
+- Collision register (0xA2) reports which objects collided with the enabled object(s)
+- When collision_enable has bit A set, the hardware tracks object A and reports bits for objects that A collided with
+- All objects (sprites, grid, characters) must be tracked regardless of collision_enable to allow bidirectional detection
+
+**Collision Register Bits**:
+- Bit 0 (0x01): Sprite 0
+- Bit 1 (0x02): Sprite 1
+- Bit 2 (0x04): Sprite 2
+- Bit 3 (0x08): Sprite 3
+- Bit 4 (0x10): Vertical grid
+- Bit 5 (0x20): Horizontal grid
+- Bit 6 (0x40): External sprite
+- Bit 7 (0x80): Characters
+
+**Fix Applied**: Updated `src/vdc.cpp` collision tracking functions:
+
+1. **Sprite Height** (`track_sprite_objects`):
+   - Normal sprites: 8 pattern rows × 2 scanlines = 16 scanlines (was 8)
+   - Double-size sprites: 8 pattern rows × 4 scanlines = 32 scanlines (was 16)
+
+2. **Sprite Bit Order** (`track_sprite_objects`):
+   - Changed from MSB-first to LSB-first: `(pattern & (0x01 << pattern_x))` instead of `(pattern & (0x80 >> pattern_x))`
+
+3. **Collision Reporting Logic** (all tracking functions):
+   - Implemented bidirectional detection:
+     - If object A is enabled and collides with B: report B
+     - If object B collides with enabled object A: report B
+   - Track ALL objects regardless of collision_enable
+   - Only report collisions involving at least one enabled object
+
+4. **Horizontal Grid Segment Width** (`track_grid_objects`):
+   - Changed from 14 to 16 pixels to match rendering
+
+5. **Vertical Grid Extension** (`track_grid_objects`):
+   - Added logic to extend vertical bars into next row's horizontal bar area, matching rendering
+
+6. **Horizontal Grid Register Reading** (`track_grid_objects`):
+   - Fixed to use column-based layout matching rendering:
+     - Loop through columns (0-8)
+     - For rows 0-7: Check bit `grid_row` of register `GRID_H_BASE + col`
+     - For row 8: Check bit 0 of register `GRID_H9_BASE + col`
+   - Previously incorrectly read `GRID_H_BASE + grid_row` treating bytes as rows
+
+**Result**: Collision detection now works correctly in both games:
+- Game 1 (Course de Voitures): Player car collides with oncoming traffic
+- Game 2 (Autodrome): Cars collide with circuit walls (both horizontal and vertical grid segments)
+
+**Files Modified**:
+- `src/vdc.cpp` - Collision tracking functions (`track_sprite_objects`, `track_grid_objects`)
+
+**Verification**: Tested with Course de Voitures - collisions now detected correctly for sprite-sprite, sprite-vertical grid, and sprite-horizontal grid interactions.
