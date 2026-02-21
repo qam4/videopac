@@ -1,6 +1,5 @@
 #include "input.h"
 #include <cstring>
-#include <iostream>
 
 namespace videopac {
 
@@ -62,13 +61,9 @@ uint8 InputHandler::read_keyboard(uint8 selected_row) {
 void InputHandler::set_joystick_state(uint8 joystick, Direction direction, bool pressed) {
     if (joystick > 1) return;
     
-    // TEMPORARY DEBUG: Log joystick UP state changes
-    if (direction == Direction::Up) {
-        std::cout << "InputHandler: Joystick " << (int)joystick << " UP = " << (pressed ? "PRESSED" : "released") << std::endl;
-    }
-    
     bool* joy = (joystick == 0) ? state_.joystick1 : state_.joystick2;
     
+    // Update state
     switch (direction) {
         case Direction::Up:    joy[0] = pressed; break;
         case Direction::Down:  joy[1] = pressed; break;

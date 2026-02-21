@@ -49,9 +49,6 @@ public:
     std::string get_aspect_ratio() const;  // "original", "4:3", "stretch"
     void set_aspect_ratio(const std::string& ratio);
 
-    bool get_vsync_enabled() const;
-    void set_vsync_enabled(bool enabled);
-
     bool get_fullscreen() const;
     void set_fullscreen(bool enabled);
 

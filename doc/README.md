@@ -8,6 +8,7 @@ This directory contains technical documentation, hardware references, debugging 
 Technical specifications and architecture documentation for the Videopac/Odyssey 2 hardware:
 
 - **[memory-architecture.md](hardware/memory-architecture.md)** - Complete memory map and architecture
+- **[bios.md](hardware/bios.md)** - BIOS routines, interrupt handlers, and RAM usage
 - **[8048.txt](hardware/8048.txt)** - Intel 8048 CPU reference
 - **[8245.md](hardware/8245.md)** - Intel 8245 VDC (Video Display Controller) reference
 - **[port1_bits.md](hardware/port1_bits.md)** - Port 1 control signals
@@ -17,6 +18,7 @@ Guides and real-world examples for debugging games and emulator issues:
 
 - **[debugging.md](debugging.md)** - Main debugging guide (will be replaced by comprehensive handbook)
 - **Case Studies:**
+  - **[road-movement-bug.md](case-studies/road-movement-bug.md)** - PAL/NTSC timing bug in Course de Voitures (BIOS frame counter issue)
   - **[satellite-attack.md](case-studies/satellite-attack.md)** - Frame-by-frame analysis of Satellite Attack
   - **[select-game.md](case-studies/select-game.md)** - Analysis of the game selection routine
 

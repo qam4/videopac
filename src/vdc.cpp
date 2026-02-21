@@ -416,6 +416,11 @@ VDCState VDC::get_state() const {
     return state_;
 }
 
+// Get character ROM data (for debugger display)
+void VDC::get_character_rom(uint8* dest) const {
+    std::memcpy(dest, character_rom_, sizeof(character_rom_));
+}
+
 // Restore VDC state
 void VDC::set_state(const VDCState& state) {
     state_ = state;
@@ -1445,6 +1450,11 @@ void VDC::track_character_objects(int y, uint8* object_buffer, uint8 collision_e
                         // Characters are enabled, so report what they collided with
                         state_.collision_state |= object_buffer[screen_x];
                         state_.collision_detected = true;
+                        
+                        // If the other object is also enabled, report characters too (bidirectional)
+                        if (enabled_objects_in_collision != 0) {
+                            state_.collision_state |= CollisionBits::CHARACTERS;
+                        }
                     } else if (enabled_objects_in_collision != 0) {
                         // Characters not enabled, but colliding with an enabled object
                         // So report the character to the enabled object
@@ -1512,6 +1522,11 @@ void VDC::track_character_objects(int y, uint8* object_buffer, uint8 collision_e
                             // Characters are enabled, so report what they collided with
                             state_.collision_state |= object_buffer[screen_x];
                             state_.collision_detected = true;
+                            
+                            // If the other object is also enabled, report characters too (bidirectional)
+                            if (enabled_objects_in_collision != 0) {
+                                state_.collision_state |= CollisionBits::CHARACTERS;
+                            }
                         } else if (enabled_objects_in_collision != 0) {
                             // Characters not enabled, but colliding with an enabled object
                             // So report the character to the enabled object
@@ -1604,6 +1619,11 @@ void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8
                     // This sprite is enabled, so report what it collided with
                     state_.collision_state |= object_buffer[screen_x];
                     state_.collision_detected = true;
+                    
+                    // If the other object is also enabled, report this sprite too (bidirectional)
+                    if (enabled_objects_in_collision != 0) {
+                        state_.collision_state |= sprite_bit;
+                    }
                 } else if (enabled_objects_in_collision != 0) {
                     // This sprite is not enabled, but it's colliding with an enabled object
                     // So report this sprite to the enabled object
@@ -1615,83 +1635,6 @@ void VDC::track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8
             object_buffer[screen_x] |= sprite_bit;
         }
     }
-}
-
-// Debug helper: Dump VDC registers to console
-void VDC::dump_registers() const {
-    std::cout << "\n=== VDC Register Dump ===" << std::endl;
-    std::cout << "Control (0xA0): 0x" << std::hex << static_cast<int>(state_.registers[0xA0]) << std::dec;
-    std::cout << " [Display:" << (state_.display_enabled ? "ON" : "OFF");
-    std::cout << " Grid:" << (state_.grid_enabled ? "ON" : "OFF") << "]" << std::endl;
-    
-    std::cout << "Status (0xA1): 0x" << std::hex << static_cast<int>(state_.registers[0xA1]) << std::dec << std::endl;
-    std::cout << "Collision (0xA2): 0x" << std::hex << static_cast<int>(state_.registers[0xA2]) << std::dec << std::endl;
-    std::cout << "Color (0xA3): 0x" << std::hex << static_cast<int>(state_.registers[0xA3]) << std::dec;
-    std::cout << " (palette index " << (state_.registers[0xA3] & 0x07) << ")" << std::endl;
-    
-    std::cout << "\nSprite 0 (Player):" << std::endl;
-    std::cout << "  Y: " << static_cast<int>(state_.registers[0x00]) << std::endl;
-    std::cout << "  X: " << static_cast<int>(state_.registers[0x01]) << std::endl;
-    std::cout << "  Color/Attr: 0x" << std::hex << static_cast<int>(state_.registers[0x02]) << std::dec;
-    bool double_size = (state_.registers[0x02] & 0x04) != 0;
-    uint8 color = (state_.registers[0x02] >> 3) & 0x07;
-    std::cout << " [double_size=" << double_size << " color=" << (int)color << "]" << std::endl;
-    
-    std::cout << "\nCharacters (first 4):" << std::endl;
-    for (int i = 0; i < 4; i++) {
-        int base = 0x10 + (i * 4);
-        std::cout << "  Char " << i << ": X=" << static_cast<int>(state_.registers[base + 1]);
-        std::cout << " Y=" << static_cast<int>(state_.registers[base + 2]);
-        std::cout << " Attr=0x" << std::hex << static_cast<int>(state_.registers[base]) << std::dec << std::endl;
-    }
-    
-    std::cout << "\nGrid Registers:" << std::endl;
-    std::cout << "  Horizontal Lines (C0-C7):" << std::endl;
-    for (int i = 0; i < 8; i++) {
-        std::cout << "    Line " << i << " (0x" << std::hex << (0xC0 + i) << "): 0x" 
-                  << std::setfill('0') << std::setw(2) << static_cast<int>(state_.registers[0xC0 + i]) 
-                  << std::dec << " (bits: ";
-        for (int bit = 7; bit >= 0; bit--) {
-            std::cout << ((state_.registers[0xC0 + i] & (1 << bit)) ? "1" : "0");
-        }
-        std::cout << ")" << std::endl;
-    }
-    std::cout << "  Register C8 (0xC8): 0x" << std::hex << std::setfill('0') << std::setw(2) 
-              << static_cast<int>(state_.registers[0xC8]) << std::dec 
-              << " (bits: ";
-    for (int bit = 7; bit >= 0; bit--) {
-        std::cout << ((state_.registers[0xC8] & (1 << bit)) ? "1" : "0");
-    }
-    std::cout << ")" << std::endl;
-    
-    std::cout << "  Horizontal Line 9 (D0-D8):" << std::endl;
-    std::cout << "    ";
-    for (int i = 0; i < 9; i++) {
-        std::cout << "D" << i << "=" << ((state_.registers[0xD0 + i] & 0x01) ? "1" : "0") << " ";
-    }
-    std::cout << std::endl;
-    
-    std::cout << "  Vertical Lines (E0-E9):" << std::endl;
-    for (int i = 0; i < 10; i++) {
-        std::cout << "    Line " << i << " (0x" << std::hex << (0xE0 + i) << "): 0x" 
-                  << std::setfill('0') << std::setw(2) << static_cast<int>(state_.registers[0xE0 + i]) 
-                  << std::dec << " (bits: ";
-        for (int bit = 7; bit >= 0; bit--) {
-            std::cout << ((state_.registers[0xE0 + i] & (1 << bit)) ? "1" : "0");
-        }
-        std::cout << ")" << std::endl;
-    }
-    
-    std::cout << "\nAudio:" << std::endl;
-    std::cout << "  Control (0xAA): 0x" << std::hex << static_cast<int>(state_.registers[0xAA]) << std::dec;
-    std::cout << " [Enabled:" << (state_.audio_enabled ? "YES" : "NO");
-    std::cout << " Volume:" << static_cast<int>(state_.audio_volume) << "]" << std::endl;
-    
-    std::cout << "\nTiming:" << std::endl;
-    std::cout << "  Beam Position: (" << state_.beam_x << ", " << state_.beam_y << ")" << std::endl;
-    std::cout << "  Total Scanlines: " << total_scanlines_ << std::endl;
-    std::cout << "  VBLANK: " << (is_vblank() ? "YES" : "NO") << std::endl;
-    std::cout << "========================\n" << std::endl;
 }
 
 // Per-pixel rendering helper: Check if grid pixel exists at position

@@ -33,7 +33,6 @@ struct FrontendConfig {
     PaletteMode palette_mode;       // Separate from video timing
     int display_scale;              // 1x, 2x, 3x, 4x
     bool fullscreen;
-    bool vsync;
     bool headless;                  // Run without window (for remote/testing)
     std::string aspect_ratio;       // "original", "4:3", "stretch"
     
@@ -66,7 +65,6 @@ struct FrontendConfig {
         , palette_mode(PaletteMode::STANDARD)  // Default to Standard O2 palette
         , display_scale(2)
         , fullscreen(false)
-        , vsync(true)
         , headless(false)
         , aspect_ratio("4:3")       // Default to 4:3 (CRT aspect ratio)
         , sample_rate(44100)
@@ -105,7 +103,6 @@ enum class MenuAction {
     AspectRatioOriginal,
     AspectRatio4_3,
     AspectRatioStretch,
-    ToggleVSync,
     CRTEffectNone,
     CRTEffectLight,
     CRTEffectMedium,

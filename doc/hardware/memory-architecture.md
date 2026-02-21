@@ -8,6 +8,9 @@ The 8048 CPU has 64 bytes of RAM built into the chip:
 0x08-0x17: Stack (8 levels) and scratch pad
 0x18-0x1F: Scratch pad memory
 0x20-0x3F: General purpose RAM (32 bytes)
+           0x3D: Collision register (BIOS-maintained)
+           0x3E: Frame/Clock counter (BIOS-maintained, wraps at 60)
+           0x3F: Status register (BIOS-maintained)
 ```
 
 **Register Banks:**
@@ -16,6 +19,19 @@ The 8048 CPU has 64 bytes of RAM built into the chip:
 - Bank 1: addresses 0x18-0x1F (24-31 decimal)
 - Selected with `SEL RB0` or `SEL RB1` instructions
 - Used for interrupt handling (main program uses one bank, interrupts use the other)
+
+**BIOS-Reserved RAM Locations:**
+- **RAM[0x3D]**: Collision register - Updated by BIOS VBlank interrupt from VDC register 0xA2
+- **RAM[0x3E]**: Frame/Clock counter - Incremented every VBlank, wraps at 60 (designed for NTSC 60 FPS)
+  - BIOS VBlank handler (0x022-0x02E) increments this counter each frame
+  - Wraps from 59 back to 0 using mask 0x3F and XOR 0x3C
+  - **PAL Compatibility Issue**: Counter wraps at 60 frames regardless of video standard
+    - NTSC (60 FPS): Wraps every 1.0 second (correct)
+    - PAL (50 FPS): Wraps every 1.2 seconds (timing mismatch)
+  - Games using this counter for timing may have bugs in PAL mode
+- **RAM[0x3F]**: Status register
+  - Bit 7: Request RAM-to-VDC copy during next VBlank
+  - Bit 6: Delay VBlank completion (used by tune player)
 
 **Access:** Direct CPU instructions (MOV, INC, DEC, etc.)
 

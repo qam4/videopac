@@ -124,9 +124,6 @@ The emulator includes several video settings that can be adjusted through the in
 3. **Scanlines** - Applied immediately
    - Off, 25%, 50%, 75% (horizontal line overlay)
 
-4. **VSync** - Requires restart
-   - On/Off toggle
-
 ### Testing Video Settings
 
 1. **Start the emulator and press F10** to open the menu
@@ -137,7 +134,6 @@ The emulator includes several video settings that can be adjusted through the in
    - Aspect Ratio: Changes viewport immediately
    - CRT Effects: Adds edge darkening effect
    - Scanlines: Adds horizontal lines across display
-   - VSync: Saves setting, requires restart
 
 4. **Verify persistence:**
    - Change settings, exit emulator
@@ -154,7 +150,6 @@ Example `[Video]` section:
 [Video]
 scaling_filter=nearest
 aspect_ratio=4:3
-vsync=true
 crt_effect=medium
 scanlines=50
 ```

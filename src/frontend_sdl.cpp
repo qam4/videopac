@@ -14,9 +14,11 @@
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_sdlrenderer2.h>
 #include <iostream>
+#include <iomanip>
 #include <cstring>
 #include <fstream>
 #include <ctime>
+#include <chrono>
 
 namespace videopac {
 
@@ -262,8 +264,6 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
                 std::cerr << "Unknown trace level: " << config_.trace_level << ", using 'full'" << std::endl;
             }
             debugger_->set_trace_level(level);
-            // Disable trace limit in SDL mode to capture complete trace for debugging
-            debugger_->set_trace_limit(false);
         }
         
         // Set breakpoints from config
@@ -295,8 +295,6 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
 }
 
 void SDLFrontend::shutdown() {
-    std::cout << "SDLFrontend::shutdown() called" << std::endl;
-    
     // Clean up temporary ZIP files
     if (zip_handler_) {
         zip_handler_->cleanup_temp_files();
@@ -385,11 +383,10 @@ bool SDLFrontend::init_video() {
         SDL_GetWindowPosition(window_, &windowed_x_, &windowed_y_);
     }
     
-    // Create renderer
+    // Create renderer without VSync
+    // VSync is not appropriate for emulators that need precise frame timing
+    // (PAL 50Hz vs NTSC 60Hz) on monitors that typically run at 60Hz
     uint32 renderer_flags = SDL_RENDERER_ACCELERATED;
-    if (config_.vsync) {
-        renderer_flags |= SDL_RENDERER_PRESENTVSYNC;
-    }
     
     renderer_ = SDL_CreateRenderer(window_, -1, renderer_flags);
     if (!renderer_) {
@@ -509,12 +506,8 @@ void SDLFrontend::run() {
         // SDL can generate spurious events during window initialization (focus, mouse enter, etc.)
         // or may have buffered keyboard events. Clear the queue to ensure clean start.
         SDL_Event event;
-        int cleared_events = 0;
         while (SDL_PollEvent(&event)) {
-            cleared_events++;
-        }
-        if (cleared_events > 0) {
-            std::cout << "Cleared " << cleared_events << " pending SDL events from initialization" << std::endl;
+            // Discard all events
         }
         
         while (running_) {
@@ -529,8 +522,6 @@ void SDLFrontend::run() {
                         VidKey key = static_cast<VidKey>(it->key_code);
                         input.set_key_state(key, true);
                         active_keys_.push_back({key, it->duration_frames});
-                        std::cout << "[Frame " << frame_count_ << "] Pressing key " 
-                                  << it->key_code << " for " << it->duration_frames << " frames" << std::endl;
                         it = config_.scheduled_keys.erase(it);
                     } else {
                         ++it;
@@ -575,10 +566,20 @@ void SDLFrontend::run() {
             // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
             // Skip delay in turbo mode for maximum speed (Requirement 18.1)
             if (!turbo_mode_) {
-                uint32 target_frame_time = (config_.video_standard == VideoStandard::NTSC) ? 17 : 20;  // ms
+                // Calculate precise target frame time
+                // NTSC: 16.666... ms per frame (60 FPS)
+                // PAL: 20.0 ms per frame (50 FPS)
+                float target_fps = (config_.video_standard == VideoStandard::NTSC) ? 60.0f : 50.0f;
+                float target_frame_time = 1000.0f / target_fps;  // milliseconds
+                
                 uint32 elapsed = SDL_GetTicks() - frame_start;
-                if (elapsed < target_frame_time) {
-                    SDL_Delay(target_frame_time - elapsed);
+                float elapsed_f = static_cast<float>(elapsed);
+                
+                if (elapsed_f < target_frame_time) {
+                    uint32 delay = static_cast<uint32>(target_frame_time - elapsed_f);
+                    if (delay > 0) {
+                        SDL_Delay(delay);
+                    }
                 }
             }
         }
@@ -877,8 +878,6 @@ void SDLFrontend::process_input() {
         if (it->frames_remaining <= 0) {
             // Release the key
             input.set_key_state(it->key, false);
-            std::cout << "[Frame " << frame_count_ << "] Releasing key " 
-                      << static_cast<int>(it->key) << std::endl;
             it = active_keys_.erase(it);
         } else {
             ++it;
@@ -892,11 +891,17 @@ void SDLFrontend::process_input() {
     
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-        // Debug: Log all keyboard events
-        if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
-            const char* event_type = (event.type == SDL_KEYDOWN) ? "DOWN" : "UP";
-            std::cout << "SDL Key " << event_type << ": " << SDL_GetKeyName(event.key.keysym.sym) 
-                      << " (scancode: " << event.key.keysym.scancode << ")" << std::endl;
+        // Handle F9 (screenshot) BEFORE ImGui
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F9 && event.key.repeat == 0) {
+            // Generate filename with timestamp
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm tm;
+            localtime_s(&tm, &time_t);
+            char filename[64];
+            std::strftime(filename, sizeof(filename), "screenshot_%Y%m%d_%H%M%S.ppm", &tm);
+            save_screenshot(filename);
+            continue;
         }
         
         // Handle F12 (debugger toggle) BEFORE ImGui to prevent double-processing
@@ -1396,17 +1401,6 @@ void SDLFrontend::handle_menu_action(videopac::MenuAction action) {
             config_manager_->save();  // Persist setting
             if (osd_renderer_) {
                 osd_renderer_->show_notification("Aspect Ratio: Stretch", 2000);
-            }
-            break;
-        case MenuAction::ToggleVSync:
-            {
-                bool current_vsync = config_manager_->get_vsync_enabled();
-                config_manager_->set_vsync_enabled(!current_vsync);
-                config_manager_->save();  // Persist setting
-                if (osd_renderer_) {
-                    std::string message = !current_vsync ? "VSync: On (Restart Required)" : "VSync: Off (Restart Required)";
-                    osd_renderer_->show_notification(message, 3000);
-                }
             }
             break;
         case MenuAction::CRTEffectNone:

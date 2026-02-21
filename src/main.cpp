@@ -25,6 +25,11 @@ void print_usage(const char* program_name) {
     std::cout << "  --press-key <key> <frame>" << std::endl;
     std::cout << "                      Press key at frame N (headless mode)" << std::endl;
     std::cout << "                      Example: --press-key 1 60 (press '1' at frame 60)" << std::endl;
+    std::cout << "  --press-joystick <joy> <dir> <frame> [duration]" << std::endl;
+    std::cout << "                      Press joystick direction at frame N for D frames (headless mode)" << std::endl;
+    std::cout << "                      joy: 1 or 2, dir: 0=up 1=down 2=left 3=right 4=fire" << std::endl;
+    std::cout << "                      duration: frames to hold (default: 5)" << std::endl;
+    std::cout << "                      Example: --press-joystick 2 0 60 100 (joy2 up at frame 60 for 100 frames)" << std::endl;
     std::cout << "  --debug             Enable debugger" << std::endl;
     std::cout << "  --trace[=level]     Enable instruction trace logging" << std::endl;
     std::cout << "                      Levels: minimal, normal, full (default: full)" << std::endl;
@@ -65,6 +70,14 @@ int main(int argc, char* argv[]) {
     };
     std::vector<ScheduledKeyPress> scheduled_keys;
     
+    struct ScheduledJoystickPress {
+        int joystick;  // 0 or 1 (for joy1 or joy2)
+        int direction; // 0=up, 1=down, 2=left, 3=right, 4=fire
+        int frame;
+        int duration;  // frames to hold (default: 5)
+    };
+    std::vector<ScheduledJoystickPress> scheduled_joystick;
+    
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
@@ -103,6 +116,24 @@ int main(int argc, char* argv[]) {
             int frame = std::atoi(argv[++i]);
             scheduled_keys.push_back({key_code, frame});
             // Don't force headless - allow SDL mode with programmatic keys for testing
+        } else if (strcmp(argv[i], "--press-joystick") == 0 && i + 3 < argc) {
+            int joystick = std::atoi(argv[++i]) - 1;  // Convert 1-based to 0-based
+            int direction = std::atoi(argv[++i]);
+            int frame = std::atoi(argv[++i]);
+            int duration = 5;  // Default duration
+            // Check if duration is provided (optional 4th argument)
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                duration = std::atoi(argv[++i]);
+            }
+            if (joystick < 0 || joystick > 1) {
+                std::cerr << "Error: joystick must be 1 or 2" << std::endl;
+                return 1;
+            }
+            if (direction < 0 || direction > 4) {
+                std::cerr << "Error: direction must be 0-4 (0=up, 1=down, 2=left, 3=right, 4=fire)" << std::endl;
+                return 1;
+            }
+            scheduled_joystick.push_back({joystick, direction, frame, duration});
         } else if (strcmp(argv[i], "--debug") == 0) {
             config.enable_debugger = true;
         } else if (strncmp(argv[i], "--trace", 7) == 0) {
@@ -204,6 +235,12 @@ int main(int argc, char* argv[]) {
         for (const auto& key_press : scheduled_keys) {
             VidKey key = static_cast<VidKey>(key_press.key_code);
             frontend.schedule_key_press(key, key_press.frame, 5);  // Press for 5 frames to ensure detection
+        }
+        
+        // Schedule joystick presses
+        for (const auto& joy_press : scheduled_joystick) {
+            Direction dir = static_cast<Direction>(joy_press.direction);
+            frontend.schedule_joystick_press(joy_press.joystick, dir, joy_press.frame, joy_press.duration);
         }
         
         frontend.run();

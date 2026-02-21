@@ -2,6 +2,7 @@
 #include "debugger.h"
 #include "savestate.h"
 #include <iostream>
+#include <iomanip>
 #include <chrono>
 
 namespace videopac {
@@ -91,9 +92,6 @@ void EmulatorCore::run_frame() {
     
     // Reset master clock for new frame
     master_clock_.reset_frame();
-    
-    // DEBUG: Log frame start (always log first 10 frames for debugging)
-    uint64 frame_start_cycle = master_clock_.get_master_cycle_count();
     
     // Diagnostic counters (only if profiling enabled)
     static uint64 total_cpu_calls = 0;
@@ -216,16 +214,6 @@ void EmulatorCore::run_frame() {
     }
     
     frame_count_++;
-    
-    // DEBUG: Always log first 10 frames for debugging
-    if (frame_count_ <= 10) {
-        uint64 frame_end_cycle = master_clock_.get_master_cycle_count();
-        uint64 cycles_this_frame = frame_end_cycle - frame_start_cycle;
-        std::cout << "[DEBUG] Frame " << (frame_count_ - 1) << " completed with " 
-                  << cycles_this_frame << " cycles (expected: " 
-                  << master_clock_.get_cycles_per_frame() << ")" << std::endl;
-        std::cout.flush();
-    }
 }
 
 void EmulatorCore::step() {

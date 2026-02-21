@@ -17,7 +17,7 @@ HeadlessFrontend::HeadlessFrontend()
     , auto_screenshot_(false)
     , screenshot_interval_(60)
     , screenshot_count_(0)
-    , enable_frame_pacing_(false)
+    , enable_frame_pacing_(true)  // Enable frame pacing to match SDL behavior
 {}
 
 HeadlessFrontend::~HeadlessFrontend() {
@@ -83,8 +83,6 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
                 std::cerr << "Unknown trace level: " << config_.trace_level << ", using 'full'" << std::endl;
             }
             debugger_->set_trace_level(level);
-            // Disable trace limit in headless mode to capture complete trace
-            debugger_->set_trace_limit(false);
         }
         
         // Set breakpoints from config
@@ -240,18 +238,6 @@ void HeadlessFrontend::run() {
     }
     
     std::cout << std::endl;
-    
-    // Debug: Dump internal RAM values for debugging
-    CPUState final_cpu_state = emulator_->get_cpu_state();
-    std::cout << "\n=== Internal RAM Dump ===" << std::endl;
-    std::cout << "0x30 = 0x" << std::hex << std::setw(2) << std::setfill('0') 
-              << static_cast<int>(final_cpu_state.ram[0x30]) << std::endl;
-    std::cout << "0x31 = 0x" << std::hex << std::setw(2) << std::setfill('0') 
-              << static_cast<int>(final_cpu_state.ram[0x31]) << std::endl;
-    std::cout << "0x3E = 0x" << std::hex << std::setw(2) << std::setfill('0') 
-              << static_cast<int>(final_cpu_state.ram[0x3E]) << std::endl;
-    std::cout << "0x3F = 0x" << std::hex << std::setw(2) << std::setfill('0') 
-              << static_cast<int>(final_cpu_state.ram[0x3F]) << std::dec << std::endl;
 }
 
 void HeadlessFrontend::render_frame() {
@@ -261,12 +247,6 @@ void HeadlessFrontend::render_frame() {
     
     emulator_->run_frame();
     frame_count_++;
-    
-    // Debug: Dump VDC registers at frame 8 (after game starts)
-    if (frame_count_ == 8) {
-        std::cout << "\n";
-        emulator_->get_vdc().dump_registers();
-    }
 }
 
 void HeadlessFrontend::process_audio() {
@@ -298,6 +278,27 @@ void HeadlessFrontend::process_input() {
         }
     }
     
+    // Check for scheduled joystick presses
+    for (auto it = scheduled_joystick_.begin(); it != scheduled_joystick_.end(); ) {
+        if (next_frame >= it->trigger_frame) {
+            // Trigger the joystick press
+            if (it->direction == static_cast<Direction>(4)) {
+                // Fire button
+                input.set_joystick_button(it->joystick, true);
+            } else {
+                input.set_joystick_state(it->joystick, it->direction, true);
+            }
+            active_joystick_.push_back({it->joystick, it->direction, it->duration});
+            const char* dir_names[] = {"UP", "DOWN", "LEFT", "RIGHT", "FIRE"};
+            std::cout << "\n[Frame " << next_frame << "] Pressing joystick " << (it->joystick + 1) 
+                      << " " << dir_names[static_cast<int>(it->direction)] 
+                      << " for " << it->duration << " frames" << std::endl;
+            it = scheduled_joystick_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
     // Update active keys and release expired ones
     for (auto it = active_keys_.begin(); it != active_keys_.end(); ) {
         it->frames_remaining--;
@@ -308,6 +309,26 @@ void HeadlessFrontend::process_input() {
             std::cout << "[Frame " << next_frame << "] Releasing key " 
                       << static_cast<int>(it->key) << std::endl;
             it = active_keys_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    // Update active joystick and release expired ones
+    for (auto it = active_joystick_.begin(); it != active_joystick_.end(); ) {
+        it->frames_remaining--;
+        
+        if (it->frames_remaining <= 0) {
+            // Release the joystick
+            if (it->direction == static_cast<Direction>(4)) {
+                input.set_joystick_button(it->joystick, false);
+            } else {
+                input.set_joystick_state(it->joystick, it->direction, false);
+            }
+            const char* dir_names[] = {"UP", "DOWN", "LEFT", "RIGHT", "FIRE"};
+            std::cout << "[Frame " << next_frame << "] Releasing joystick " << (it->joystick + 1)
+                      << " " << dir_names[static_cast<int>(it->direction)] << std::endl;
+            it = active_joystick_.erase(it);
         } else {
             ++it;
         }
@@ -521,6 +542,15 @@ void HeadlessFrontend::schedule_key_press(VidKey key, int trigger_frame, int dur
     scheduled_keys_.push_back({key, trigger_frame, duration_frames});
     enable_frame_pacing_ = true;  // Enable frame pacing for accurate key timing
     std::cout << "Scheduled key " << static_cast<int>(key) 
+              << " to be pressed at frame " << trigger_frame 
+              << " for " << duration_frames << " frames" << std::endl;
+}
+
+void HeadlessFrontend::schedule_joystick_press(int joystick, Direction direction, int trigger_frame, int duration_frames) {
+    scheduled_joystick_.push_back({joystick, direction, trigger_frame, duration_frames});
+    enable_frame_pacing_ = true;  // Enable frame pacing for accurate timing
+    const char* dir_names[] = {"UP", "DOWN", "LEFT", "RIGHT", "FIRE"};
+    std::cout << "Scheduled joystick " << (joystick + 1) << " " << dir_names[static_cast<int>(direction)]
               << " to be pressed at frame " << trigger_frame 
               << " for " << duration_frames << " frames" << std::endl;
 }

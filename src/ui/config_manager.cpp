@@ -216,14 +216,6 @@ void ConfigManager::set_aspect_ratio(const std::string& ratio) {
     set_value("Video", "aspect_ratio", ratio);
 }
 
-bool ConfigManager::get_vsync_enabled() const {
-    return get_value_bool("Video", "vsync", true);
-}
-
-void ConfigManager::set_vsync_enabled(bool enabled) {
-    set_value_bool("Video", "vsync", enabled);
-}
-
 bool ConfigManager::get_fullscreen() const {
     return get_value_bool("Video", "fullscreen", false);
 }

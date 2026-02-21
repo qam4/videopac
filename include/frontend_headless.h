@@ -51,6 +51,7 @@ public:
     void press_key(VidKey key, int duration_frames = 5);
     void release_key(VidKey key);
     void schedule_key_press(VidKey key, int trigger_frame, int duration_frames = 5);
+    void schedule_joystick_press(int joystick, Direction direction, int trigger_frame, int duration_frames = 5);
     int get_frame_count() const { return frame_count_; }
 
 private:
@@ -86,6 +87,21 @@ private:
         int duration;
     };
     std::vector<ScheduledKeyPress> scheduled_keys_;
+    
+    struct JoystickPress {
+        int joystick;
+        Direction direction;
+        int frames_remaining;
+    };
+    std::vector<JoystickPress> active_joystick_;
+    
+    struct ScheduledJoystickPress {
+        int joystick;
+        Direction direction;
+        int trigger_frame;
+        int duration;
+    };
+    std::vector<ScheduledJoystickPress> scheduled_joystick_;
     
     // Helpers
     void write_ppm(const std::string& filename, const uint8* framebuffer, int width, int height);

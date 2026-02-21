@@ -454,6 +454,7 @@ void Debugger::log_instruction(uint64 current_cycles) {
                 (unsigned long long)cycles_to_log, 
                 cpu.pc, byte0, byte1, cpu.a);
         trace_log_.push_back(buffer);
+        // Limit trace size to prevent memory issues (can be disabled with --trace-unlimited)
         if (trace_limit_enabled_ && trace_log_.size() > 50000) {
             trace_log_.erase(trace_log_.begin(), trace_log_.begin() + 10000);
         }
@@ -482,6 +483,7 @@ void Debugger::log_instruction(uint64 current_cycles) {
     }
     
     trace_log_.push_back(buffer);
+    // Limit trace size to prevent memory issues (can be disabled with --trace-unlimited)
     if (trace_limit_enabled_ && trace_log_.size() > 50000) {
         trace_log_.erase(trace_log_.begin(), trace_log_.begin() + 10000);
     }

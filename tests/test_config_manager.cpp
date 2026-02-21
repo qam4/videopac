@@ -38,7 +38,6 @@ TEST_F(ConfigManagerTest, DefaultValues) {
     // Video settings
     EXPECT_EQ(config.get_scaling_filter(), "nearest");
     EXPECT_EQ(config.get_aspect_ratio(), "4:3");
-    EXPECT_TRUE(config.get_vsync_enabled());
     EXPECT_FALSE(config.get_fullscreen());
     EXPECT_EQ(config.get_crt_effect(), "none");
     EXPECT_EQ(config.get_scanlines(), 0);
@@ -86,9 +85,6 @@ TEST_F(ConfigManagerTest, VideoSettings) {
     
     config.set_aspect_ratio("4:3");
     EXPECT_EQ(config.get_aspect_ratio(), "4:3");
-    
-    config.set_vsync_enabled(false);
-    EXPECT_FALSE(config.get_vsync_enabled());
     
     config.set_fullscreen(true);
     EXPECT_TRUE(config.get_fullscreen());
@@ -281,7 +277,6 @@ last_bios_directory=/test/bios
 [Video]
 scaling_filter=linear
 aspect_ratio=4:3
-vsync=false
 fullscreen=true
 crt_effect=light
 scanlines=25

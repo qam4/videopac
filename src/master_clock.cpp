@@ -72,14 +72,10 @@ bool MasterClock::is_frame_complete() const {
 void MasterClock::reset_frame() {
     frame_cycle_count_ = 0;
     
-    // Reset debt accumulators to prevent overflow
-    // Keep small residual debt to maintain timing accuracy
-    if (cpu_cycle_debt_ < -CYCLES_PER_CPU_INSTRUCTION) {
-        cpu_cycle_debt_ = 0.0;
-    }
-    if (vdc_cycle_debt_ < -10.0) {
-        vdc_cycle_debt_ = 0.0;
-    }
+    // Reset cycle debt to zero at frame boundaries
+    // to eliminate frame-to-frame jitter in raster effects
+    cpu_cycle_debt_ = 0.0;
+    vdc_cycle_debt_ = 0.0;
 }
 
 void MasterClock::reset() {

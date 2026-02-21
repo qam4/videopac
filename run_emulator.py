@@ -18,9 +18,10 @@ def get_executable_path():
     system = platform.system()
     
     if system == "Windows":
-        # Try dev-mingw first, then ci-win64
+        # Try dev-mingw first (current preset), then build root, then ci-win64
         paths = [
             Path("build/dev-mingw/videopac.exe"),
+            Path("build/videopac.exe"),
             Path("build/ci-win64/Release/videopac.exe"),
         ]
     else:
@@ -43,14 +44,23 @@ def get_executable_path():
 def clean_trace_log():
     """Remove old trace log file."""
     if Path("trace.log").exists():
-        Path("trace.log").unlink()
+        try:
+            Path("trace.log").unlink()
+        except PermissionError:
+            # File is locked by another process, skip deletion
+            print("Warning: trace.log is locked by another process, skipping cleanup", file=sys.stderr)
 
 
 def setup_screenshots_dir():
     """Clean and create screenshots directory."""
     screenshots_dir = Path("screenshots")
     if screenshots_dir.exists():
-        shutil.rmtree(screenshots_dir)
+        try:
+            shutil.rmtree(screenshots_dir)
+        except PermissionError:
+            # Files are locked, just skip cleanup
+            print("Warning: screenshots directory is locked, skipping cleanup", file=sys.stderr)
+            return
     screenshots_dir.mkdir(exist_ok=True)
 
 
@@ -67,7 +77,7 @@ def convert_screenshots():
             print("Warning: bash not found, skipping screenshot conversion", file=sys.stderr)
 
 
-def run_sdl_mode(exe_path, bios_path, rom_path, region):
+def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
     """Run emulator in SDL mode with debugger."""
     print("Running in SDL mode...")
     print()
@@ -75,42 +85,71 @@ def run_sdl_mode(exe_path, bios_path, rom_path, region):
     print("  - Press '1' for Game 1: Course de Voitures (road racing)")
     print("  - Press '2' for Game 2: Autodrome (top-down circuit racing)")
     print()
+    print("IMPORTANT: Do NOT press any arrow keys after selecting the game!")
+    print("We are testing if the road moves without input.")
+    print()
     
     cmd = [
         exe_path,
-        "--region", region,
         "--debug",
         "--trace",
         "--bios", bios_path,
         rom_path
     ]
+    
+    # Add any extra arguments (breakpoints, watch expressions, region, etc.)
+    cmd.extend(extra_args)
     
     subprocess.run(cmd)
 
 
-def run_headless_mode(exe_path, bios_path, rom_path, region):
+def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False):
     """Run emulator in headless mode with screenshot capture."""
     print("Running in HEADLESS mode...")
-    print("Note: Pressing '1' to select Game 1 (Course de Voitures)")
-    print("Watching memory address 0x3F for writes")
+    if no_input:
+        print("Note: NO INPUT MODE - testing without joystick")
+    else:
+        print("Note: Pressing '1' at frame 5 to select game")
+        print("Note: Pressing '1' at frame 12 to select level")
+        print("Note: Pressing UP at frame 20 for 95 frames")
+        print("Note: Will dump VDC state at frames 10, 14, 20, 22, 24, 26, 28, 30, 60, 100, 118")
     print()
     
     setup_screenshots_dir()
     
-    cmd = [
-        exe_path,
-        "--headless",
-        "--screenshot", "1",
-        "--frames", "200",
-        "--press-key", "1", "5",   # Press '1' at frame 5 to start game selection
-        "--press-key", "1", "10",  # Press '1' at frame 10 to select game level 1
-        "--debug",
-        "--trace",
-        "--bios", bios_path,
-        rom_path
-    ]
+    if no_input:
+        # No input mode - only basic setup, no key/joystick presses
+        cmd = [
+            exe_path,
+            "--headless",
+            "--screenshot", "1",
+            "--frames", "200",
+            "--debug",
+            "--trace",
+            "--bios", bios_path,
+            rom_path
+        ]
+    else:
+        # Normal mode with input - 120 frames with '1' pressed twice, UP at frame 20 for 95 frames
+        cmd = [
+            exe_path,
+            "--headless",
+            "--screenshot", "1",
+            "--frames", "120",
+            "--press-key", "1", "5", "5",   # Press '1' at frame 5 for 5 frames (title screen)
+            "--press-key", "1", "12", "5",  # Press '1' at frame 12 for 5 frames (select game)
+            "--press-joystick", "2", "0", "20", "95",  # Press joystick 2 UP at frame 20 for 95 frames
+            "--debug",
+            "--trace",
+            "--bios", bios_path,
+            rom_path
+        ]
+    
+    # Add any extra arguments (breakpoints, watch expressions, region, etc.)
+    cmd.extend(extra_args)
     
     print("Running emulator (output will appear below)...")
+    print("Command:", " ".join(cmd))
     print("=" * 60)
     result = subprocess.run(cmd)
     print("=" * 60)
@@ -120,7 +159,7 @@ def run_headless_mode(exe_path, bios_path, rom_path, region):
     convert_screenshots()
 
 
-def run_dcv_mode(exe_path, bios_path, rom_path, region):
+def run_dcv_mode(exe_path, bios_path, rom_path, extra_args):
     """Run emulator in DCV mode (remote desktop optimized)."""
     print("Running in DCV mode (remote desktop)...")
     
@@ -132,11 +171,16 @@ def run_dcv_mode(exe_path, bios_path, rom_path, region):
     
     cmd = [
         exe_path,
-        "--region", region,
         "--debug",
         "--bios", bios_path,
         rom_path
     ]
+    
+    # Add any extra arguments (breakpoints, watch expressions, region, etc.)
+    cmd.extend(extra_args)
+    
+    subprocess.run(cmd, env=env)
+    cmd.extend(extra_args)
     
     subprocess.run(cmd, env=env)
 
@@ -150,11 +194,14 @@ Examples:
   %(prog)s                                    # SDL mode with default ROM
   %(prog)s sdl                                # SDL mode with default ROM
   %(prog)s headless                           # Headless mode with default ROM
-  %(prog)s debug-scroll                       # Debug scroll issue
   %(prog)s dcv                                # DCV mode with default ROM
   %(prog)s sdl "roms/game.bin"                # SDL mode with custom ROM
   %(prog)s headless "roms/game.bin"           # Headless mode with custom ROM
-  %(prog)s dcv "roms/game.bin"                # DCV mode with custom ROM
+  
+  # With debugger options:
+  %(prog)s sdl --watch "RAM[0x30]!=0"         # Watch expression
+  %(prog)s sdl --break 0x495                  # Breakpoint at address
+  %(prog)s sdl --break 0x495 --condition "A==0xFF"  # Conditional breakpoint
         """
     )
     
@@ -162,8 +209,8 @@ Examples:
         "mode",
         nargs="?",
         default="sdl",
-        choices=["sdl", "headless", "hl", "debug-scroll", "dcv"],
-        help="Emulator mode: sdl (default), headless/hl, debug-scroll, or dcv"
+        choices=["sdl", "headless", "hl", "dcv"],
+        help="Emulator mode: sdl (default), headless/hl, or dcv"
     )
     
     parser.add_argument(
@@ -182,9 +229,37 @@ Examples:
     
     parser.add_argument(
         "--region",
-        default="france",
+        default=None,
         choices=["usa", "europe", "france"],
-        help="Region setting (default: france)"
+        help="Region setting (default: usa if not specified)"
+    )
+    
+    parser.add_argument(
+        "--no-input",
+        action="store_true",
+        help="Headless mode: run without any input (for baseline testing)"
+    )
+    
+    # Debugger options
+    parser.add_argument(
+        "--watch",
+        action="append",
+        dest="watch_expressions",
+        help="Watch expression (e.g., 'RAM[0x30]!=0')"
+    )
+    
+    parser.add_argument(
+        "--break",
+        action="append",
+        dest="breakpoints",
+        help="Breakpoint address (e.g., 0x495)"
+    )
+    
+    parser.add_argument(
+        "--condition",
+        action="append",
+        dest="conditions",
+        help="Condition for previous breakpoint (e.g., 'A==0xFF')"
     )
     
     args = parser.parse_args()
@@ -200,15 +275,33 @@ Examples:
     if mode == "hl":
         mode = "headless"
     
+    # Build extra arguments for debugger
+    extra_args = []
+    
+    # Add region if specified (otherwise use emulator default)
+    if args.region:
+        extra_args.extend(["--region", args.region])
+    
+    # Add watch expressions
+    if args.watch_expressions:
+        for watch in args.watch_expressions:
+            extra_args.extend(["--watch", watch])
+    
+    # Add breakpoints with optional conditions
+    if args.breakpoints:
+        for i, bp in enumerate(args.breakpoints):
+            extra_args.extend(["--break", bp])
+            # If there's a corresponding condition, add it
+            if args.conditions and i < len(args.conditions):
+                extra_args.extend(["--condition", args.conditions[i]])
+    
     # Run appropriate mode
     if mode == "headless":
-        run_headless_mode(exe_path, args.bios, args.rom, args.region)
-    elif mode == "debug-scroll":
-        run_debug_scroll_mode(exe_path, args.bios, args.rom, args.region)
+        run_headless_mode(exe_path, args.bios, args.rom, extra_args, no_input=args.no_input)
     elif mode == "dcv":
-        run_dcv_mode(exe_path, args.bios, args.rom, args.region)
+        run_dcv_mode(exe_path, args.bios, args.rom, extra_args)
     else:  # sdl
-        run_sdl_mode(exe_path, args.bios, args.rom, args.region)
+        run_sdl_mode(exe_path, args.bios, args.rom, extra_args)
 
 
 if __name__ == "__main__":

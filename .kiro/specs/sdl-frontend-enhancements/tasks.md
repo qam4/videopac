@@ -505,37 +505,33 @@ The implementation is organized into logical phases that build upon each other, 
 
 - [x] 22. Implement video settings menu
   - [x] 22.1 Create Video Settings submenu
-    - Add submenu with options: Scaling Filter, Aspect Ratio, VSync, CRT Effects, Scanlines
+    - Add submenu with options: Scaling Filter, Aspect Ratio, CRT Effects, Scanlines
     - Implement scaling filter options (Nearest, Linear)
     - Implement aspect ratio options (Original, 4:3, Stretch)
-    - Implement VSync toggle
     - Implement CRT effect options (None, Light, Medium, Heavy)
     - Implement scanline options (Off, 25%, 50%, 75%)
-    - _Requirements: 13.1, 13.2, 13.3, 13.5, 13.7, 13.9, 13.11_
+    - _Requirements: 13.1, 13.2, 13.3, 13.5, 13.9, 13.11_
   
   - [x] 22.2 Implement video settings application
     - Apply scaling filter changes immediately using SDL_SetHint()
     - Apply aspect ratio changes immediately by adjusting viewport
-    - Apply VSync changes immediately by recreating renderer
     - Apply CRT effects immediately (shader or post-processing)
     - Apply scanlines immediately (overlay rendering)
     - Persist video settings to config
-    - _Requirements: 13.4, 13.6, 13.8, 13.10, 13.12, 13.13_
+    - _Requirements: 13.4, 13.6, 13.10, 13.12, 13.13_
   
   - [ ]* 22.3 Write property tests for video settings
     - **Property 54: Scaling filter changes apply immediately**
     - **Property 55: Aspect ratio changes apply immediately**
-    - **Property 56: VSync toggle applies immediately**
-    - **Validates: Requirements 13.4, 13.6, 13.8**
+    - **Validates: Requirements 13.4, 13.6**
   
   - [ ]* 22.4 Write integration tests for video settings
     - Test scaling filter changes
     - Test aspect ratio changes
-    - Test VSync toggle
     - Test CRT effects
     - Test scanlines
     - Test settings persistence
-    - _Requirements: 13.4, 13.6, 13.8, 13.10, 13.12, 13.13_
+    - _Requirements: 13.4, 13.6, 13.10, 13.12, 13.13_
 
 
 - [x] 23. Implement audio settings menu

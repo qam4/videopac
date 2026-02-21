@@ -322,7 +322,6 @@ position_y=100
 [Video]
 scaling_filter=nearest
 aspect_ratio=4:3
-vsync=true
 crt_effect=none
 scanlines=off
 
@@ -573,7 +572,6 @@ Main Menu
 ├── Video Settings
 │   ├── Scaling Filter: Nearest
 │   ├── Aspect Ratio: 4:3
-│   ├── VSync: On
 │   ├── CRT Effects: None
 │   └── Scanlines: Off
 ├── Audio Settings
@@ -628,7 +626,6 @@ The configuration is stored as key-value pairs organized into sections:
 **Video Section**:
 - `scaling_filter`: "nearest" or "linear"
 - `aspect_ratio`: "original", "4:3", or "stretch"
-- `vsync`: "true" or "false"
 - `crt_effect`: "none", "light", "medium", or "heavy"
 - `scanlines`: "off", "25", "50", or "75"
 
@@ -949,15 +946,11 @@ Property 55: Aspect ratio changes apply immediately
 *For any* aspect ratio mode selection, changing it should immediately adjust the display viewport.
 **Validates: Requirements 13.6**
 
-Property 56: VSync toggle applies immediately
-*For any* VSync state, toggling it should immediately enable or disable vertical synchronization.
-**Validates: Requirements 13.8**
-
-Property 57: CRT effects apply immediately
+Property 56: CRT effects apply immediately
 *For any* CRT effect level, changing it should immediately apply the corresponding shader or post-processing effect.
 **Validates: Requirements 13.10**
 
-Property 58: Scanlines apply immediately
+Property 57: Scanlines apply immediately
 *For any* scanline level, changing it should immediately render the corresponding scanline overlay.
 **Validates: Requirements 13.12**
 

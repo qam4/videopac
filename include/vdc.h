@@ -187,6 +187,10 @@ struct VDCState {
     bool audio_loop;                                // Loop mode (bit 6 of 0xAA)
     bool audio_noise;                               // Noise mode (bit 4 of 0xAA)
     uint32 audio_cycle_accumulator;                 // Cycle accumulator for audio timing
+    
+    // Character ROM data (64 characters, 8 bytes each)
+    // Reference: doc/o2doc.md Appendix C
+    uint8 character_rom[64 * 8];                    // Character pattern ROM
 };
 
 // Intel 8245 VDC emulation
@@ -227,15 +231,13 @@ public:
     // State management
     VDCState get_state() const;
     void set_state(const VDCState& state);
+    void get_character_rom(uint8* dest) const;     // Copy character ROM data (for debugger)
     
     // Accessors
     uint16 get_scanline() const { return state_.beam_y; }  // For backward compatibility
     uint16 get_beam_x() const { return state_.beam_x; }
     uint16 get_beam_y() const { return state_.beam_y; }
     VideoStandard get_video_standard() const { return state_.video_standard; }
-    
-    // Debug helpers
-    void dump_registers() const;
 
 private:
     VDCState state_;

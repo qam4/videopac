@@ -83,9 +83,6 @@ void MenuSystem::build_main_menu() {
     aspect_ratio_menu.submenu.push_back(MenuItem("Stretch", MenuAction::AspectRatioStretch));
     video_settings_menu.submenu.push_back(aspect_ratio_menu);
     
-    // VSync toggle
-    video_settings_menu.submenu.push_back(MenuItem("VSync", MenuAction::ToggleVSync));
-    
     // CRT Effects submenu
     MenuItem crt_effects_menu("CRT Effects", MenuAction::None);
     crt_effects_menu.has_submenu = true;
@@ -387,18 +384,8 @@ void MenuSystem::update_menu_values(ConfigManager* config_manager) {
         return;
     }
     
-    // Find Video Settings menu
+    // Find Audio Settings menu
     for (auto& item : main_menu_) {
-        if (item.action == videopac::MenuAction::VideoSettings && item.has_submenu) {
-            // Update VSync value
-            for (auto& video_item : item.submenu) {
-                if (video_item.action == videopac::MenuAction::ToggleVSync) {
-                    video_item.value = config_manager->get_vsync_enabled() ? "On" : "Off";
-                }
-            }
-        }
-        
-        // Find Audio Settings menu
         if (item.action == videopac::MenuAction::AudioSettings && item.has_submenu) {
             for (auto& audio_item : item.submenu) {
                 // Update Volume submenu value

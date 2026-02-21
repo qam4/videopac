@@ -1219,31 +1219,21 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
     // Get VDC state from emulator
     VDCState vdc_state = emulator_->get_vdc_state();
     
+    // Get character ROM data only when needed (for Characters panel)
+    static uint8 character_rom_cache[64 * 8];
+    static bool character_rom_loaded = false;
+    
     // Sprite control registers for sprites 0-3
     if (ImGui::TreeNode("Sprites")) {
-        // Videopac 16-color palette (RGBI) - matches PALETTE in types.h
-        // Low-intensity (0-7): Background/Grid colors
-        // High-intensity (8-15): Sprite/Character colors
-        static const ImU32 palette_colors[16] = {
-            // Low-intensity
-            IM_COL32(0, 0, 0, 255),         // 0: Black
-            IM_COL32(8, 57, 214, 255),      // 1: Dark Blue
-            IM_COL32(0, 156, 24, 255),      // 2: Dark Green
-            IM_COL32(0, 189, 222, 255),     // 3: Light Blue
-            IM_COL32(198, 0, 8, 255),       // 4: Dark Red
-            IM_COL32(206, 16, 181, 255),    // 5: Violet
-            IM_COL32(156, 132, 16, 255),    // 6: Orange/Gold
-            IM_COL32(206, 206, 206, 255),   // 7: Grey
-            // High-intensity
-            IM_COL32(73, 73, 73, 255),      // 8: Light Grey
-            IM_COL32(73, 73, 255, 255),     // 9: Blue
-            IM_COL32(73, 255, 73, 255),     // 10: Green
-            IM_COL32(73, 255, 255, 255),    // 11: Cyan
-            IM_COL32(255, 73, 73, 255),     // 12: Red
-            IM_COL32(255, 73, 255, 255),    // 13: Magenta
-            IM_COL32(255, 255, 73, 255),    // 14: Yellow
-            IM_COL32(255, 255, 255, 255)    // 15: White
-        };
+        // Convert PALETTE_STANDARD to ImGui colors for rendering
+        static ImU32 palette_colors[16];
+        static bool palette_initialized = false;
+        if (!palette_initialized) {
+            for (int i = 0; i < 16; i++) {
+                palette_colors[i] = IM_COL32(PALETTE_STANDARD[i].r, PALETTE_STANDARD[i].g, PALETTE_STANDARD[i].b, 255);
+            }
+            palette_initialized = true;
+        }
         
         for (int i = 0; i < 4; i++) {
             uint8 base = i * 4;
@@ -1309,6 +1299,256 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
             }
             ImGui::Separator();
         }
+        ImGui::TreePop();
+    }
+    
+    // Convert PALETTE_STANDARD to ImGui colors for rendering
+    static ImU32 palette_colors[16];
+    static bool palette_initialized = false;
+    if (!palette_initialized) {
+        for (int i = 0; i < 16; i++) {
+            palette_colors[i] = IM_COL32(PALETTE_STANDARD[i].r, PALETTE_STANDARD[i].g, PALETTE_STANDARD[i].b, 255);
+        }
+        palette_initialized = true;
+    }
+    
+    // Characters (0x10-0x3F: 12 characters × 4 bytes each)
+    if (ImGui::TreeNode("Characters (0x10-0x3F)")) {
+        // Load character ROM data only when this panel is open
+        if (!character_rom_loaded) {
+            emulator_->get_vdc().get_character_rom(character_rom_cache);
+            character_rom_loaded = true;
+        }
+        
+        ImGui::TextWrapped("12 single characters, 4 bytes each: Y, X, Color, Pattern");
+        ImGui::Separator();
+        
+        // Quick overview table with inline 8x8 patterns
+        if (ImGui::BeginTable("CharOverview", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Char", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn("X", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn("Y", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn("Color", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+            ImGui::TableSetupColumn("Pattern", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn("8x8", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableHeadersRow();
+            
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            float pixel_size = 4.0f;
+            ImU32 bg_color = IM_COL32(40, 40, 40, 255);
+            
+            for (int i = 0; i < 12; i++) {
+                uint8 base = 0x10 + (i * 4);
+                uint8 y = vdc_state.registers[base + 0];
+                uint8 x = vdc_state.registers[base + 1];
+                uint8 color_reg = vdc_state.registers[base + 2];
+                uint8 pattern = vdc_state.registers[base + 3];
+                
+                // Extract color
+                uint8 color_bits = (color_reg >> 1) & 0x07;
+                uint8 color_idx = ((color_bits & 2) | ((color_bits & 1) << 2) | ((color_bits & 4) >> 2)) + 8;
+                ImU32 char_color = palette_colors[color_idx];
+                
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, 8 * pixel_size + 4);
+                
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%d", i);
+                
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%d", x);
+                
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%d", y);
+                
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("0x%02X", color_reg);
+                
+                ImGui::TableSetColumnIndex(4);
+                ImGui::Text("0x%02X", pattern);
+                
+                ImGui::TableSetColumnIndex(5);
+                // Render small 8x8 pattern inline
+                ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+                uint16 rom_addr = pattern * 8;
+                
+                for (int row = 0; row < 8; row++) {
+                    if (rom_addr + row < 64 * 8) {
+                        uint8 pattern_byte = character_rom_cache[rom_addr + row];
+                        for (int col = 0; col < 8; col++) {
+                            bool pixel_on = (pattern_byte & (0x80 >> col)) != 0;
+                            ImU32 pixel_color = pixel_on ? char_color : bg_color;
+                            
+                            ImVec2 p_min(canvas_pos.x + col * pixel_size, canvas_pos.y + row * pixel_size);
+                            ImVec2 p_max(p_min.x + pixel_size, p_min.y + pixel_size);
+                            draw_list->AddRectFilled(p_min, p_max, pixel_color);
+                        }
+                    }
+                }
+                ImGui::Dummy(ImVec2(8 * pixel_size, 8 * pixel_size));
+                
+                ImGui::TableSetColumnIndex(6);
+                if (y == 0xF8) {
+                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "OFF");
+                } else {
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "ON");
+                }
+            }
+            ImGui::EndTable();
+        }
+        
+        ImGui::TreePop();
+    }
+    
+    // Quad Characters (0x40-0x7F: 16 quads, but displayed as 4 groups of 4)
+    if (ImGui::TreeNode("Quad Characters (0x40-0x7F)")) {
+        // Load character ROM data only when this panel is open
+        if (!character_rom_loaded) {
+            emulator_->get_vdc().get_character_rom(character_rom_cache);
+            character_rom_loaded = true;
+        }
+        
+        ImGui::TextWrapped("16 bytes per quad group (4 sub-characters × 4 bytes each)");
+        ImGui::TextWrapped("Last character's X/Y sets position for entire group");
+        ImGui::Separator();
+        
+        // Quick overview table with inline 8x8 patterns
+        if (ImGui::BeginTable("QuadOverview", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Quad", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn("X", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn("Y", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn("Patterns", ImGuiTableColumnFlags_WidthFixed, 180.0f);
+            ImGui::TableSetupColumn("2x2", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableHeadersRow();
+            
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            float pixel_size = 2.0f;
+            ImU32 bg_color = IM_COL32(40, 40, 40, 255);
+            
+            for (int quad = 0; quad < 4; quad++) {
+                uint8 base = 0x40 + (quad * 16);
+                uint8 y = vdc_state.registers[base + 12];  // Char 3 Y
+                uint8 x = vdc_state.registers[base + 13];  // Char 3 X
+                
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, 16 * pixel_size + 4);
+                
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%d", quad);
+                
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%d", x);
+                
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%d", y);
+                
+                ImGui::TableSetColumnIndex(3);
+                if (y == 0xF8) {
+                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "OFF");
+                } else {
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "ON");
+                }
+                
+                ImGui::TableSetColumnIndex(4);
+                // Show all 4 sub-character patterns on one line
+                char patterns_str[32];
+                uint8 sub_base_0 = base + 0;
+                uint8 sub_base_1 = base + 4;
+                uint8 sub_base_2 = base + 8;
+                uint8 sub_base_3 = base + 12;
+                snprintf(patterns_str, sizeof(patterns_str), "0x%02X 0x%02X 0x%02X 0x%02X",
+                        vdc_state.registers[sub_base_0 + 3],
+                        vdc_state.registers[sub_base_1 + 3],
+                        vdc_state.registers[sub_base_2 + 3],
+                        vdc_state.registers[sub_base_3 + 3]);
+                ImGui::Text("%s", patterns_str);
+                
+                ImGui::TableSetColumnIndex(5);
+                // Render 2x2 grid of 8x8 patterns inline
+                ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+                
+                for (int sub = 0; sub < 4; sub++) {
+                    uint8 sub_base = base + (sub * 4);
+                    uint8 sub_color_reg = vdc_state.registers[sub_base + 2];
+                    uint8 sub_pattern = vdc_state.registers[sub_base + 3];
+                    
+                    // Extract color
+                    uint8 color_bits = (sub_color_reg >> 1) & 0x07;
+                    uint8 color_idx = ((color_bits & 2) | ((color_bits & 1) << 2) | ((color_bits & 4) >> 2)) + 8;
+                    ImU32 char_color = palette_colors[color_idx];
+                    
+                    uint16 rom_addr = sub_pattern * 8;
+                    
+                    // Position in 2x2 grid: 0=top-left, 1=top-right, 2=bottom-left, 3=bottom-right
+                    float x_offset = (sub % 2) * 8 * pixel_size;
+                    float y_offset = (sub / 2) * 8 * pixel_size;
+                    
+                    for (int row = 0; row < 8; row++) {
+                        if (rom_addr + row < 64 * 8) {
+                            uint8 pattern_byte = vdc_state.character_rom[rom_addr + row];
+                            for (int col = 0; col < 8; col++) {
+                                bool pixel_on = (pattern_byte & (0x80 >> col)) != 0;
+                                ImU32 pixel_color = pixel_on ? char_color : bg_color;
+                                
+                                ImVec2 p_min(canvas_pos.x + x_offset + col * pixel_size, canvas_pos.y + y_offset + row * pixel_size);
+                                ImVec2 p_max(p_min.x + pixel_size, p_min.y + pixel_size);
+                                draw_list->AddRectFilled(p_min, p_max, pixel_color);
+                            }
+                        }
+                    }
+                }
+                ImGui::Dummy(ImVec2(16 * pixel_size, 16 * pixel_size));
+            }
+            ImGui::EndTable();
+        }
+        ImGui::TreePop();
+    }
+    
+    // Color register (0xA3) - Background, Grid, and Luminance
+    if (ImGui::TreeNode("Color Register (0xA3)")) {
+        uint8 color_reg = vdc_state.registers[0xA3];
+        
+        // Extract color components (bits 0-6)
+        uint8 bg_color = (color_reg >> 4) & 0x07;  // Bits 4-6: Background color
+        uint8 grid_color = (color_reg >> 1) & 0x07;  // Bits 1-3: Grid color
+        bool luminance = (color_reg & 0x01) != 0;  // Bit 0: Luminance enable
+        
+        ImGui::Text("Value: 0x%02X (0b%c%c%c%c%c%c%c%c)",
+                   color_reg,
+                   (color_reg & 0x80) ? '1' : '0',
+                   (color_reg & 0x40) ? '1' : '0',
+                   (color_reg & 0x20) ? '1' : '0',
+                   (color_reg & 0x10) ? '1' : '0',
+                   (color_reg & 0x08) ? '1' : '0',
+                   (color_reg & 0x04) ? '1' : '0',
+                   (color_reg & 0x02) ? '1' : '0',
+                   (color_reg & 0x01) ? '1' : '0');
+        
+        ImGui::Text("Background Color: %d", bg_color);
+        ImGui::Text("Grid Color: %d", grid_color);
+        ImGui::Text("Luminance: %s", luminance ? "ON" : "OFF");
+        
+        // Show color swatches
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+        float swatch_size = 30.0f;
+        
+        // Background color swatch
+        ImU32 bg_col = palette_colors[bg_color];
+        draw_list->AddRectFilled(canvas_pos, ImVec2(canvas_pos.x + swatch_size, canvas_pos.y + swatch_size), bg_col);
+        draw_list->AddRect(canvas_pos, ImVec2(canvas_pos.x + swatch_size, canvas_pos.y + swatch_size), IM_COL32(255, 255, 255, 255));
+        ImGui::SetCursorScreenPos(ImVec2(canvas_pos.x + swatch_size + 5, canvas_pos.y + 5));
+        ImGui::Text("BG");
+        
+        // Grid color swatch
+        canvas_pos.x += swatch_size + 40;
+        ImU32 grid_col = palette_colors[grid_color];
+        draw_list->AddRectFilled(canvas_pos, ImVec2(canvas_pos.x + swatch_size, canvas_pos.y + swatch_size), grid_col);
+        draw_list->AddRect(canvas_pos, ImVec2(canvas_pos.x + swatch_size, canvas_pos.y + swatch_size), IM_COL32(255, 255, 255, 255));
+        ImGui::SetCursorScreenPos(ImVec2(canvas_pos.x + swatch_size + 5, canvas_pos.y + 5));
+        ImGui::Text("Grid");
+        
+        ImGui::Dummy(ImVec2(0, swatch_size + 5));
         ImGui::TreePop();
     }
     
@@ -1382,13 +1622,6 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
         ImGui::Text("[%c] Horizontal Grid", (collision & 0x20) ? 'X' : ' ');
         ImGui::Text("[%c] Characters", (collision & 0x80) ? 'X' : ' ');
         ImGui::Text("[%c] External Collision", (collision & 0x40) ? 'X' : ' ');
-        ImGui::TreePop();
-    }
-    
-    // Color register (0xA3) value
-    if (ImGui::TreeNode("Color Register (0xA3)")) {
-        uint8 color = vdc_state.registers[0xA3];
-        ImGui::Text("Value: 0x%02X", color);
         ImGui::TreePop();
     }
     
