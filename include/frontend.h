@@ -49,6 +49,7 @@ struct FrontendConfig {
     bool show_fps;
     bool enable_debugger;
     std::string trace_level;        // "", "minimal", "normal", "full"
+    bool enable_vdc_trace;          // Enable VDC register write trace
     bool enable_profile;            // Enable performance profiling
     std::vector<BreakpointConfig> breakpoints;
     std::vector<std::string> watch_conditions;  // Condition-only breakpoints
@@ -74,6 +75,7 @@ struct FrontendConfig {
         , show_fps(true)
         , enable_debugger(true)  // Enable by default for ImGui debugger UI
         , trace_level("")        // Off by default
+        , enable_vdc_trace(false)  // Off by default
         , enable_profile(false)
         , screenshot_path("screenshots")
     {}

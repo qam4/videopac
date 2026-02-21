@@ -85,6 +85,12 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
             debugger_->set_trace_level(level);
         }
         
+        // Enable VDC trace if requested
+        if (config_.enable_vdc_trace) {
+            debugger_->enable_vdc_trace(true);
+            std::cout << "VDC register write trace enabled" << std::endl;
+        }
+        
         // Set breakpoints from config
         for (const auto& bp : config.breakpoints) {
             if (bp.condition.empty()) {
@@ -152,6 +158,20 @@ void HeadlessFrontend::shutdown() {
             }
             trace_file.close();
             std::cout << "  Trace log written to trace.log" << std::endl;
+            std::cout.flush();
+        }
+        
+        // Dump VDC trace log to file
+        const auto& vdc_trace_log = debugger_->get_vdc_trace_log();
+        if (!vdc_trace_log.empty()) {
+            std::ofstream vdc_trace_file("vdc_trace.log");
+            std::cout << "  Writing VDC trace log..." << std::endl;
+            std::cout.flush();
+            for (const auto& line : vdc_trace_log) {
+                vdc_trace_file << line << "\n";
+            }
+            vdc_trace_file.close();
+            std::cout << "  VDC trace log written to vdc_trace.log (" << vdc_trace_log.size() << " writes)" << std::endl;
             std::cout.flush();
         }
     } else {

@@ -36,6 +36,7 @@ void print_usage(const char* program_name) {
     std::cout << "                      minimal = PC + instruction + A register only (fast)" << std::endl;
     std::cout << "                      normal  = + PSW, ports, memory ops (medium)" << std::endl;
     std::cout << "                      full    = all registers, VDC state (slow)" << std::endl;
+    std::cout << "  --vdc-trace         Enable VDC register write trace logging" << std::endl;
     std::cout << "  --profile           Enable performance profiling" << std::endl;
     std::cout << "  --break <addr>      Set breakpoint at address (hex, e.g. 0x00B0)" << std::endl;
     std::cout << "  --condition <expr>  Add condition to previous breakpoint" << std::endl;
@@ -144,6 +145,9 @@ int main(int argc, char* argv[]) {
                 trace_level_str = "full";  // Default to full if no level specified
             }
             config.enable_debugger = true;  // Trace requires debugger
+        } else if (strcmp(argv[i], "--vdc-trace") == 0) {
+            config.enable_vdc_trace = true;
+            config.enable_debugger = true;  // VDC trace requires debugger
         } else if (strcmp(argv[i], "--profile") == 0) {
             enable_profile = true;
         } else if (strcmp(argv[i], "--break") == 0 && i + 1 < argc) {

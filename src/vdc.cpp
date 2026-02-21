@@ -2,6 +2,8 @@
 #include <cstring>
 #include <iostream>
 #include <iomanip>
+#include <fstream>
+#include <sstream>
 
 // ============================================================================
 // IMPORTANT: Pattern Bit Ordering (Undocumented Hardware Behavior)
@@ -47,6 +49,7 @@ namespace videopac {
 VDC::VDC(VideoStandard standard) {
     state_.video_standard = standard;
     extended_fb_mode_ = false;
+    vdc_trace_enabled_ = false;
     calculate_timing();
     reset();
 }
@@ -165,6 +168,14 @@ void VDC::tick_one_cycle() {
 // Write to VDC register
 // Reference: doc/o2doc.md Appendix D, doc/8245.md lines 600-650
 void VDC::write_register(uint8 address, uint8 value) {
+    // Generate VDC trace if enabled
+    if (vdc_trace_enabled_) {
+        std::ostringstream trace;
+        trace << "[VDC] write_register(0x" << std::hex << std::setw(2) << std::setfill('0') 
+              << (int)address << ", 0x" << (int)value << std::dec << ")";
+        last_vdc_trace_ = trace.str();
+    }
+    
     state_.registers[address] = value;
     
     // Handle special registers that update internal state

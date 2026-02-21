@@ -147,6 +147,11 @@ void EmulatorCore::run_frame() {
                 // Execute one CPU instruction
                 uint8 instruction_cycles = cpu_.execute_instruction();
                 
+                // Log VDC trace if enabled (after instruction execution, in case it wrote to VDC)
+                if (debugger_ && debugger_->is_vdc_trace_enabled()) {
+                    debugger_->log_vdc_write();
+                }
+                
                 // Notify master clock that CPU executed
                 master_clock_.cpu_executed(instruction_cycles);
                 

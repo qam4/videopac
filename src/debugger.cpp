@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <iostream>
 
 namespace videopac {
 
@@ -12,6 +13,7 @@ Debugger::Debugger(EmulatorCore* emulator)
     , state_(DebuggerState::Running)
     , trace_level_(TraceLevel::Off)
     , trace_limit_enabled_(true)  // Enable limit by default (for SDL mode)
+    , vdc_trace_enabled_(false)
     , last_frame_time_(0) {
     frame_stats_.total_cycles = 0;
     frame_stats_.frame_count = 0;
@@ -513,6 +515,29 @@ void Debugger::reset_frame_stats() {
     frame_stats_.frame_count = 0;
     frame_stats_.fps = 0.0;
     frame_stats_.average_cycles_per_frame = 0.0;
+}
+
+// VDC trace logging
+void Debugger::enable_vdc_trace(bool enabled) {
+    vdc_trace_enabled_ = enabled;
+    emulator_->get_vdc().enable_vdc_trace(enabled);
+}
+
+void Debugger::log_vdc_write() {
+    if (!vdc_trace_enabled_) {
+        return;
+    }
+    
+    std::string trace = emulator_->get_vdc().get_last_vdc_trace();
+    if (!trace.empty()) {
+        vdc_trace_log_.push_back(trace);
+        // Clear the trace after logging to avoid duplicates
+        emulator_->get_vdc().clear_last_vdc_trace();
+    }
+}
+
+void Debugger::clear_vdc_trace_log() {
+    vdc_trace_log_.clear();
 }
 
 } // namespace videopac

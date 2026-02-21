@@ -18,10 +18,10 @@ def get_executable_path():
     system = platform.system()
     
     if system == "Windows":
-        # Try dev-mingw first (current preset), then build root, then ci-win64
+        # Try build root first, then dev-mingw, then ci-win64
         paths = [
-            Path("build/dev-mingw/videopac.exe"),
             Path("build/videopac.exe"),
+            Path("build/dev-mingw/videopac.exe"),
             Path("build/ci-win64/Release/videopac.exe"),
         ]
     else:
@@ -111,8 +111,7 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False)
     else:
         print("Note: Pressing '1' at frame 5 to select game")
         print("Note: Pressing '1' at frame 12 to select level")
-        print("Note: Pressing UP at frame 20 for 95 frames")
-        print("Note: Will dump VDC state at frames 10, 14, 20, 22, 24, 26, 28, 30, 60, 100, 118")
+        print("Note: Pressing UP at frame 20-70 to capture timer bug at frame 56")
     print()
     
     setup_screenshots_dir()
@@ -126,21 +125,23 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False)
             "--frames", "200",
             "--debug",
             "--trace",
+            "--vdc-trace",
             "--bios", bios_path,
             rom_path
         ]
     else:
-        # Normal mode with input - 120 frames with '1' pressed twice, UP at frame 20 for 95 frames
+        # Normal mode with input - 70 frames to capture timer bug at frame 56
         cmd = [
             exe_path,
             "--headless",
             "--screenshot", "1",
-            "--frames", "120",
+            "--frames", "70",
             "--press-key", "1", "5", "5",   # Press '1' at frame 5 for 5 frames (title screen)
             "--press-key", "1", "12", "5",  # Press '1' at frame 12 for 5 frames (select game)
-            "--press-joystick", "2", "0", "20", "95",  # Press joystick 2 UP at frame 20 for 95 frames
+            "--press-joystick", "2", "0", "20", "50",  # Press joystick 2 UP at frame 20 for 50 frames
             "--debug",
             "--trace",
+            "--vdc-trace",
             "--bios", bios_path,
             rom_path
         ]

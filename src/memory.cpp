@@ -173,6 +173,27 @@ void MemorySystem::write_external(uint8 address, uint8 value) {
     // Reference: doc/o2doc.md section 3.0 "External RAM"
     // Note: If P13=0 AND P14=0, data writes to BOTH VDC and EXRAM simultaneously
     if (ram_enabled() && address < 128) {
+        // Log when RAM[0x3F] bit 7 is set (copy request)
+        if (address == 0x3F && (value & 0x80)) {
+            uint8 old_value = state_.external_ram[address];
+            if (!(old_value & 0x80)) {
+                // Copy request being set - dump the copy data
+                uint8 count = state_.external_ram[0x7F];
+                uint8 target = state_.external_ram[0x7E];
+                std::cout << "[COPY REQUEST] RAM[0x3F] bit 7 set. Count=0x" << std::hex << std::setw(2) << std::setfill('0') 
+                          << (int)count << " Target=0x" << (int)target << std::dec << std::endl;
+                // Dump the data bytes
+                std::cout << "[COPY DATA] ";
+                for (int i = 0; i < 8 && i < count; i++) {
+                    uint8 addr = 0x7D - i;
+                    uint8 data = state_.external_ram[addr];
+                    std::cout << "RAM[0x" << std::hex << std::setw(2) << std::setfill('0') << (int)addr 
+                              << "]=0x" << (int)data << " ";
+                }
+                std::cout << std::dec << std::endl;
+                std::cout.flush();
+            }
+        }
         state_.external_ram[address] = value;
     }
 }

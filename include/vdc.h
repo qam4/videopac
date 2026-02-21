@@ -238,12 +238,22 @@ public:
     uint16 get_beam_x() const { return state_.beam_x; }
     uint16 get_beam_y() const { return state_.beam_y; }
     VideoStandard get_video_standard() const { return state_.video_standard; }
+    
+    // VDC trace (for debugging VDC register writes)
+    void enable_vdc_trace(bool enabled) { vdc_trace_enabled_ = enabled; }
+    bool is_vdc_trace_enabled() const { return vdc_trace_enabled_; }
+    std::string get_last_vdc_trace() const { return last_vdc_trace_; }
+    void clear_last_vdc_trace() { last_vdc_trace_.clear(); }
 
 private:
     VDCState state_;
     
     // Extended framebuffer mode flag
     bool extended_fb_mode_;
+    
+    // VDC trace
+    bool vdc_trace_enabled_;
+    std::string last_vdc_trace_;
     
     // Timing
     uint32 cycles_per_scanline_;

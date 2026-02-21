@@ -99,6 +99,13 @@ public:
     const std::vector<std::string>& get_trace_log() const { return trace_log_; }
     void clear_trace_log();
     
+    // VDC trace logging
+    void enable_vdc_trace(bool enabled);
+    bool is_vdc_trace_enabled() const { return vdc_trace_enabled_; }
+    void log_vdc_write();
+    const std::vector<std::string>& get_vdc_trace_log() const { return vdc_trace_log_; }
+    void clear_vdc_trace_log();
+    
     // Frame timing statistics
     void update_frame_stats(uint64 cycles);
     FrameStats get_frame_stats() const { return frame_stats_; }
@@ -111,6 +118,8 @@ private:
     TraceLevel trace_level_;
     std::vector<std::string> trace_log_;
     bool trace_limit_enabled_;  // Enable/disable trace log size limit
+    bool vdc_trace_enabled_;
+    std::vector<std::string> vdc_trace_log_;
     FrameStats frame_stats_;
     uint64 last_frame_time_;
     
