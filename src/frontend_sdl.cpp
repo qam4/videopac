@@ -18,6 +18,7 @@
 #include <cstring>
 #include <fstream>
 #include <ctime>
+#include <filesystem>
 #include <chrono>
 
 namespace videopac {
@@ -1188,8 +1189,17 @@ EmulatorCore* SDLFrontend::get_emulator() {
 }
 
 void SDLFrontend::save_screenshot(const std::string& filename) {
-    dump_framebuffer(filename);
-    std::cout << "Screenshot saved to " << filename << std::endl;
+    // Create screenshots directory if it doesn't exist
+    std::filesystem::path screenshots_dir("screenshots");
+    if (!std::filesystem::exists(screenshots_dir)) {
+        std::filesystem::create_directory(screenshots_dir);
+    }
+    
+    // Build full path with screenshots directory
+    std::filesystem::path full_path = screenshots_dir / filename;
+    
+    dump_framebuffer(full_path.string());
+    std::cout << "Screenshot saved to " << full_path.string() << std::endl;
 }
 
 void SDLFrontend::dump_framebuffer(const std::string& filename) {
