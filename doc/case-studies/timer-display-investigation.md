@@ -255,7 +255,62 @@ Frame 56 VDC writes:
 - Discovered PAL timing mismatch (wraps at 60, runs at 50 FPS)
 - Need to understand timer storage and display mechanism
 
-### Next Session
+### Next Session: Process of Elimination
+- **NOT single characters** - Debugger shows "P" and "L", not numbers
+- **NOT sprites** - Sprites are the cars
+- **NOT grid** - Grid draws grid lines
+- **MUST BE QUADS** - Only display system left!
+
+**Key Insight**: Timer "02:00" uses 4 quad characters, not 5 separate characters
+- Colon ":" must be part of one character's shape
+- Likely: "0", "2:", "0", "0" or similar arrangement
+- The 8 writes to 0x42-0x49 with 0xF8 at frame 7 ARE the timer setup
+
+**Critical Question**: What does 0xF8 mean in quad character registers?
+- All 8 bytes are 0xF8 at frame 7
+- This sets up the timer display somehow
+- Need to understand quad character data format
+- 0xF8 might be setting character shapes, not positions
+
+**BREAKTHROUGH**: Found complete Quad 0 setup sequence!
+```
+Initial writes (frame ~7): All 0x40-0x4F = 0xF8 (hide/init)
+Then setup:
+  0x40 = 0x50 (Char 0 Y-pos = 80)
+  0x41 = 0x70 (Char 0 X-pos = 112)
+  0x42 = 0xD8 (Char 0 Shape = 216)
+  0x43 = 0x09 (Char 0 Color = 1, Shape bit 9 = 0)
+  0x46 = 0x28 (Char 1 Shape = 40)
+  0x47 = 0x08 (Char 1 Color = 0, Shape bit 9 = 1)
+  0x4E = 0x38 (Char 3 Shape = 56)
+  0x4F = 0x08 (Char 3 Color = 0, Shape bit 9 = 1)
+  ... and more
+```
+
+**Timer confirmed to use Quad 0 (registers 0x40-0x4F)**
+
+**Next Steps**:
+1. Map all Quad 0 register writes in chronological order
+2. Understand which writes happen at frame 7 (working) vs frame 56 (corrupted)
+3. Identify what changes at frame 56 that causes corruption
+4. Check if corruption is due to missing writes or wrong values
+1. Understand what registers 0x42-0x49 control in Quad 0
+2. Decode what 0xF8 values mean (shape pointers? special values?)
+3. Check if there are MORE writes after 0x42-0x49 that complete the setup
+4. Look at quad character shapes in ROM/VDC to see digit patterns
+5. Find where quad character shapes are defined (internal ROM or external?)
+- **Timer is 5 characters "02:00", NOT 4** - Cannot be a simple quad (quads show 4 chars)
+- **Analyzed single character registers (0x10-0x3F)** - Characters 0-3 are used for gameplay graphics, updated frequently around frame 50-56
+- **Characters 4-11 only used for title screen** - Hidden at frame 12-13, never updated during gameplay
+- **0xF8 value means "hide"** - Y-position 248 is off-screen
+- **Timer display mechanism still unknown** - Not in single chars 0-11, not clearly in quads
+- **Possible explanations**:
+  1. Timer uses grid characters (background grid system)
+  2. Timer uses quads with colon ":" as part of background
+  3. Timer uses a combination of display methods
+  4. We're looking at the wrong VDC registers
+
+**Next**: Need to find where "02:00" is actually displayed - check grid system, check if colon is separate, verify quad usage
 - Review VDC quad documentation
 - Find timer storage location in RAM
 - Understand BCD conversion and display
