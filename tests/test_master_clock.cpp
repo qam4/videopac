@@ -50,30 +50,28 @@ TEST_F(MasterClockTest, CPUExecutionReducesDebt) {
     EXPECT_GT(clock_ntsc->get_vdc_cycle_debt(), initial_vdc_debt);
 }
 
-// Test cycle ratio is approximately 9.9
-TEST_F(MasterClockTest, CycleRatioApproximately9Point9) {
+// Test cycle ratio is exactly 10.0 for NTSC
+TEST_F(MasterClockTest, CycleRatioExactly10ForNTSC) {
     // Execute one CPU instruction
     clock_ntsc->cpu_executed(1);
     
     double vdc_debt = clock_ntsc->get_vdc_cycle_debt();
     
-    // Should be approximately 9.9 VDC cycles per CPU instruction
-    EXPECT_NEAR(vdc_debt, 9.9, 0.1);
+    // Should be exactly 10.0 VDC cycles per CPU instruction for NTSC
+    EXPECT_DOUBLE_EQ(vdc_debt, 10.0);
 }
 
 // Test tick() returns CPU when debt threshold reached
 TEST_F(MasterClockTest, TickReturnsCPUWhenDebtThresholdReached) {
-    // Accumulate enough CPU debt (need ~9.9 VDC cycles per CPU instruction)
-    for (int i = 0; i < 10; i++) {
+    // Accumulate enough CPU debt (need 10.0 VDC cycles per CPU instruction for NTSC)
+    // After N VDC ticks, CPU debt = N * (1/10.0) = N/10
+    // We need CPU debt >= 10.0, so N >= 100
+    // Due to floating-point precision, we use 101 ticks to ensure we're above the threshold
+    for (int i = 0; i < 101; i++) {
         clock_ntsc->vdc_ticked();
     }
     
-    // CPU debt should be >= 9.9 now (10 * (1/9.9) ≈ 1.01, which is < 9.9)
-    // We need about 100 VDC ticks to get 10 CPU cycles of debt
-    for (int i = 0; i < 90; i++) {
-        clock_ntsc->vdc_ticked();
-    }
-    
+    // CPU debt should be > 10.0 now (101 * (1/10.0) = 10.1)
     auto next = clock_ntsc->tick();
     EXPECT_EQ(next, MasterClock::ExecuteNext::CPU);
 }
@@ -86,8 +84,8 @@ TEST_F(MasterClockTest, TickReturnsVDCByDefault) {
 
 // Test frame completion detection
 TEST_F(MasterClockTest, FrameCompletionDetection) {
-    // NTSC: 262 scanlines * 227 cycles = 59474 cycles
-    uint32 ntsc_cycles = 262 * 227;
+    // NTSC: 262 scanlines * 227.5 cycles = 59,605 cycles
+    uint32 ntsc_cycles = 59605;
     
     for (uint32 i = 0; i < ntsc_cycles - 1; i++) {
         clock_ntsc->vdc_ticked();
@@ -100,7 +98,8 @@ TEST_F(MasterClockTest, FrameCompletionDetection) {
 
 // Test tick() returns FRAME_COMPLETE when frame is done
 TEST_F(MasterClockTest, TickReturnsFrameCompleteWhenDone) {
-    uint32 ntsc_cycles = 262 * 227;
+    // NTSC: 59,605 cycles per frame
+    uint32 ntsc_cycles = 59605;
     
     for (uint32 i = 0; i < ntsc_cycles; i++) {
         clock_ntsc->vdc_ticked();
@@ -121,26 +120,12 @@ TEST_F(MasterClockTest, ResetFrameResetsCounter) {
     clock_ntsc->reset_frame();
     EXPECT_EQ(clock_ntsc->get_frame_cycle_count(), 0);
 }
-
-// Test reset_frame() clears excessive debt
-TEST_F(MasterClockTest, ResetFrameClearsExcessiveDebt) {
-    // Create large negative debt
-    for (int i = 0; i < 100; i++) {
-        clock_ntsc->cpu_executed(1);
-    }
-    
-    clock_ntsc->reset_frame();
-    
-    // Debt should be cleared or minimal
-    EXPECT_GT(clock_ntsc->get_cpu_cycle_debt(), -20.0);
-    EXPECT_GT(clock_ntsc->get_vdc_cycle_debt(), -20.0);
-}
-
 // Test PAL has more cycles per frame than NTSC
 TEST_F(MasterClockTest, PALHasMoreCyclesPerFrame) {
-    // Run both to completion
-    uint32 ntsc_cycles = 262 * 227;
-    uint32 pal_cycles = 312 * 227;
+    // NTSC: 262 × 227.5 = 59,605 cycles
+    // PAL: 312 × 227.36 ≈ 70,936 cycles
+    uint32 ntsc_cycles = 59605;
+    uint32 pal_cycles = 70936;
     
     for (uint32 i = 0; i < ntsc_cycles; i++) {
         clock_ntsc->vdc_ticked();

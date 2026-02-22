@@ -16,7 +16,7 @@ using namespace videopac;
 // ============================================================================
 TEST(MasterClockProperties, CycleRatio) {
     rc::check("Property 1: Master clock cycle ratio - For any CPU instruction execution, "
-              "the VDC cycle debt should increase by approximately 9.9 cycles",
+              "the VDC cycle debt should increase by exactly 10.0 cycles for NTSC",
               [](uint8 instruction_cycles) {
         RC_PRE(instruction_cycles >= 1 && instruction_cycles <= 3);  // Valid CPU instruction cycles
         
@@ -25,12 +25,12 @@ TEST(MasterClockProperties, CycleRatio) {
         // Execute CPU instruction
         clock.cpu_executed(instruction_cycles);
         
-        // VDC cycle debt should increase by approximately 9.9 * instruction_cycles
-        double expected_vdc_debt = instruction_cycles * 9.9;
+        // VDC cycle debt should increase by exactly 10.0 * instruction_cycles for NTSC
+        double expected_vdc_debt = instruction_cycles * 10.0;
         double actual_vdc_debt = clock.get_vdc_cycle_debt();
         
-        // Allow 1% tolerance for floating point arithmetic
-        double tolerance = expected_vdc_debt * 0.01;
+        // Allow small tolerance for floating point arithmetic
+        double tolerance = 0.001;
         RC_ASSERT(std::abs(actual_vdc_debt - expected_vdc_debt) < tolerance);
     });
 }

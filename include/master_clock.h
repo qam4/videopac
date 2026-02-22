@@ -50,10 +50,26 @@ private:
     uint32 frame_cycle_count_;        // Cycles in current frame
     uint32 cycles_per_frame_;         // Total cycles per frame
     
-    // Clock frequency constants
+    // Standard-specific timing (set by calculate_timing())
+    double vdc_clock_mhz_;              // VDC clock frequency for current standard
+    double cpu_instruction_mhz_;        // CPU instruction rate for current standard
+    double cycles_per_cpu_instruction_; // VDC cycles per CPU instruction
+    
+    // Legacy clock frequency constants (deprecated, use member variables instead)
     static constexpr double VDC_CLOCK_MHZ = 3.54;
     static constexpr double CPU_CLOCK_MHZ = 1.79 / 5.0;  // ~0.358 MHz
-    static constexpr double CYCLES_PER_CPU_INSTRUCTION = VDC_CLOCK_MHZ / CPU_CLOCK_MHZ;  // ~9.9
+    
+    // NTSC timing constants (hardware-accurate)
+    static constexpr double NTSC_MASTER_CLOCK_MHZ = 7.15909;
+    static constexpr double NTSC_VDC_CLOCK_MHZ = 3.579545;
+    static constexpr double NTSC_CPU_INSTRUCTION_MHZ = 0.357954;
+    static constexpr double NTSC_CYCLES_PER_CPU_INSTRUCTION = 10.0;
+    
+    // PAL timing constants (hardware-accurate)
+    static constexpr double PAL_MASTER_CLOCK_MHZ = 17.734476;
+    static constexpr double PAL_VDC_CLOCK_MHZ = 3.546895;
+    static constexpr double PAL_CPU_INSTRUCTION_MHZ = 0.394099;
+    static constexpr double PAL_CYCLES_PER_CPU_INSTRUCTION = 9.0;
     
     // Calculate cycles per frame based on video standard
     void calculate_timing();
