@@ -58,3 +58,6 @@ roms/
 
 # Screenshots
 screenshots/
+
+# ImGui user settings (window positions, sizes, etc.)
+imgui.ini

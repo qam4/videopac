@@ -576,3 +576,38 @@ This formula (from o2em) limits how many rows are rendered, preventing the chara
 **Related code**:
 - `src/vdc.cpp`: `is_character_pixel_at()` - implements dynamic height calculation for both single and quad characters
 - Reference: o2em vdc.c draw_char() function
+
+### Course de Voitures Timer Display Bug
+
+**FIXED (2026-02-22)**:
+✅ **Timer corruption at frame 56** - Fixed by implementing VDC write protection
+
+**Problem**: In Course de Voitures Game 1, the countdown timer displays "02:00" correctly at game start but becomes corrupted at frame 56, with the timer moving from Y=80 to Y=1 (off-screen).
+
+**Root Cause**: 
+- The game has an off-by-one error in its character update code (updates characters 0-11 at registers 0x10-0x3F)
+- The code writes 49 bytes instead of 48, overflowing into register 0x40 (Quad 0 Y-position)
+- This write happens while the display is enabled (VDC control register 0xA0 bit 5 = 1)
+- On real hardware, the VDC ignores writes to graphic registers when display is enabled (per specification)
+- The emulator was missing this write protection, allowing the invalid write to corrupt the timer
+
+**Fix**: Implemented VDC write protection in `VDC::write_register()`:
+```cpp
+// Enforce VDC write protection (doc/reference/o2doc.md section 4.0)
+// Graphic registers (0x00-0x7F) cannot be written when display is enabled
+if (address <= 0x7F) {
+    bool display_enabled = (state_.registers[VDCRegisters::CONTROL] & ControlBits::ENABLE_DISPLAY) != 0;
+    if (display_enabled) {
+        // Silently ignore write (real hardware behavior)
+        return;
+    }
+}
+```
+
+**Result**: Timer now displays correctly throughout gameplay. The game's off-by-one bug is harmless because the invalid write is blocked, matching real hardware behavior.
+
+**Investigation Details**: See [doc/case-studies/timer-display-investigation.md](../doc/case-studies/timer-display-investigation.md) for complete analysis.
+
+**Files Modified**:
+- `src/vdc.cpp` - Added write protection to `write_register()`
+- `tests/test_vdc.cpp` - Added tests for write protection behavior

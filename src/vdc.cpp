@@ -176,6 +176,20 @@ void VDC::write_register(uint8 address, uint8 value) {
         last_vdc_trace_ = trace.str();
     }
     
+    // Enforce VDC write protection (doc/reference/o2doc.md section 4.0)
+    // "the VDC registers that control the graphic object cannot be changed
+    // while the VDC is enabled by the VDC control register"
+    // Graphic registers (0x00-0x7F) cannot be written when display is enabled
+    if (address <= 0x7F) {
+        bool display_enabled = (state_.registers[VDCRegisters::CONTROL] & ControlBits::ENABLE_DISPLAY) != 0;
+        if (display_enabled) {
+            // Silently ignore write (real hardware behavior)
+            // This protects against game bugs that write to graphic registers
+            // while display is active
+            return;
+        }
+    }
+    
     state_.registers[address] = value;
     
     // Handle special registers that update internal state
