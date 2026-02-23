@@ -62,6 +62,8 @@ public:
     CPU& get_cpu() { return cpu_; }
     VDC& get_vdc() { return vdc_; }
     MemorySystem& get_memory() { return memory_; }
+    MasterClock& get_master_clock() { return master_clock_; }
+    const MasterClock& get_master_clock() const { return master_clock_; }
     
     // State access (for debugger inspection)
     CPUState get_cpu_state() const { return cpu_.get_state(); }

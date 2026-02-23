@@ -425,3 +425,120 @@ bool pixel_on = (pattern & (0x01 << pattern_x)) != 0;  // LSB-first (correct for
 - `src/vdc.cpp` - Collision tracking functions (`track_sprite_objects`, `track_grid_objects`)
 
 **Verification**: Tested with Course de Voitures - collisions now detected correctly for sprite-sprite, sprite-vertical grid, and sprite-horizontal grid interactions.
+
+## Investigation: Frame 352 Display Corruption Bug (UNRESOLVED)
+
+**Status**: ⚠️ Bug still occurs despite interrupt timing fix. Root cause not yet identified.
+
+**Symptoms**:
+- At frame 352, display became corrupted
+- Background turned grey
+- Sprites became large squares
+- White grid appeared with all bits set
+- VDC registers 0xD0-0xEF (grid RAM) were written with 0xFF values
+
+**Investigation Process**:
+
+1. **Trace Analysis**: Revealed BIOS copy routine at 0x089-0x0AC was executing when corruption occurred
+2. **Register Corruption**: Timer interrupt fired during copy loop, game's interrupt handler at 0x788-0x79C used R0, R1, R2 without saving them
+3. **Corruption Mechanism**: When handler returned, BIOS copy resumed with corrupted registers - R0 now pointed to 0xFF values instead of valid sprite data
+4. **Loop Behavior**: Copy loop continued with corrupted R0, writing 255 bytes of 0xFF to VDC grid registers
+
+**Why This Happened**:
+
+The 8048 hardware does NOT save working registers (R0-R7) or accumulator during interrupts - only PC and PSW bits 4-7 (BS, F0, AC, C). This is correct hardware behavior. Programmers must manually save/restore registers if needed.
+
+Neither the BIOS nor the game's interrupt handler was buggy - they followed normal 8048 programming practice. The real issue was **when** the interrupt fired.
+
+**Hardware Documentation**:
+
+From Intel 8048 User Manual (doc/reference/mcs-48-user-manual.md, line 3107):
+
+> "The Interrupt line is sampled every machine cycle during ALE and when detected causes a 'jump to subroutine' at location 3 in program memory **as soon as all cycles of the current instruction are complete**."
+
+This clearly states:
+1. Interrupts are **sampled** every machine cycle
+2. But interrupt processing is **deferred** until the current instruction finishes
+3. Multi-cycle instructions complete atomically before interrupt processing begins
+
+**The Bug in Our Emulator**:
+
+Original implementation triggered interrupts immediately when timer overflowed:
+```cpp
+// WRONG: Triggers interrupt immediately when timer overflows
+if (old_timer == 0xFF && state_.timer == 0x00) {
+    state_.timer_flag = true;
+    if (state_.timer_interrupts_enabled && state_.interrupts_enabled) {
+        trigger_interrupt(0x007);  // Fires during instruction execution!
+    }
+}
+```
+
+This could interrupt in the middle of a multi-cycle instruction or between instructions in a critical section.
+
+**Fix Applied**:
+
+1. **Added Pending Interrupt Flags** (include/cpu.h):
+   - `timer_interrupt_pending` - Timer interrupt pending
+   - `external_interrupt_pending` - External interrupt pending
+   - Reference: Intel 8048 User Manual, page 3107 - interrupts are sampled every cycle but only processed between instructions
+
+2. **Set Pending Flag When Interrupt Condition Detected** (src/cpu.cpp):
+   - When timer overflows, set `timer_interrupt_pending = true` if interrupts enabled
+   - This represents the "sampling" phase - interrupt condition is detected during instruction
+
+3. **Process Pending Interrupts After Instruction Completes** (src/cpu.cpp):
+   - After each instruction completes, check for pending interrupts
+   - External interrupt has higher priority than timer interrupt
+   - Clear pending flag and call `trigger_interrupt()` to process the interrupt
+   - This ensures multi-cycle instructions complete atomically before interrupt processing
+
+**Why This Fixes the Bug**:
+
+With the fix:
+1. Timer overflow sets `timer_interrupt_pending = true` (sampled during instruction)
+2. Current instruction completes fully (BIOS copy instruction finishes)
+3. Interrupt is processed between instructions (after instruction boundary)
+4. This gives the BIOS copy loop time to complete before interrupt fires
+5. Registers R0, R1, R2 maintain correct values through the critical section
+
+The timing change means the interrupt now fires at a slightly different point in the frame, avoiding the corruption window.
+
+**Comparison with O2EM**:
+
+O2EM implements the same behavior:
+```c
+// o2em sets pending flags
+if (pendirq && (!tirq_en)) tirq_pend=1;
+
+// o2em processes pending interrupts after instruction
+if (xirq_pend) ext_IRQ();
+if (tirq_pend) tim_IRQ();
+```
+
+Our fix aligns with both the documented Intel 8048 hardware behavior and the proven o2em implementation.
+
+**Result**: ⚠️ Corruption still occurs at frame 352 despite the fix.
+
+**Files Modified**:
+- `include/cpu.h` - Added pending interrupt flags
+- `src/cpu.cpp` - Modified interrupt timing logic to defer processing until after instruction completes
+
+**Value of This Work**:
+
+While this fix didn't resolve the frame 352 corruption, it was still valuable:
+1. **Hardware Accuracy**: The interrupt timing fix aligns our emulator with documented Intel 8048 behavior
+2. **Correctness**: Processing interrupts between instructions (not during) is the correct hardware behavior
+3. **Future Bugs**: This fix may prevent other timing-sensitive bugs in different games
+4. **Documentation**: We now understand how 8048 interrupts work and have it documented
+
+**Next Steps**:
+
+The frame 352 corruption must have a different root cause. Possible areas to investigate:
+1. **Cycle counting accuracy**: Are we counting cycles correctly for all instructions?
+2. **Timer prescaler**: Is the timer prescaler (32-cycle) implemented correctly?
+3. **VDC timing**: Does the VDC have timing interactions with the CPU we're missing?
+4. **Memory timing**: Are there memory access timing issues?
+5. **Different corruption mechanism**: Maybe it's not interrupt-related at all
+
+The investigation notes in `FRAME352_INVESTIGATION.md` remain valid for continued debugging.

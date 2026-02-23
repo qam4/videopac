@@ -24,6 +24,8 @@ struct CPUState {
     bool timer_running;         // Timer enabled flag
     bool interrupts_enabled;    // Interrupts enabled
     bool timer_interrupts_enabled;  // Timer interrupts enabled
+    bool timer_flag;            // Timer overflow flag (TF) - set when timer overflows from 0xFF to 0x00
+                                // Can be tested with JTF instruction, which also clears it
     uint8 timer_prescaler;      // Timer prescaler counter (0-31)
                                 // Reference: doc/mcs-48-assembly-language-manual.md, "Timer Flag" section
                                 // The timer increments every 32 instruction cycles via this prescaler
@@ -35,6 +37,15 @@ struct CPUState {
                                 // NOTE: F1 is NOT the same as Bank Select (BS)! They are independent.
     bool memory_bank;           // Memory bank flag (DBF): false=MB0 (0x000-0x7FF), true=MB1 (0x800-0xFFF)
                                 // Set by SEL MB0/MB1 instructions, affects JMP/CALL target addresses
+    
+    // Pending interrupt flags
+    // Reference: Intel 8048 User Manual, page 3107:
+    // "The Interrupt line is sampled every machine cycle during ALE and when detected
+    //  causes a 'jump to subroutine' at location 3 in program memory as soon as all
+    //  cycles of the current instruction are complete."
+    // This means interrupts are sampled every cycle but only processed between instructions.
+    bool timer_interrupt_pending;   // Timer interrupt pending (will be processed after current instruction)
+    bool external_interrupt_pending; // External interrupt pending (will be processed after current instruction)
 };
 
 // Intel 8048 CPU emulation

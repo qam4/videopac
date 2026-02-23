@@ -77,6 +77,13 @@ void CPU::write_port(uint8 port, uint8 value) {
 
 void CPU::trigger_interrupt(uint16 vector) {
     if (state_.interrupts_enabled) {
+        // Interrupt processing takes 2 machine cycles (same as CALL instruction)
+        // Reference: doc/reference/mcs-48-assembly-language-manual.md
+        // "subroutine calls and returns... require two cycles"
+        // "A CALL to location 3 is forced" (external interrupt)
+        // "A CALL to location 7 is forced" (timer interrupt)
+        state_.clock_cycles += 2;
+        
         // Push PC (12 bits) and PSW bits 4-7 (4 bits) as a single 16-bit value
         uint16 stack_value = (state_.pc & 0x0FFF) | ((state_.psw & 0xF0) << 8);
         push_stack(stack_value);
@@ -585,6 +592,17 @@ uint8 CPU::execute_instruction() {
             cycles = 2;
             break;
         }
+        
+        // MOVD A,Pp - Move expander port to accumulator (0x0C-0x0F)
+        // Operation: (A) <- (Pp) where Pp is P4-P7
+        // Flags affected: None
+        // Cycles: 2
+        // Reads 4-bit data from expander ports P4-P7 (used for external I/O expansion)
+        // On Odyssey 2, these ports are not used, so we return 0xFF
+        case 0x0C: case 0x0D: case 0x0E: case 0x0F:
+            state_.a = 0xFF;  // Expander ports not connected on Odyssey 2
+            cycles = 2;
+            break;
             
         // ========== CONDITIONAL JUMP INSTRUCTIONS ==========
         
@@ -716,7 +734,71 @@ uint8 CPU::execute_instruction() {
         // Jumps to the address within the current page if the timer overflow flag is set.
         // The timer flag is automatically cleared when the jump is taken.
         case 0x16: {
-            (void)fetch_byte();  // Read address (timer flag check would go here)
+            uint8 addr = fetch_byte();
+            if (state_.timer_flag) {
+                state_.pc = (state_.pc & 0xF00) | addr;
+                state_.timer_flag = false;  // Clear timer flag
+            }
+            cycles = 2;
+            break;
+        }
+        
+        // JNT0 addr - Jump if T0 pin is low (0x26)
+        // Operation: If (T0) = 0 then (PC) <- addr
+        // Flags affected: None
+        // Cycles: 2
+        // Tests the T0 input pin. On Odyssey 2, T0 is connected to the voice module.
+        case 0x26: {
+            (void)fetch_byte();  // Read address
+            // T0 pin not emulated - assume high (no jump)
+            cycles = 2;
+            break;
+        }
+        
+        // JT0 addr - Jump if T0 pin is high (0x36)
+        // Operation: If (T0) = 1 then (PC) <- addr
+        // Flags affected: None
+        // Cycles: 2
+        case 0x36: {
+            uint8 addr = fetch_byte();
+            // T0 pin not emulated - assume high (always jump)
+            state_.pc = (state_.pc & 0xF00) | addr;
+            cycles = 2;
+            break;
+        }
+        
+        // JNT1 addr - Jump if T1 pin is low (0x46)
+        // Operation: If (T1) = 1 then (PC) <- addr
+        // Flags affected: None
+        // Cycles: 2
+        // Tests the T1 input pin (used for event counter input)
+        case 0x46: {
+            (void)fetch_byte();  // Read address
+            // T1 pin not emulated - assume high (no jump)
+            cycles = 2;
+            break;
+        }
+        
+        // JT1 addr - Jump if T1 pin is high (0x56)
+        // Operation: If (T1) = 1 then (PC) <- addr
+        // Flags affected: None
+        // Cycles: 2
+        case 0x56: {
+            uint8 addr = fetch_byte();
+            // T1 pin not emulated - assume high (always jump)
+            state_.pc = (state_.pc & 0xF00) | addr;
+            cycles = 2;
+            break;
+        }
+        
+        // JNI addr - Jump if interrupt pin is low (0x86)
+        // Operation: If (INT) = 0 then (PC) <- addr
+        // Flags affected: None
+        // Cycles: 2
+        // Tests the external interrupt pin
+        case 0x86: {
+            (void)fetch_byte();  // Read address
+            // INT pin not emulated - assume high (no jump)
             cycles = 2;
             break;
         }
@@ -981,14 +1063,53 @@ uint8 CPU::execute_instruction() {
             cycles = 2;
             break;
             
-        // OUTL Pp,A - Output accumulator to port (0x38-0x3A)
+        // OUTL Pp,A - Output accumulator to port (0x39-0x3A)
         // Operation: (Pp) <- (A)
         // Flags affected: None
         // Cycles: 2
         // Outputs the accumulator to port P1 or P2 and latches it.
-        case 0x38: case 0x39: case 0x3A:
+        // Note: 0x38 is not a valid OUTL instruction (it's undefined)
+        case 0x39: case 0x3A:
             write_port(opcode & 0x03, state_.a);
             cycles = 2;
+            break;
+        
+        // MOVD Pp,A - Move accumulator to expander port (0x3C-0x3F)
+        // Operation: (Pp) <- (A) where Pp is P4-P7
+        // Flags affected: None
+        // Cycles: 2
+        // Writes 4-bit data to expander ports P4-P7 (used for external I/O expansion)
+        // On Odyssey 2, these ports are not used
+        case 0x3C: case 0x3D: case 0x3E: case 0x3F:
+            // Expander ports not connected on Odyssey 2
+            cycles = 2;
+            break;
+        
+        // ORLD Pp,A - OR accumulator with expander port (0x8C-0x8F)
+        // Operation: (Pp) <- (Pp) OR (A) where Pp is P4-P7
+        // Flags affected: None
+        // Cycles: 2
+        case 0x8C: case 0x8D: case 0x8E: case 0x8F:
+            // Expander ports not connected on Odyssey 2
+            cycles = 2;
+            break;
+        
+        // ANLD Pp,A - AND accumulator with expander port (0x9C-0x9F)
+        // Operation: (Pp) <- (Pp) AND (A) where Pp is P4-P7
+        // Flags affected: None
+        // Cycles: 2
+        case 0x9C: case 0x9D: case 0x9E: case 0x9F:
+            // Expander ports not connected on Odyssey 2
+            cycles = 2;
+            break;
+        
+        // ENT0 CLK - Enable clock output on T0 (0x75)
+        // Operation: Output instruction cycle clock on T0 pin
+        // Flags affected: None
+        // Cycles: 1
+        // Outputs the instruction cycle clock to the T0 pin for external timing
+        case 0x75:
+            // T0 clock output not emulated
             break;
             
         // ========== RETURN INSTRUCTIONS ==========
@@ -1235,11 +1356,36 @@ uint8 CPU::execute_instruction() {
             // Reference: doc/mcs-48-assembly-language-manual.md, "Timer Flag" section
             // Quote: "the 8-bit timer register will overflow every 8192 cycles (256 x 32)"
             if (old_timer == 0xFF && state_.timer == 0x00) {
-                // Timer overflowed - trigger interrupt if enabled
+                // Set timer flag
+                state_.timer_flag = true;
+                
+                // Timer overflowed - set pending interrupt flag if enabled
+                // Reference: Intel 8048 User Manual, page 3107:
+                // "The Interrupt line is sampled every machine cycle during ALE and when detected
+                //  causes a 'jump to subroutine' at location 3 in program memory as soon as all
+                //  cycles of the current instruction are complete."
+                // We set the pending flag here (sampled during instruction), but process it
+                // after the instruction completes (see below).
                 if (state_.timer_interrupts_enabled && state_.interrupts_enabled) {
-                    trigger_interrupt(0x007);  // Timer interrupt vector
+                    state_.timer_interrupt_pending = true;
                 }
             }
+        }
+    }
+    
+    // Process pending interrupts AFTER instruction completes
+    // Reference: Intel 8048 User Manual, page 3107:
+    // Interrupts are sampled every cycle but only processed "as soon as all cycles
+    // of the current instruction are complete."
+    // This ensures multi-cycle instructions complete atomically before interrupt processing.
+    if (state_.interrupts_enabled) {
+        // External interrupt has higher priority than timer interrupt
+        if (state_.external_interrupt_pending) {
+            state_.external_interrupt_pending = false;
+            trigger_interrupt(0x003);  // External interrupt vector
+        } else if (state_.timer_interrupt_pending) {
+            state_.timer_interrupt_pending = false;
+            trigger_interrupt(0x007);  // Timer interrupt vector
         }
     }
     

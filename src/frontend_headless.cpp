@@ -83,6 +83,7 @@ bool HeadlessFrontend::initialize(const FrontendConfig& config) {
                 std::cerr << "Unknown trace level: " << config_.trace_level << ", using 'full'" << std::endl;
             }
             debugger_->set_trace_level(level);
+            debugger_->set_trace_limit(false);  // Disable trace limit in headless mode
         }
         
         // Enable VDC trace if requested
@@ -150,28 +151,28 @@ void HeadlessFrontend::shutdown() {
         std::cout << "  Trace log size: " << trace_log.size() << " instructions" << std::endl;
         std::cout.flush();
         if (!trace_log.empty()) {
-            std::ofstream trace_file("trace.log");
+            std::ofstream trace_file("trace_cpu.log");
             std::cout << "  Writing trace log..." << std::endl;
             std::cout.flush();
             for (const auto& line : trace_log) {
                 trace_file << line << "\n";
             }
             trace_file.close();
-            std::cout << "  Trace log written to trace.log" << std::endl;
+            std::cout << "  Trace log written to trace_cpu.log" << std::endl;
             std::cout.flush();
         }
         
         // Dump VDC trace log to file
         const auto& vdc_trace_log = debugger_->get_vdc_trace_log();
         if (!vdc_trace_log.empty()) {
-            std::ofstream vdc_trace_file("vdc_trace.log");
+            std::ofstream vdc_trace_file("trace_vdc.log");
             std::cout << "  Writing VDC trace log..." << std::endl;
             std::cout.flush();
             for (const auto& line : vdc_trace_log) {
                 vdc_trace_file << line << "\n";
             }
             vdc_trace_file.close();
-            std::cout << "  VDC trace log written to vdc_trace.log (" << vdc_trace_log.size() << " writes)" << std::endl;
+            std::cout << "  VDC trace log written to trace_vdc.log (" << vdc_trace_log.size() << " writes)" << std::endl;
             std::cout.flush();
         }
     } else {

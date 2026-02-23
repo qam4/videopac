@@ -14,15 +14,30 @@ namespace fs = std::filesystem;
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <rom_file> [base_addr] [max_size]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <rom_file> [--rom]" << std::endl;
         std::cerr << "  rom_file can be .bin or .zip (will extract first .bin file)" << std::endl;
-        std::cerr << "  base_addr: address where ROM is mapped (default: 0x0000, use 0x400 for Videopac ROMs)" << std::endl;
-        std::cerr << "  max_size: maximum bytes to disassemble (default: entire file)" << std::endl;
+        std::cerr << "  --rom: disassemble as ROM (base address 0x0400)" << std::endl;
+        std::cerr << "  If --rom is not specified, assumes BIOS (base address 0x0000)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "Examples:" << std::endl;
+        std::cerr << "  " << argv[0] << " bios.bin" << std::endl;
+        std::cerr << "  " << argv[0] << " game.bin --rom" << std::endl;
+        std::cerr << "  " << argv[0] << " game.zip --rom" << std::endl;
         return 1;
     }
     
     std::vector<uint8_t> rom;
     std::string filename = argv[1];
+    
+    // Parse command line arguments for --rom flag
+    uint16_t base_addr = 0x0000;  // Default to BIOS
+    
+    for (int i = 2; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--rom") {
+            base_addr = 0x0400;
+        }
+    }
     
     // Check if it's a zip file
     if (fs::path(filename).extension() == ".zip") {
@@ -77,15 +92,11 @@ int main(int argc, char* argv[]) {
                                      std::istreambuf_iterator<char>());
     }
     
-    uint16_t base_addr = 0x0000;  // Base address for labeling
     uint16_t end = rom.size();
     
-    if (argc >= 3) {
-        base_addr = std::strtol(argv[2], nullptr, 16);
-    }
-    if (argc >= 4) {
-        end = std::strtol(argv[3], nullptr, 16);
-    }
+    std::cerr << "Disassembling with base address: 0x" << std::hex << std::setw(4) 
+              << std::setfill('0') << base_addr << std::endl;
+    std::cerr << "ROM size: " << std::dec << rom.size() << " bytes" << std::endl;
     
     Disassembler disasm;
     

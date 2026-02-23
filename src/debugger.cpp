@@ -468,20 +468,45 @@ void Debugger::log_instruction(uint64 current_cycles) {
     uint8 byte0 = emulator_->get_memory().read_program(cpu.pc);
     uint8 byte1 = emulator_->get_memory().read_program(cpu.pc + 1);
     
-    char buffer[256];
+    char buffer[1024];
     if (trace_level_ == TraceLevel::Normal) {
         snprintf(buffer, sizeof(buffer),
                 "[F:%llu C:%llu] 0x%03x: %02x %02x | A=%02x PSW=%02x P1=%02x",
                 (unsigned long long)frame_stats_.frame_count,
                 (unsigned long long)cycles_to_log,
                 cpu.pc, byte0, byte1, cpu.a, cpu.psw, cpu.port1);
-    } else {  // Full
+    } else {  // Full - include all registers from both banks
+        // Current bank registers (R0-R7)
+        uint8 r0 = cpu.r[cpu.current_bank * 8 + 0];
+        uint8 r1 = cpu.r[cpu.current_bank * 8 + 1];
+        uint8 r2 = cpu.r[cpu.current_bank * 8 + 2];
+        uint8 r3 = cpu.r[cpu.current_bank * 8 + 3];
+        uint8 r4 = cpu.r[cpu.current_bank * 8 + 4];
+        uint8 r5 = cpu.r[cpu.current_bank * 8 + 5];
+        uint8 r6 = cpu.r[cpu.current_bank * 8 + 6];
+        uint8 r7 = cpu.r[cpu.current_bank * 8 + 7];
+        
+        // Other bank registers (R0'-R7')
+        uint8 other_bank = 1 - cpu.current_bank;
+        uint8 r0p = cpu.r[other_bank * 8 + 0];
+        uint8 r1p = cpu.r[other_bank * 8 + 1];
+        uint8 r2p = cpu.r[other_bank * 8 + 2];
+        uint8 r3p = cpu.r[other_bank * 8 + 3];
+        uint8 r4p = cpu.r[other_bank * 8 + 4];
+        uint8 r5p = cpu.r[other_bank * 8 + 5];
+        uint8 r6p = cpu.r[other_bank * 8 + 6];
+        uint8 r7p = cpu.r[other_bank * 8 + 7];
+        
         snprintf(buffer, sizeof(buffer),
-                "[F:%llu C:%llu] 0x%03x: %02x %02x | A=%02x PSW=%02x P1=%02x P2=%02x RB%d F1=%d",
+                "[F:%llu C:%llu] 0x%03x: %02x %02x | A=%02x PSW=%02x P1=%02x P2=%02x RB%d F1=%d | "
+                "R0=%02x R1=%02x R2=%02x R3=%02x R4=%02x R5=%02x R6=%02x R7=%02x | "
+                "R0'=%02x R1'=%02x R2'=%02x R3'=%02x R4'=%02x R5'=%02x R6'=%02x R7'=%02x",
                 (unsigned long long)frame_stats_.frame_count,
                 (unsigned long long)cycles_to_log,
                 cpu.pc, byte0, byte1, cpu.a, cpu.psw, cpu.port1, cpu.port2,
-                cpu.current_bank, cpu.f1_flag ? 1 : 0);
+                cpu.current_bank, cpu.f1_flag ? 1 : 0,
+                r0, r1, r2, r3, r4, r5, r6, r7,
+                r0p, r1p, r2p, r3p, r4p, r5p, r6p, r7p);
     }
     
     trace_log_.push_back(buffer);
@@ -530,7 +555,15 @@ void Debugger::log_vdc_write() {
     
     std::string trace = emulator_->get_vdc().get_last_vdc_trace();
     if (!trace.empty()) {
-        vdc_trace_log_.push_back(trace);
+        // Add frame and cycle count prefix (like CPU trace format)
+        uint64 cycles = emulator_->get_master_clock().get_master_cycle_count();
+        uint32 frame = cycles / emulator_->get_master_clock().get_cycles_per_frame();
+        
+        char buffer[256];
+        snprintf(buffer, sizeof(buffer), "[F:%u C:%llu] %s", 
+                 frame, (unsigned long long)cycles, trace.c_str());
+        
+        vdc_trace_log_.push_back(buffer);
         // Clear the trace after logging to avoid duplicates
         emulator_->get_vdc().clear_last_vdc_trace();
     }

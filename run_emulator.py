@@ -42,13 +42,14 @@ def get_executable_path():
 
 
 def clean_trace_log():
-    """Remove old trace log file."""
-    if Path("trace.log").exists():
-        try:
-            Path("trace.log").unlink()
-        except PermissionError:
-            # File is locked by another process, skip deletion
-            print("Warning: trace.log is locked by another process, skipping cleanup", file=sys.stderr)
+    """Remove old trace log files."""
+    for trace_file in ["trace_cpu.log", "trace_vdc.log"]:
+        if Path(trace_file).exists():
+            try:
+                Path(trace_file).unlink()
+            except PermissionError:
+                # File is locked by another process, skip deletion
+                print(f"Warning: {trace_file} is locked by another process, skipping cleanup", file=sys.stderr)
 
 
 def setup_screenshots_dir():
@@ -93,6 +94,7 @@ def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
         exe_path,
         "--debug",
         "--trace",
+        "--vdc-trace",
         "--bios", bios_path,
         rom_path
     ]
@@ -130,17 +132,18 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False)
             rom_path
         ]
     else:
-        # Normal mode with input - 70 frames to capture timer bug at frame 56
+        # Normal mode with input - 360 frames to capture bug at frame 352
         cmd = [
             exe_path,
             "--headless",
             "--screenshot", "1",
-            "--frames", "70",
+            "--frames", "360",
+            "--press-joystick", "2", "0", "20", "360",  # Press joystick 2 UP at frame 20 for 360 frames
             "--press-key", "1", "5", "5",   # Press '1' at frame 5 for 5 frames (title screen)
             "--press-key", "1", "12", "5",  # Press '1' at frame 12 for 5 frames (select game)
-            "--press-joystick", "2", "0", "20", "50",  # Press joystick 2 UP at frame 20 for 50 frames
             "--debug",
             "--trace",
+            "region=france",
             "--vdc-trace",
             "--bios", bios_path,
             rom_path

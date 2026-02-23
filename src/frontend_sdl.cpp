@@ -314,10 +314,10 @@ void SDLFrontend::shutdown() {
             const auto& trace_log = debugger_->get_trace_log();
             std::cout << "Trace log size: " << trace_log.size() << " instructions" << std::endl;
             if (!trace_log.empty()) {
-                std::cout << "Writing trace log to trace.log..." << std::endl;
-                std::ofstream trace_file("trace.log");
+                std::cout << "Writing trace log to trace_cpu.log..." << std::endl;
+                std::ofstream trace_file("trace_cpu.log");
                 if (!trace_file) {
-                    std::cerr << "ERROR: Failed to open trace.log for writing!" << std::endl;
+                    std::cerr << "ERROR: Failed to open trace_cpu.log for writing!" << std::endl;
                 } else {
                     for (const auto& line : trace_log) {
                         trace_file << line << "\n";
