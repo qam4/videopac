@@ -20,6 +20,7 @@ MemorySystem::MemorySystem()
     state_.current_bank = 0;
     state_.num_banks = 1;
     state_.rom_size_kb = 0;
+    state_.rom_latch = 0;  // Initialize to 0 per o2em
     
     // cart_rom vector is already default-initialized to empty
 }
@@ -59,10 +60,30 @@ Result<void> MemorySystem::load_cartridge(const std::string& path) {
     }
     
     file.seekg(0);
-    state_.cart_rom.resize(size);
-    file.read(reinterpret_cast<char*>(state_.cart_rom.data()), size);
+    std::vector<uint8> temp_rom(size);
+    file.read(reinterpret_cast<char*>(temp_rom.data()), size);
     
-    detect_banking(size);
+    // Detect banking BEFORE reorganizing
+    detect_banking_from_data(temp_rom.data(), size);
+    
+    // Reorganize ROM banks to match o2em's reverse loading order
+    // o2em loads banks in reverse: last bank in file becomes bank 0
+    state_.cart_rom.resize(size);
+    
+    if (state_.num_banks > 1) {
+        // Multi-bank ROM: reverse the bank order
+        size_t bank_size = 2048;  // 2KB per bank
+        for (size_t i = 0; i < state_.num_banks; i++) {
+            size_t src_bank = state_.num_banks - 1 - i;  // Reverse order
+            std::memcpy(&state_.cart_rom[i * bank_size], 
+                       &temp_rom[src_bank * bank_size], 
+                       bank_size);
+        }
+    } else {
+        // Single bank ROM: no reordering needed
+        state_.cart_rom = temp_rom;
+    }
+    
     return Result<void>::ok();
 }
 
@@ -72,8 +93,26 @@ Result<void> MemorySystem::load_cartridge(const uint8* data, size_t size) {
         return result;
     }
     
-    state_.cart_rom.assign(data, data + size);
-    detect_banking(size);
+    // Detect banking BEFORE reorganizing
+    detect_banking_from_data(data, size);
+    
+    // Reorganize ROM banks to match o2em's reverse loading order
+    state_.cart_rom.resize(size);
+    
+    if (state_.num_banks > 1) {
+        // Multi-bank ROM: reverse the bank order
+        size_t bank_size = 2048;  // 2KB per bank
+        for (size_t i = 0; i < state_.num_banks; i++) {
+            size_t src_bank = state_.num_banks - 1 - i;  // Reverse order
+            std::memcpy(&state_.cart_rom[i * bank_size], 
+                       &data[src_bank * bank_size], 
+                       bank_size);
+        }
+    } else {
+        // Single bank ROM: no reordering needed
+        state_.cart_rom.assign(data, data + size);
+    }
+    
     return Result<void>::ok();
 }
 
@@ -104,7 +143,7 @@ uint8 MemorySystem::read_program(uint16 address) {
         
         // Apply banking
         if (state_.num_banks > 1) {
-            rom_offset += state_.current_bank * 1024;  // 1KB per bank
+            rom_offset += state_.current_bank * 2048;  // 2KB per bank
         }
         
         // Check if accessing beyond ROM size
@@ -151,6 +190,17 @@ uint8 MemorySystem::read_external(uint8 address) {
 }
 
 void MemorySystem::write_external(uint8 address, uint8 value) {
+    // DEBUG: Log all external writes
+    static int write_count = 0;
+    if (write_count < 1000 && address >= 0x80) {  // Only log writes to high addresses
+        uint8 p1 = get_port1();
+        std::cout << "[EXT WRITE #" << write_count++ << "] addr=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)address 
+                  << " value=0x" << (int)value << " P1=0x" << (int)p1 
+                  << " P14=" << ((p1 & P1_RAMEN) ? "1" : "0")
+                  << " P16=" << ((p1 & P1_COPYEN) ? "1" : "0")
+                  << std::dec << std::endl;
+    }
+    
     // Copy mode: P16=1, P13=0, P14=0
     // Reference: doc/o2doc.md section 1.1 "P16: Copy mode enable"
     // In copy mode: reads from RAM, writes to VDC only (EXRAM writes disabled)
@@ -196,6 +246,9 @@ void MemorySystem::write_external(uint8 address, uint8 value) {
         }
         state_.external_ram[address] = value;
     }
+    
+    // Note: 8KB ROMs (4-bank) use simple P10/P11 banking, NOT latch mechanism
+    // Only ROMs larger than 8KB would use latch-based banking
 }
 
 void MemorySystem::set_bank(uint8 bank) {
@@ -236,13 +289,24 @@ void MemorySystem::update_control_signals(uint8 port1_value) {
     // Store Port 1 value for testing (when no CPU is connected)
     test_port1_ = port1_value;
     
-    // Bank switching: P10 and P11
-    if (state_.num_banks > 1) {
-        uint8 bank = 0;
-        if (utils::get_bit(port1_value, 0)) bank |= 1;  // P10
-        if (utils::get_bit(port1_value, 1)) bank |= 2;  // P11
-        set_bank(bank);
+    // Bank switching depends on ROM size
+    // Reference: o2em main.c sets app_data.bank based on number of banks:
+    //   nb=1 → bank=1 (no banking)
+    //   nb=2 → bank=2 (2-bank: ~p1 & 0x01)
+    //   nb=4 → bank=3 (3-bank logic: ~p1 & 0x03) ← NOTE: 4 banks use 3-bank logic!
+    //   nb>4 → bank=4 (4-bank: latch-based)
+    //
+    // This means 8KB ROMs (4 banks) use simple P10/P11 inverted banking,
+    // NOT latch-based banking!
+    
+    if (state_.num_banks == 4) {
+        // 8KB ROM (4-bank): Uses 3-bank logic (P10/P11 inverted)
+        // Reference: o2em vmachine.c - rom = rom_table[~p1 & 0x03]
+        state_.current_bank = (~port1_value) & 0x03;  // Invert P10 and P11
     }
+    // Note: 4KB ROMs (2-bank) use SEL MB0/MB1 instructions, not Port 1 pins
+    // The CPU's memory_bank flag controls A11, which the memory system reads via read_program()
+    // No action needed here for 2-bank ROMs
 }
 
 MemoryState MemorySystem::get_state() const {
@@ -260,7 +324,7 @@ Result<void> MemorySystem::validate_rom_size(size_t size) {
     return Result<void>::ok();
 }
 
-void MemorySystem::detect_banking(size_t size) {
+void MemorySystem::detect_banking_from_data(const uint8* data, size_t size) {
     state_.rom_size_kb = static_cast<uint8>(size / 1024);
     
     if (size == 2048) {
@@ -268,7 +332,30 @@ void MemorySystem::detect_banking(size_t size) {
     } else if (size == 4096) {
         state_.num_banks = 2;
     } else if (size == 8192) {
-        state_.num_banks = 4;
+        // Check if upper 4KB is empty (all 0xFF) - if so, treat as 4KB ROM
+        // This handles games like Killer Bees that are 4KB games in 8KB files
+        bool upper_half_empty = true;
+        int non_ff_count = 0;
+        for (size_t i = 4096; i < 8192 && upper_half_empty; i++) {
+            if (data[i] != 0xFF) {
+                upper_half_empty = false;
+                non_ff_count++;
+                if (non_ff_count < 10) {
+                    std::cerr << "[BANKING DEBUG] Non-0xFF byte at offset " << i << ": 0x" << std::hex << (int)data[i] << std::dec << std::endl;
+                }
+            }
+        }
+        
+        std::cerr << "[BANKING DEBUG] 8KB ROM: upper_half_empty=" << upper_half_empty << " non_ff_count=" << non_ff_count << std::endl;
+        
+        if (upper_half_empty) {
+            std::cerr << "[BANKING] 8KB ROM detected, but upper 4KB is empty - treating as 4KB ROM (2 banks)" << std::endl;
+            state_.num_banks = 2;
+            state_.rom_size_kb = 4;  // Report as 4KB
+        } else {
+            std::cerr << "[BANKING] 8KB ROM detected with data in upper 4KB - treating as 8KB ROM (4 banks)" << std::endl;
+            state_.num_banks = 4;
+        }
     }
     
     state_.current_bank = 0;

@@ -164,19 +164,21 @@ TEST(MemoryTest, BankSwitchingViaPort1) {
     uint8 bios[1024] = {0};
     memory.load_bios(bios, 1024);
     
-    uint8 rom[4096];
-    for (int i = 0; i < 4096; i++) {
+    // Use 8KB ROM (4 banks) for Port 1 banking test
+    // 4KB ROMs use SEL MB0/MB1 instructions, not Port 1
+    uint8 rom[8192];
+    for (int i = 0; i < 8192; i++) {
         rom[i] = static_cast<uint8>(i & 0xFF);
     }
-    memory.load_cartridge(rom, 4096);
+    memory.load_cartridge(rom, 8192);
     
-    // Bank switching via Port 1 pins P10 and P11
-    // Bank 0: P10=0, P11=0
-    memory.update_control_signals(0x00);
+    // Bank switching via Port 1 pins P10 and P11 (ACTIVE LOW)
+    // Bank 0: P10=1, P11=1 (inverted: ~0x03 & 0x03 = 0)
+    memory.update_control_signals(0x03);
     EXPECT_EQ(memory.get_state().current_bank, 0);
     
-    // Bank 1: P10=1, P11=0
-    memory.update_control_signals(0x01);
+    // Bank 1: P10=0, P11=1 (inverted: ~0x02 & 0x03 = 1)
+    memory.update_control_signals(0x02);
     EXPECT_EQ(memory.get_state().current_bank, 1);
 }
 

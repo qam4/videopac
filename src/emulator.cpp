@@ -10,7 +10,7 @@ namespace videopac {
 EmulatorCore::EmulatorCore(const Configuration& config)
     : config_(config), vdc_(config.video_standard), master_clock_(config.video_standard),
       debugger_(nullptr), running_(false), paused_(false), frame_count_(0), 
-      vblank_interrupt_triggered_(false) {
+      vblank_interrupt_triggered_(false), prev_scanline_(0) {
     
     // Connect components
     cpu_.set_memory_system(&memory_);
@@ -89,6 +89,9 @@ void EmulatorCore::run_frame() {
     
     // Reset VBlank interrupt flag at start of frame
     vblank_interrupt_triggered_ = false;
+    
+    // Reset scanline tracking for counter mode
+    prev_scanline_ = 0;
     
     // Reset master clock for new frame
     master_clock_.reset_frame();
@@ -169,6 +172,19 @@ void EmulatorCore::run_frame() {
                 
                 // Advance VDC by one cycle
                 vdc_.tick_one_cycle();
+                
+                // Check if scanline changed (for counter mode)
+                // Hardware: The VDC generates a pulse on scanline completion that is wired to the
+                // CPU's T1 pin. When STRT CNT is executed, the CPU configures its timer to increment
+                // on high-to-low transitions of T1. This emulates that hardware connection.
+                // Reference: Intel 8048 datasheet - T1 pin is event counter input
+                // Reference: doc/o2em/cpu.c lines 1536-1545
+                uint16 current_scanline = vdc_.get_beam_y();
+                if (current_scanline != prev_scanline_) {
+                    // Scanline completed - VDC would pulse T1 pin, increment counter if active
+                    cpu_.increment_counter();
+                    prev_scanline_ = current_scanline;
+                }
                 
                 // Notify master clock that VDC ticked
                 master_clock_.vdc_ticked();

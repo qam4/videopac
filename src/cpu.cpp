@@ -3,6 +3,7 @@
 #include "input.h"
 #include <cstring>
 #include <stdexcept>
+#include <iostream>
 
 namespace videopac {
 
@@ -299,8 +300,11 @@ uint8 CPU::execute_instruction() {
         case 0x99: case 0x9A: {
             uint8 mask = fetch_byte();
             uint8 port = (opcode & 0x03);
-            if (port == 1) state_.port1 &= mask;
-            else if (port == 2) state_.port2 &= mask;
+            if (port == 1) {
+                write_port(1, state_.port1 & mask);
+            } else if (port == 2) {
+                write_port(2, state_.port2 & mask);
+            }
             cycles = 2;
             break;
         }
@@ -506,7 +510,8 @@ uint8 CPU::execute_instruction() {
         // The prescaler is cleared but the timer register is not.
         // Reference: doc/mcs-48-assembly-language-manual.md, "Start Timer" section
         case 0x55:
-            state_.timer_running = true;
+            state_.timer_on = true;
+            state_.counter_on = false;  // Timer mode disables counter mode
             state_.timer_prescaler = 0;  // Clear prescaler
             break;
             
@@ -515,10 +520,12 @@ uint8 CPU::execute_instruction() {
         // Flags affected: None
         // Cycles: 1
         // Enables the T1 pin as event counter input. Counter increments on high-to-low transitions.
-        // For this emulator, we treat it the same as STRT T since we don't emulate external pins.
+        // In the Odyssey 2, this mode increments the timer once per scanline.
         // Reference: doc/mcs-48-assembly-language-manual.md, "Start Event Counter" section
+        // Reference: doc/o2em/cpu.c lines 1536-1545 - counter increments per scanline
         case 0x45:
-            state_.timer_running = true;
+            state_.counter_on = true;
+            state_.timer_on = false;  // Counter mode disables timer mode
             state_.timer_prescaler = 0;  // Clear prescaler
             break;
             
@@ -529,7 +536,8 @@ uint8 CPU::execute_instruction() {
         // Stops both time accumulation and event counting.
         // Reference: doc/mcs-48-assembly-language-manual.md, "Stop Timer/Event Counter" section
         case 0x65:
-            state_.timer_running = false;
+            state_.timer_on = false;
+            state_.counter_on = false;
             break;
             
         // ========== INPUT/OUTPUT INSTRUCTIONS ==========
@@ -691,10 +699,11 @@ uint8 CPU::execute_instruction() {
         // Cycles: 2
         // Uses the accumulator as an offset into a jump table in the current page.
         // Reads the byte at (current_page | A) and uses it as the low 8 bits of the new PC.
+        // NOTE: Accumulator is NOT modified - it's used as an address, not a destination.
         case 0xB3: {
             uint16 addr = (state_.pc & 0xF00) | state_.a;
-            state_.a = read_memory(addr);
-            state_.pc = (state_.pc & 0xF00) | state_.a;
+            uint8 jump_target = read_memory(addr);
+            state_.pc = (state_.pc & 0xF00) | jump_target;
             cycles = 2;
             break;
         }
@@ -749,8 +758,9 @@ uint8 CPU::execute_instruction() {
         // Cycles: 2
         // Tests the T0 input pin. On Odyssey 2, T0 is connected to the voice module.
         case 0x26: {
-            (void)fetch_byte();  // Read address
-            // T0 pin not emulated - assume high (no jump)
+            uint8 addr = fetch_byte();
+            // T0 pin: When voice module not emulated, T0 = 0 (low), so jump IS taken
+            state_.pc = (state_.pc & 0xF00) | addr;
             cycles = 2;
             break;
         }
@@ -760,9 +770,9 @@ uint8 CPU::execute_instruction() {
         // Flags affected: None
         // Cycles: 2
         case 0x36: {
-            uint8 addr = fetch_byte();
-            // T0 pin not emulated - assume high (always jump)
-            state_.pc = (state_.pc & 0xF00) | addr;
+            (void)fetch_byte();  // Read address but don't use it
+            // T0 pin: When voice module not emulated, T0 = 0 (low), so jump is NOT taken
+            // PC already incremented by fetch_byte, so no action needed
             cycles = 2;
             break;
         }
@@ -1045,8 +1055,11 @@ uint8 CPU::execute_instruction() {
         case 0x89: case 0x8A: {
             uint8 mask = fetch_byte();
             uint8 port = (opcode & 0x03);
-            if (port == 1) state_.port1 |= mask;
-            else if (port == 2) state_.port2 |= mask;
+            if (port == 1) {
+                write_port(1, state_.port1 | mask);
+            } else if (port == 2) {
+                write_port(2, state_.port2 | mask);
+            }
             cycles = 2;
             break;
         }
@@ -1341,11 +1354,11 @@ uint8 CPU::execute_instruction() {
     
     state_.clock_cycles += cycles;
     
-    // Timer/counter logic: increment timer every 32 cycles when running
+    // Timer mode: increment timer every 32 cycles when timer_on is true
     // The Intel 8048 timer increments every 32 instruction cycles via a prescaler.
     // Reference: doc/mcs-48-assembly-language-manual.md, "Timer Flag" section
     // Quote: "incremented by a prescaler having a periodic duration equivalent to 32 instruction cycles"
-    if (state_.timer_running) {
+    if (state_.timer_on) {
         state_.timer_prescaler += cycles;
         if (state_.timer_prescaler >= 32) {
             state_.timer_prescaler -= 32;
@@ -1373,6 +1386,9 @@ uint8 CPU::execute_instruction() {
         }
     }
     
+    // Counter mode: increment happens once per scanline (handled by increment_counter())
+    // Note: Counter mode does NOT increment here - it's called externally once per scanline
+    
     // Process pending interrupts AFTER instruction completes
     // Reference: Intel 8048 User Manual, page 3107:
     // Interrupts are sampled every cycle but only processed "as soon as all cycles
@@ -1390,6 +1406,31 @@ uint8 CPU::execute_instruction() {
     }
     
     return cycles;
+}
+
+// Counter mode: increment timer once per scanline
+// Called externally (from emulator) once per scanline when counter_on is true
+// Hardware: This simulates the T1 pin receiving a pulse from the VDC on scanline completion.
+// The VDC's scanline pulse output is physically wired to the CPU's T1 input pin.
+// When STRT CNT (0x45) is executed, the CPU's timer increments on each T1 pulse.
+// Reference: Intel 8048 datasheet - T1 pin as event counter input
+// Reference: doc/o2em/cpu.c lines 1536-1545
+void CPU::increment_counter() {
+    if (state_.counter_on) {
+        uint8 old_timer = state_.timer;
+        state_.timer++;
+        
+        // Check for timer overflow (0xFF -> 0x00)
+        if (old_timer == 0xFF && state_.timer == 0x00) {
+            // Set timer flag
+            state_.timer_flag = true;
+            
+            // Timer overflowed - set pending interrupt flag if enabled
+            if (state_.timer_interrupts_enabled && state_.interrupts_enabled) {
+                state_.timer_interrupt_pending = true;
+            }
+        }
+    }
 }
 
 } // namespace videopac

@@ -18,11 +18,11 @@ def get_executable_path():
     system = platform.system()
     
     if system == "Windows":
-        # Try build root first, then dev-mingw, then ci-win64
+        # Try build root first, then dev-mingw, then dev-win64
         paths = [
-            Path("build/videopac.exe"),
+            # Path("build/videopac.exe"),
             Path("build/dev-mingw/videopac.exe"),
-            Path("build/ci-win64/Release/videopac.exe"),
+            Path("build/dev-win64/Release/videopac.exe"),
         ]
     else:
         # Linux/macOS
@@ -56,38 +56,50 @@ def setup_screenshots_dir():
     """Clean and create screenshots directory."""
     screenshots_dir = Path("screenshots")
     if screenshots_dir.exists():
+        # Try to remove all files in the directory
         try:
-            shutil.rmtree(screenshots_dir)
-        except PermissionError:
-            # Files are locked, just skip cleanup
-            print("Warning: screenshots directory is locked, skipping cleanup", file=sys.stderr)
-            return
-    screenshots_dir.mkdir(exist_ok=True)
+            for item in screenshots_dir.iterdir():
+                try:
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                except Exception as e:
+                    print(f"Warning: Could not remove {item}: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: screenshots directory cleanup failed ({e}), continuing anyway", file=sys.stderr)
+    else:
+        screenshots_dir.mkdir(exist_ok=True)
 
 
 def convert_screenshots():
-    """Convert screenshots using the conversion script."""
-    convert_script = Path("convert_screenshots.sh")
-    if convert_script.exists():
-        print("Converting screenshots...")
-        try:
-            subprocess.run(["bash", str(convert_script)], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: Screenshot conversion failed: {e}", file=sys.stderr)
-        except FileNotFoundError:
-            print("Warning: bash not found, skipping screenshot conversion", file=sys.stderr)
+    """Convert PPM screenshots to PNG for easier viewing."""
+    screenshots_dir = Path("screenshots")
+    if not screenshots_dir.exists():
+        return
+    
+    ppm_files = list(screenshots_dir.glob("*.ppm"))
+    if not ppm_files:
+        return
+    
+    print("Converting screenshots...")
+    try:
+        from PIL import Image
+        for ppm_file in ppm_files:
+            png_file = ppm_file.with_suffix('.png')
+            img = Image.open(ppm_file)
+            img.save(png_file)
+            print(f"  {ppm_file.name} -> {png_file.name}")
+        print("Conversion complete!")
+    except ImportError:
+        print("Warning: PIL/Pillow not installed. Install with: pip install Pillow", file=sys.stderr)
+    except Exception as e:
+        print(f"Warning: Screenshot conversion failed: {e}", file=sys.stderr)
 
 
 def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
     """Run emulator in SDL mode with debugger."""
     print("Running in SDL mode...")
-    print()
-    print("Note: For Course de Voitures ROM:")
-    print("  - Press '1' for Game 1: Course de Voitures (road racing)")
-    print("  - Press '2' for Game 2: Autodrome (top-down circuit racing)")
-    print()
-    print("IMPORTANT: Do NOT press any arrow keys after selecting the game!")
-    print("We are testing if the road moves without input.")
     print()
     
     cmd = [
@@ -105,18 +117,16 @@ def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
     subprocess.run(cmd)
 
 
-def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False):
+def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False, frames=None):
     """Run emulator in headless mode with screenshot capture."""
     print("Running in HEADLESS mode...")
-    if no_input:
-        print("Note: NO INPUT MODE - testing without joystick")
-    else:
-        print("Note: Pressing '1' at frame 5 to select game")
-        print("Note: Pressing '1' at frame 12 to select level")
-        print("Note: Pressing UP at frame 20-70 to capture timer bug at frame 56")
     print()
     
     setup_screenshots_dir()
+    
+    # Use provided frames or defaults
+    if frames is None:
+        frames = 200 if no_input else 360
     
     if no_input:
         # No input mode - only basic setup, no key/joystick presses
@@ -124,7 +134,7 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False)
             exe_path,
             "--headless",
             "--screenshot", "1",
-            "--frames", "200",
+            "--frames", str(frames),
             "--debug",
             "--trace",
             "--vdc-trace",
@@ -132,13 +142,13 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False)
             rom_path
         ]
     else:
-        # Normal mode with input - 360 frames to capture bug at frame 352
+        # Normal mode with input
         cmd = [
             exe_path,
             "--headless",
             "--screenshot", "1",
-            "--frames", "360",
-            "--press-joystick", "2", "0", "20", "360",  # Press joystick 2 UP at frame 20 for 360 frames
+            "--frames", str(frames),
+            "--press-joystick", "2", "0", "20", str(frames),  # Press joystick 2 UP at frame 20
             "--press-key", "1", "5", "5",   # Press '1' at frame 5 for 5 frames (title screen)
             "--press-key", "1", "12", "5",  # Press '1' at frame 12 for 5 frames (select game)
             "--debug",
@@ -220,9 +230,9 @@ Examples:
     parser.add_argument(
         "rom",
         nargs="?",
-        default="roms/Course de Voitures + Autodrome + Cryptogramme (1980)(Philips)(FR).bin",
-        # default="roms/Satellite Attack (1981)(Philips)(EU).bin",
-        help="Path to ROM file (default: Course de Voitures / Autodrome)"
+        # default="roms/Magnavox Odyssey 2 [TOSEC]/Magnavox Odyssey2 - Games (TOSEC-v2011-02-22_CM)/Killer Bees (1983)(Philips)(US).zip",
+        default="roms/ROMS/o2_47.bin",
+        help="Path to ROM file (default: Killer Bees)"
     )
     
     parser.add_argument(
@@ -242,6 +252,13 @@ Examples:
         "--no-input",
         action="store_true",
         help="Headless mode: run without any input (for baseline testing)"
+    )
+    
+    parser.add_argument(
+        "--frames",
+        type=int,
+        default=None,
+        help="Number of frames to run in headless mode (default: 200 for no-input, 360 otherwise)"
     )
     
     # Debugger options
@@ -301,7 +318,7 @@ Examples:
     
     # Run appropriate mode
     if mode == "headless":
-        run_headless_mode(exe_path, args.bios, args.rom, extra_args, no_input=args.no_input)
+        run_headless_mode(exe_path, args.bios, args.rom, extra_args, no_input=args.no_input, frames=args.frames)
     elif mode == "dcv":
         run_dcv_mode(exe_path, args.bios, args.rom, extra_args)
     else:  # sdl

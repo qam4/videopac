@@ -18,6 +18,7 @@ struct MemoryState {
     uint8 current_bank;         // Current ROM bank
     uint8 rom_size_kb;          // ROM size in KB (2, 4, or 8)
     uint8 num_banks;            // Number of banks (1, 2, or 4)
+    uint8 rom_latch;            // ROM bank latch for 8KB ROMs (4-bank)
 };
 
 // Memory system
@@ -82,7 +83,7 @@ private:
     
     // Helper functions
     Result<void> validate_rom_size(size_t size);
-    void detect_banking(size_t size);
+    void detect_banking_from_data(const uint8* data, size_t size);
 };
 
 } // namespace videopac

@@ -21,7 +21,8 @@ struct CPUState {
     uint8 port1;                // Port 1 state
     uint8 port2;                // Port 2 state
     uint8 timer;                // Timer/counter register
-    bool timer_running;         // Timer enabled flag
+    bool timer_on;              // Timer mode enabled (increments every 32 cycles)
+    bool counter_on;            // Counter mode enabled (increments once per scanline)
     bool interrupts_enabled;    // Interrupts enabled
     bool timer_interrupts_enabled;  // Timer interrupts enabled
     bool timer_flag;            // Timer overflow flag (TF) - set when timer overflows from 0xFF to 0x00
@@ -70,6 +71,10 @@ public:
     
     // Interrupt handling
     void trigger_interrupt(uint16 vector);
+    
+    // Timer/counter management
+    // Hardware: Simulates T1 pin pulse from VDC (called once per scanline for counter mode)
+    void increment_counter();
     
     // State management
     CPUState get_state() const;

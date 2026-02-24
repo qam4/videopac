@@ -94,6 +94,7 @@ private:
     uint32 cycles_per_frame_;
     uint32 cycles_per_scanline_;
     bool vblank_interrupt_triggered_;  // Track if VBlank interrupt fired this frame
+    uint16 prev_scanline_;             // Track previous scanline for counter mode
     
     // Helpers
     void calculate_timing();

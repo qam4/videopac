@@ -588,13 +588,15 @@ TEST_F(CPUTest, TimerControl) {
     
     // Get state before starting timer
     CPUState state = get_state();
-    state.timer_running = false;
+    state.timer_on = false;
+    state.counter_on = false;
     state.timer_prescaler = 0;
     cpu->set_state(state);
     
     cpu->execute_instruction();
     state = get_state();
-    EXPECT_TRUE(state.timer_running);
+    EXPECT_TRUE(state.timer_on);
+    EXPECT_FALSE(state.counter_on);
     // Note: prescaler will be 1 because STRT T clears it to 0, then the instruction
     // consumes 1 cycle which increments it to 1
     EXPECT_EQ(state.timer_prescaler, 1);
@@ -605,21 +607,25 @@ TEST_F(CPUTest, TimerControl) {
     cpu->execute_instruction();  // STRT T
     cpu->execute_instruction();  // STOP TCNT
     state = get_state();
-    EXPECT_FALSE(state.timer_running);
+    EXPECT_FALSE(state.timer_on);
+    EXPECT_FALSE(state.counter_on);
     
     // Test STRT CNT (Start Event Counter) - opcode 0x45
     load_program({0x45});
     cpu->reset();
     
     state = get_state();
-    state.timer_running = false;
+    state.timer_on = false;
+    state.counter_on = false;
     state.timer_prescaler = 0;
     cpu->set_state(state);
     
     cpu->execute_instruction();
     state = get_state();
-    EXPECT_TRUE(state.timer_running);
-    EXPECT_EQ(state.timer_prescaler, 1);
+    EXPECT_TRUE(state.counter_on);
+    EXPECT_FALSE(state.timer_on);
+    // Counter mode doesn't use prescaler (increments per scanline, not per cycle)
+    EXPECT_EQ(state.timer_prescaler, 0);
 }
 
 // Test timer increment logic
@@ -631,7 +637,8 @@ TEST_F(CPUTest, TimerIncrement) {
     cpu->reset();
     CPUState state = get_state();
     state.timer = 0x00;
-    state.timer_running = true;
+    state.timer_on = true;
+    state.counter_on = false;
     state.timer_prescaler = 0;
     cpu->set_state(state);
     
@@ -661,7 +668,8 @@ TEST_F(CPUTest, TimerOverflow) {
     cpu->reset();
     CPUState state = get_state();
     state.timer = 0xFF;  // Set timer to maximum value
-    state.timer_running = true;
+    state.timer_on = true;
+    state.counter_on = false;
     state.timer_prescaler = 0;
     state.timer_interrupts_enabled = false;  // Disable interrupts for this test
     cpu->set_state(state);

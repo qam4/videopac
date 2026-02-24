@@ -134,7 +134,17 @@ namespace VideoTiming {
     
     // NTSC timing (60Hz)
     constexpr uint16 NTSC_SCANLINES = 262;
-    constexpr uint16 NTSC_VBLANK_START = 240;
+    
+    // VBlank start scanline
+    // Hardware spec: 240 (VBlank starts after 240 visible scanlines)
+    // O2EM uses: 241 (due to scanline batching implementation)
+    // Use O2EM_VBLANK_TIMING compile flag to match o2em for trace comparison debugging
+    #ifdef O2EM_VBLANK_TIMING
+        constexpr uint16 NTSC_VBLANK_START = 241;  // O2EM-compatible timing for debugging
+    #else
+        constexpr uint16 NTSC_VBLANK_START = 240;  // Hardware-accurate timing (default)
+    #endif
+    
     constexpr uint16 NTSC_VBLANK_LINES = 22;
     constexpr uint32 NTSC_CYCLES_PER_SCANLINE = 227;
     
