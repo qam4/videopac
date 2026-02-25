@@ -46,6 +46,7 @@ TEST(VDCTest, SpriteRendering) {
     const uint8* fb = vdc.get_framebuffer();
     // Sprite uses LSB-first bit order, so bit 0 (0x80 & 0x01 = 0) is leftmost pixel = no pixel at x=50
     // First pixel is at x=57 (bit 7 of pattern 0x80)
+    // Note: Grid now starts at x=8 (changed from x=10 for proper alignment)
     EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 57], 14);  // BGR 3 → RGB 6, +8 = 14 (Bright Yellow)
 }
 
@@ -100,7 +101,7 @@ TEST(VDCTest, GridRendering) {
     // Grid color formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
     // Color 5 (0b101): (5 & 0x07) | 0 | 8 = 13 (Bright Magenta)
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 10], 13);  // Grid starts at x=10
+    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 8], 13);  // Grid starts at x=8 (changed from x=10)
 }
 
 // Test grid fill mode
@@ -127,8 +128,8 @@ TEST(VDCTest, GridFillMode) {
     // Grid color formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
     // Color 2 (0b010): (2 & 0x07) | 0 | 8 = 10 (Bright Green)
     const uint8* fb = vdc.get_framebuffer();
-    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 10], 10);
-    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 25], 10);  // Should extend 16 pixels
+    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 8], 10);  // Grid starts at x=8 (changed from x=10)
+    EXPECT_EQ(fb[24 * FRAMEBUFFER_WIDTH + 23], 10);  // Should extend 16 pixels (8+15=23)
 }
 
 // Test collision detection between objects

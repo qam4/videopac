@@ -190,17 +190,6 @@ uint8 MemorySystem::read_external(uint8 address) {
 }
 
 void MemorySystem::write_external(uint8 address, uint8 value) {
-    // DEBUG: Log all external writes
-    static int write_count = 0;
-    if (write_count < 1000 && address >= 0x80) {  // Only log writes to high addresses
-        uint8 p1 = get_port1();
-        std::cout << "[EXT WRITE #" << write_count++ << "] addr=0x" << std::hex << std::setw(2) << std::setfill('0') << (int)address 
-                  << " value=0x" << (int)value << " P1=0x" << (int)p1 
-                  << " P14=" << ((p1 & P1_RAMEN) ? "1" : "0")
-                  << " P16=" << ((p1 & P1_COPYEN) ? "1" : "0")
-                  << std::dec << std::endl;
-    }
-    
     // Copy mode: P16=1, P13=0, P14=0
     // Reference: doc/o2doc.md section 1.1 "P16: Copy mode enable"
     // In copy mode: reads from RAM, writes to VDC only (EXRAM writes disabled)
@@ -223,27 +212,6 @@ void MemorySystem::write_external(uint8 address, uint8 value) {
     // Reference: doc/o2doc.md section 3.0 "External RAM"
     // Note: If P13=0 AND P14=0, data writes to BOTH VDC and EXRAM simultaneously
     if (ram_enabled() && address < 128) {
-        // Log when RAM[0x3F] bit 7 is set (copy request)
-        if (address == 0x3F && (value & 0x80)) {
-            uint8 old_value = state_.external_ram[address];
-            if (!(old_value & 0x80)) {
-                // Copy request being set - dump the copy data
-                uint8 count = state_.external_ram[0x7F];
-                uint8 target = state_.external_ram[0x7E];
-                std::cout << "[COPY REQUEST] RAM[0x3F] bit 7 set. Count=0x" << std::hex << std::setw(2) << std::setfill('0') 
-                          << (int)count << " Target=0x" << (int)target << std::dec << std::endl;
-                // Dump the data bytes
-                std::cout << "[COPY DATA] ";
-                for (int i = 0; i < 8 && i < count; i++) {
-                    uint8 addr = 0x7D - i;
-                    uint8 data = state_.external_ram[addr];
-                    std::cout << "RAM[0x" << std::hex << std::setw(2) << std::setfill('0') << (int)addr 
-                              << "]=0x" << (int)data << " ";
-                }
-                std::cout << std::dec << std::endl;
-                std::cout.flush();
-            }
-        }
         state_.external_ram[address] = value;
     }
     
@@ -335,25 +303,16 @@ void MemorySystem::detect_banking_from_data(const uint8* data, size_t size) {
         // Check if upper 4KB is empty (all 0xFF) - if so, treat as 4KB ROM
         // This handles games like Killer Bees that are 4KB games in 8KB files
         bool upper_half_empty = true;
-        int non_ff_count = 0;
         for (size_t i = 4096; i < 8192 && upper_half_empty; i++) {
             if (data[i] != 0xFF) {
                 upper_half_empty = false;
-                non_ff_count++;
-                if (non_ff_count < 10) {
-                    std::cerr << "[BANKING DEBUG] Non-0xFF byte at offset " << i << ": 0x" << std::hex << (int)data[i] << std::dec << std::endl;
-                }
             }
         }
         
-        std::cerr << "[BANKING DEBUG] 8KB ROM: upper_half_empty=" << upper_half_empty << " non_ff_count=" << non_ff_count << std::endl;
-        
         if (upper_half_empty) {
-            std::cerr << "[BANKING] 8KB ROM detected, but upper 4KB is empty - treating as 4KB ROM (2 banks)" << std::endl;
             state_.num_banks = 2;
             state_.rom_size_kb = 4;  // Report as 4KB
         } else {
-            std::cerr << "[BANKING] 8KB ROM detected with data in upper 4KB - treating as 8KB ROM (4 banks)" << std::endl;
             state_.num_banks = 4;
         }
     }

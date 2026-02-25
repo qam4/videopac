@@ -416,6 +416,501 @@ The Odyssey² VDC has two distinct timing periods often confused as "VBlank":
 
 Games don't rely on precise VBlank timing for logic - the interrupt just signals a "frame boundary". Whether triggered at scanline 24 (o2em) or scanline 240 (hardware-accurate) doesn't affect game functionality. Killer Bees runs correctly with our cycle-accurate timing.
 
+---
+
+## Complete NTSC Frame Timing Reference
+
+This section documents the complete frame structure for the Intel 8244 VDC (NTSC Odyssey²), clarifying the distinction between hardware timing and emulator implementation.
+
+### Physical Frame Layout (262 Scanlines)
+
+```
+Scanline    VDC Cycles      CPU Cycles    Period                Purpose
+--------    ----------      ----------    ------                -------
+0-23        0-5,220         0-522         Vertical Back Porch   "Top blanking" - beam returning to top
+                                          (Non-visible)         Safe to update VDC registers
+                                                                O2EM's VBLCLK region (5,493 CPU cycles)
+                        
+24          5,448           545           Grid Start            First visible scanline
+                                                                Background grid rendering begins
+                        
+25-239      5,675-54,252    568-5,425     Active Display        Visible area (215 scanlines)
+                                                                Grid, characters, sprites render
+                        
+240-261     54,480-59,374   5,448-5,937   Vertical Front Porch  "Bottom blanking" - after visible area
+                                          + VSync               VDC signals "frame done"
+                                          (True VBLANK)         Trigger interrupt, safe to update
+```
+
+### Key Timing Constants
+
+**Hardware Master Clock (7.15909 MHz):**
+```
+NTSC Master Clock: 7.15909 MHz (exact)
+Scanline period: 455 master ticks (63.555 μs)
+Frame period: 262 scanlines × 455 ticks = 119,210 master ticks (16.65 ms, ~60 Hz)
+```
+
+**Derived Clock Frequencies:**
+```
+VDC Clock: 7.15909 MHz ÷ 2 = 3.579545 MHz
+CPU Clock: 7.15909 MHz ÷ 20 = 0.357954 MHz
+```
+
+**Clock Relationships (per scanline):**
+| Component | Master Ticks | Cycles | Notes |
+|-----------|-------------|--------|-------|
+| Scanline | 455 | 1 | Exact integer |
+| VDC | 2 | 227.5 | Alternates 227/228 |
+| CPU | 20 | 22.75 | Alternates 22/23 instructions |
+
+**Clock Relationships (per frame):**
+| Component | Total per Frame | Average per Scanline |
+|-----------|----------------|---------------------|
+| Master ticks | 119,210 | 455 |
+| VDC cycles | 59,605 | 227.5 |
+| CPU instructions | 5,960.5 | 22.75 |
+
+**VDC Cycles (3.579545 MHz clock):**
+- Cycles per scanline: 227.5 (alternates 227/228 due to NTSC color phase)
+- Total cycles per frame: 262 × 227.5 = 59,605 VDC cycles
+- Integer approximation: 262 × 227 = 59,474 VDC cycles (131 cycle error per frame)
+
+**CPU Instruction Cycles (Intel 8048):**
+- Master-to-VDC ratio: 2:1 (2 master ticks = 1 VDC cycle)
+- Master-to-CPU ratio: 20:1 (20 master ticks = 1 CPU instruction)
+- VDC-to-CPU ratio: 10:1 (10 VDC cycles = 1 CPU instruction)
+- CPU instructions per frame: 59,605 ÷ 10 = 5,960.5 ≈ 5,961 CPU instructions
+- O2EM uses: 5,964 CPU instructions (includes 3-instruction timing buffer)
+
+**Why 227.5 VDC Cycles Per Scanline?**
+- NTSC color subcarrier requires phase alternation between scanlines
+- 455 master ticks ÷ 2 = 227.5 VDC cycles
+- Line 1: 227 VDC cycles (454 master ticks)
+- Line 2: 228 VDC cycles (456 master ticks)
+- Average: 227.5 VDC cycles (455 master ticks)
+- This creates the half-cycle offset needed for NTSC color stability
+
+**O2EM Constants (from vmachine.h):**
+```c
+#define VBLCLK 5493        // End of vertical back porch (scanline 24)
+#define EVBLCLK_NTSC 5964  // End of frame (scanline 262)
+```
+
+---
+
+## PAL Timing Reference (Intel 8245 VDC)
+
+PAL timing is significantly cleaner than NTSC due to a perfect integer ratio between VDC and CPU clocks.
+
+### PAL Master Clock (17.734476 MHz)
+
+**Hardware Master Clock:**
+```
+PAL Master Clock: 17.734476 MHz (exact)
+Scanline period: 1,135 master ticks (64.0 μs)
+Frame period: 312 scanlines × 1,135 ticks = 354,120 master ticks (19.968 ms, ~50 Hz)
+```
+
+**Derived Clock Frequencies:**
+```
+VDC Clock: 17.734476 MHz ÷ 5 = 3.546895 MHz
+CPU Clock: 17.734476 MHz ÷ 3 = 5.911492 MHz
+CPU Instruction Rate: 5.911492 MHz ÷ 15 = 0.394099 MHz
+```
+
+### The Perfect 9:1 Ratio
+
+Unlike NTSC's fractional 10:1 ratio, PAL has a clean integer relationship:
+
+```
+VDC-to-CPU Ratio: 9:1 (exact)
+1 CPU instruction = 9 VDC cycles (no fractional cycles!)
+```
+
+**Derivation:**
+```
+Master ticks per VDC cycle: 5
+Master ticks per CPU instruction: 3 × 15 = 45
+Ratio: 45 ÷ 5 = 9 VDC cycles per CPU instruction
+```
+
+### PAL Clock Relationships
+
+**Per Scanline:**
+| Component | Master Ticks | Cycles | Notes |
+|-----------|-------------|--------|-------|
+| Scanline | 1,135 | 1 | Exact integer |
+| VDC | 5 | 227 | Fixed, no alternating! |
+| CPU | 45 | 25.22 | ~25 instructions/line |
+
+**Per Frame (312 scanlines):**
+| Component | Total per Frame | Average per Scanline |
+|-----------|----------------|---------------------|
+| Master ticks | 354,120 | 1,135 |
+| VDC cycles | 70,824 | 227 |
+| CPU instructions | 7,869.3 | 25.22 |
+
+**Per Frame (313 scanlines - alternate frames):**
+| Component | Total per Frame | Average per Scanline |
+|-----------|----------------|---------------------|
+| Master ticks | 355,255 | 1,135 |
+| VDC cycles | 71,051 | 227 |
+| CPU instructions | 7,894.6 | 25.22 |
+
+### Key Differences from NTSC
+
+| Aspect | NTSC | PAL |
+|--------|------|-----|
+| Master Clock | 7.15909 MHz | 17.734476 MHz |
+| VDC Clock | 3.579545 MHz | 3.546895 MHz |
+| VDC Cycles/Line | 227.5 (alternates 227/228) | 227 (fixed) |
+| VDC-to-CPU Ratio | 10:1 (fractional) | 9:1 (perfect integer) |
+| Scanlines/Frame | 262 | 312 or 313 |
+| Frame Rate | ~60 Hz | ~50 Hz |
+| Color Phase Shift | Required (0.5 cycle offset) | Not required |
+
+### PAL Implementation (Simplified)
+
+Because of the perfect 9:1 ratio, PAL emulation is simpler:
+
+```cpp
+// No alternating line lengths needed!
+constexpr uint32 PAL_VDC_CYCLES_PER_LINE = 227;  // Fixed
+constexpr uint32 PAL_SCANLINES = 312;            // (or 313)
+constexpr uint32 PAL_VDC_TO_CPU_RATIO = 9;       // Perfect integer
+
+// Per-frame totals
+constexpr uint32 PAL_VDC_CYCLES_PER_FRAME = 312 * 227;  // 70,824
+constexpr uint32 PAL_CPU_INSTRUCTIONS_PER_FRAME = 70824 / 9;  // 7,869.3
+
+// Main loop (simplified)
+for (uint32 vdc_cycle = 0; vdc_cycle < PAL_VDC_CYCLES_PER_FRAME; vdc_cycle++) {
+    vdc.tick_one_cycle();
+    
+    // CPU executes every 9 VDC cycles
+    if (vdc_cycle % 9 == 0) {
+        cpu.execute_one_instruction();
+    }
+}
+```
+
+### Why PAL is Cleaner
+
+1. **No fractional cycles**: 227 VDC cycles per line (not 227.5)
+2. **Perfect integer ratio**: 9 VDC cycles = 1 CPU instruction (not 10)
+3. **No alternating logic**: Every scanline is identical
+4. **No color phase shift**: PAL handles color differently in RF encoder
+5. **Stable timing**: No drift or jitter from fractional accumulation
+
+### PAL Frame Alternation (312 vs 313 scanlines)
+
+PAL systems alternate between 312 and 313 scanline frames to achieve the correct field rate:
+
+```
+Frame 1: 312 scanlines = 70,824 VDC cycles
+Frame 2: 313 scanlines = 71,051 VDC cycles
+Average: 312.5 scanlines per frame
+```
+
+This creates the 50 Hz field rate: 25 frames/sec × 2 fields/frame = 50 Hz
+
+**O2EM PAL Constants:**
+```c
+#define EVBLCLK_PAL 7259  // Truncated to 288 lines (compatibility hack)
+```
+
+Note: O2EM's PAL timing (7,259 CPU cycles) represents a truncated 288-line frame for NTSC monitor compatibility, not accurate PAL hardware timing.
+
+---
+
+### Understanding "VBlank" - Two Different Meanings
+
+The term "VBlank" is used to describe two different things, which causes confusion:
+
+#### 1. Hardware VBlank (TV Signal Perspective)
+- **Definition**: The vertical blanking interval when the CRT beam returns from bottom to top
+- **Location**: Scanlines 240-261 (the "bottom blanking")
+- **Purpose**: Allows electron beam to return to top of screen
+- **Status bit**: VDC status register bit 3 (Vertical Status) is set during this period
+- **Our implementation**: `is_vblank()` returns true for scanlines 240-261
+
+#### 2. Safe Update Window (Game Developer Perspective)
+- **Definition**: Periods when it's safe to update VDC registers without causing flicker
+- **Location**: Scanlines 0-23 (top blanking) AND scanlines 240-261 (bottom blanking)
+- **Purpose**: CPU can modify sprite positions, colors, etc. without visual artifacts
+- **O2EM's approach**: `mstate=0` indicates "safe update window" (includes both periods)
+
+### O2EM State Machine vs Hardware Timing
+
+**O2EM's Frame Cycle:**
+```
+Frame starts → mstate=0 (scanlines 0-23, "top blanking")
+             ↓
+          VBLCLK=5493 reached (scanline 24)
+             ↓
+          mstate=1 (scanlines 24-239, "visible area")
+             ↓
+          EVBLCLK_NTSC=5964 reached (end of frame)
+             ↓
+          mstate=0 (trigger interrupt, next frame begins)
+```
+
+**Hardware Frame Cycle:**
+```
+Scanlines 0-23:   Vertical back porch (non-visible, beam returning)
+Scanline 24:      Grid rendering starts (visible area begins)
+Scanlines 24-239: Active display (215 visible scanlines)
+Scanlines 240-261: Vertical front porch + VSync (true VBLANK)
+                   VDC triggers interrupt here
+```
+
+### Why O2EM Uses VBLCLK = 5,493
+
+O2EM's `VBLCLK` constant represents the **end of the vertical back porch**, not the start of VBlank:
+
+**Calculation:**
+- 24 scanlines × 227.5 VDC cycles/line = 5,460 VDC cycles
+- Convert to CPU cycles: 5,460 ÷ 10 = 546 CPU cycles
+- O2EM uses 5,493 CPU cycles (includes timing buffer)
+
+**Purpose:**
+- Marks when the "danger zone" ends
+- After this point, the visible area begins rendering
+- If CPU hasn't finished updating VDC registers by cycle 5,493, the top of the screen will flicker
+
+### Implementation Differences
+
+| Aspect | Our Emulator | O2EM |
+|--------|-------------|------|
+| Frame start | Scanline 0 | Scanline 0 (mstate=0) |
+| Visible area start | Scanline 24 (GridLayout::START_Y) | Scanline 24 (VBLCLK) |
+| VBlank definition | Scanlines 240-261 only | Scanlines 0-23 + end-of-frame |
+| Interrupt timing | Scanline 240 (hardware-accurate) | End of frame (after visible area) |
+| Safe update window | Scanlines 240-261 | mstate=0 (both blanking periods) |
+
+### Cycle-Accurate Emulation Approach
+
+Our emulator uses a fundamentally different approach from O2EM's "two-chunk" model. Instead of batching scanlines, we implement true cycle-by-cycle interleaving of the CPU and VDC.
+
+#### VDC State Machine (Continuous Operation)
+
+The VDC runs continuously throughout the entire frame, including the vertical back porch:
+
+```cpp
+// VDC::tick_one_cycle() - called for every VDC clock cycle
+void VDC::tick_one_cycle() {
+    state_.total_cycles++;
+    
+    // Calculate beam position from total cycles
+    uint32 frame_cycles = state_.total_cycles % cycles_per_frame;
+    state_.beam_y = frame_cycles / cycles_per_scanline_;  // V-Count
+    state_.beam_x = frame_cycles % cycles_per_scanline_;  // H-Count
+    
+    // VDC is ALWAYS active, even during back porch (scanlines 0-23)
+    // It's performing internal logic: collision detection, register updates, etc.
+    
+    // Only render pixels during visible area (scanlines 24-239)
+    if (is_beam_visible()) {
+        render_current_pixel();
+    }
+    
+    // Detect collisions at end of each scanline
+    if (scanline_just_completed) {
+        detect_collisions(previous_scanline);
+    }
+}
+```
+
+#### Master Clock Coordination
+
+Our emulator currently uses a **simplified VDC-cycle-based approach** with integer ratio tracking. However, for true hardware accuracy, there are two methods:
+
+##### Method 1: True Master Clock (Gold Standard - 455 ticks/scanline)
+
+The hardware uses a 7.15909 MHz master clock with exact integer relationships:
+
+```
+Master Clock: 7.15909 MHz
+1 Scanline = 455 master ticks (exact)
+1 VDC cycle = 2 master ticks (7.15909 MHz ÷ 2 = 3.579545 MHz)
+1 CPU instruction = 20 master ticks (7.15909 MHz ÷ 20 = 0.357954 MHz)
+
+Per scanline:
+- VDC cycles: 455 ÷ 2 = 227.5 cycles (alternates 227/228)
+- CPU instructions: 455 ÷ 20 = 22.75 instructions (alternates 22/23)
+```
+
+**Implementation (ideal):**
+```cpp
+uint32 master_tick = 0;
+uint32 scanline = 0;
+
+while (running) {
+    // VDC updates every 2 master ticks
+    if (master_tick % 2 == 0) {
+        vdc.tick_one_cycle();
+    }
+    
+    // CPU updates every 20 master ticks
+    if (master_tick % 20 == 0) {
+        cpu.execute_one_instruction();
+    }
+    
+    master_tick++;
+    
+    // Scanline boundary at 455 ticks
+    if (master_tick >= 455) {
+        master_tick = 0;
+        scanline++;
+        if (scanline >= 262) {
+            scanline = 0;  // Frame complete
+        }
+    }
+}
+```
+
+**Why 455 ticks?**
+- NTSC color subcarrier requires phase shift every scanline
+- The 0.5 VDC cycle offset (227.5) creates this phase shift automatically
+- Ensures color consistency across alternating scanlines
+- No manual alternation logic needed - it emerges naturally from the math
+
+##### Method 2: Simplified VDC-Cycle Approach (Our Current Implementation)
+
+Instead of true master clock, we use VDC cycles as the base unit with integer ratio tracking:
+
+```cpp
+// MasterClock::tick() - determines who executes next
+MasterClock::ExecuteNext MasterClock::tick() {
+    // CPU should execute when debt ratio >= 1.0
+    if (cpu_cycle_debt_numerator_ >= cpu_cycle_debt_denominator_) {
+        return ExecuteNext::CPU;
+    }
+    return ExecuteNext::VDC;  // VDC runs at base clock frequency
+}
+
+// After CPU executes an instruction:
+void MasterClock::cpu_executed(uint8 instruction_cycles) {
+    // Each CPU instruction consumes 10 VDC cycles (NTSC)
+    // This is simplified: 20 master ticks ÷ 2 ticks/VDC = 10 VDC cycles
+    int64 vdc_cycles = instruction_cycles * 10;
+    cpu_cycle_debt_numerator_ -= instruction_cycles * cpu_cycle_debt_denominator_;
+    vdc_cycle_debt_numerator_ += vdc_cycles * vdc_cycle_debt_denominator_;
+}
+
+// After VDC advances one cycle:
+void MasterClock::vdc_ticked() {
+    master_cycle_count_++;  // Actually counting VDC cycles, not master ticks
+    cpu_cycle_debt_numerator_ += 1;  // CPU accumulates debt
+    vdc_cycle_debt_numerator_ -= vdc_cycle_debt_denominator_;
+}
+```
+
+**Tradeoffs:**
+- ✅ Simpler implementation (no 455-tick counter)
+- ✅ Uses integer ratio (10 VDC cycles per CPU instruction)
+- ✅ Sufficient for most games
+- ⚠️ Doesn't naturally handle 227.5 VDC cycles per scanline
+- ⚠️ Requires manual handling of fractional cycles
+- ⚠️ Doesn't simulate NTSC color phase shift
+
+**Note:** Our current implementation uses 227 VDC cycles per scanline (integer approximation), which introduces slight timing drift over many frames. For perfect accuracy, we should migrate to the 455-tick master clock approach.
+
+#### No Fixed Constants - Dynamic Beam Tracking
+
+Unlike O2EM's `VBLCLK = 5493`, we don't use fixed cycle counts. Instead:
+
+1. **VDC beam position** is calculated from `total_cycles`:
+   ```cpp
+   state_.beam_y = (total_cycles % cycles_per_frame) / cycles_per_scanline_;
+   ```
+
+2. **Scanline 24 transition** happens naturally when `beam_y == 24`:
+   ```cpp
+   bool is_beam_visible() const {
+       return state_.beam_x < FRAMEBUFFER_WIDTH && 
+              state_.beam_y >= GridLayout::START_Y &&  // 24
+              state_.beam_y < vblank_start_;           // 240
+   }
+   ```
+
+3. **VBlank transition** happens when `beam_y >= 240`:
+   ```cpp
+   bool is_vblank() const {
+       return state_.beam_y >= vblank_start_;  // 240
+   }
+   ```
+
+#### Bus Contention and Register Writes
+
+When the CPU writes to VDC registers, the write happens at the exact VDC cycle:
+
+```cpp
+void VDC::write_register(uint8 address, uint8 value) {
+    // Write protection: graphic registers can't be written during active display
+    if (address <= 0x7F) {
+        bool display_enabled = (state_.registers[VDCRegisters::CONTROL] & 
+                                ControlBits::ENABLE_DISPLAY) != 0;
+        if (display_enabled) {
+            // Silently ignore - prevents mid-frame glitches
+            return;
+        }
+    }
+    
+    state_.registers[address] = value;
+    // Update takes effect immediately at current beam position
+}
+```
+
+**Key insight**: If the CPU writes to a sprite Y-position at scanline 10, it's safe. If it writes at scanline 50 while the VDC is rendering that sprite, the write is blocked (if display is enabled), preventing "torn" sprites.
+
+#### Why This Approach is More Accurate
+
+1. **No drift**: CPU and VDC stay perfectly synchronized via master clock
+2. **Sub-scanline precision**: Writes take effect at exact VDC cycle, not batched
+3. **Natural state transitions**: Scanline 24 and scanline 240 happen automatically
+4. **Bus contention**: Write protection simulates hardware behavior
+5. **Collision detection**: Happens at exact scanline boundaries
+
+#### Performance Considerations
+
+Cycle-accurate emulation is more expensive than O2EM's batching:
+- **O2EM**: ~262 iterations per frame (one per scanline)
+- **Our emulator**: ~59,605 iterations per frame (one per VDC cycle)
+
+However, modern CPUs handle this easily, and the accuracy benefits are significant for timing-sensitive games.
+
+### Recommendations for Emulator Developers
+
+1. **Distinguish between hardware VBlank and safe update windows**
+   - Hardware VBlank: scanlines 240-261 (after visible area)
+   - Safe update: scanlines 0-23 (top) + 240-261 (bottom)
+
+2. **Consider adding separate API methods:**
+   ```cpp
+   bool is_vblank() const;              // Hardware VBlank (240-261)
+   bool is_vertical_back_porch() const; // Top blanking (0-23)
+   bool is_safe_update_window() const;  // Both periods (0-23 or 240-261)
+   ```
+
+3. **Grid rendering must start at scanline 24**
+   - This is a hardware constant (GridLayout::START_Y = 24)
+   - First 24 scanlines are always non-visible
+
+4. **Frame timing is exact for NTSC:**
+   - 262 scanlines × 227.5 VDC cycles/line = 59,605 VDC cycles
+   - 59,605 ÷ 10 = 5,960.5 CPU instruction cycles per frame
+
+5. **For cycle-accurate emulation:**
+   - Use a master clock counter, not fixed constants
+   - Interleave CPU and VDC execution cycle-by-cycle
+   - Calculate beam position dynamically from total cycles
+   - Implement write protection to prevent mid-frame glitches
+   - VDC runs continuously, even during vertical back porch
+
+---
+
 ### Observed Issues
 
 After implementing banking and JMPP fixes, the game runs but has problems:

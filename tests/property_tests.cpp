@@ -59,9 +59,8 @@ TEST(MasterClockProperties, CycleDebtExecutionOrder) {
         if (cpu_debt >= 9.9) {
             RC_ASSERT(next == MasterClock::ExecuteNext::CPU);
         } else {
-            // Otherwise should return VDC (unless frame complete)
-            RC_ASSERT(next == MasterClock::ExecuteNext::VDC || 
-                     next == MasterClock::ExecuteNext::FRAME_COMPLETE);
+            // Otherwise should return VDC (frame completion tracking moved to VDC)
+            RC_ASSERT(next == MasterClock::ExecuteNext::VDC);
         }
     });
 }

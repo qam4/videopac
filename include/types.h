@@ -13,6 +13,8 @@ using uint16 = std::uint16_t;
 using uint32 = std::uint32_t;
 using uint64 = std::uint64_t;
 using int16 = std::int16_t;
+using int32 = std::int32_t;
+using int64 = std::int64_t;
 
 // Video standard (timing only - does not affect colors)
 enum class VideoStandard {
@@ -180,19 +182,6 @@ constexpr int FRAMEBUFFER_HEIGHT = 240;  // Full VDC height to capture status ba
 // We'll use a reasonable extended area for debugging
 constexpr int EXTENDED_FB_WIDTH = 240;   // Show extra 80 pixels horizontally
 constexpr int EXTENDED_FB_HEIGHT = 250;  // Show extra 50 lines vertically
-
-// Timing constants
-constexpr uint32 NTSC_SCANLINES = 262;
-constexpr uint32 PAL_SCANLINES = 312;
-constexpr uint32 NTSC_VBLANK_LINES = 22;
-constexpr uint32 PAL_VBLANK_LINES = 28;
-
-constexpr uint32 NTSC_CPU_CLOCK = 5370000;  // 5.37 MHz
-constexpr uint32 PAL_CPU_CLOCK = 5910000;   // 5.91 MHz
-constexpr uint32 CPU_CLOCK_DIVIDER = 15;
-
-constexpr uint32 NTSC_FRAME_RATE = 60;
-constexpr uint32 PAL_FRAME_RATE = 50;
 
 } // namespace videopac
 

@@ -61,6 +61,17 @@ namespace VDCRegisters {
     constexpr uint8 GRID_V_BASE = 0xE0;       // Vertical grid lines (0xE0-0xE9)
 }
 
+// Grid layout constants
+// Values derived from o2em implementation and hardware testing
+// Reference: o2em vdc.c, Intel 8245 datasheet
+namespace GridLayout {
+    constexpr int START_X = 8;           // Horizontal start position (adjusted for alignment)
+    constexpr int START_Y = 24;          // Vertical start position (hardware specification)
+    constexpr int ROW_HEIGHT = 24;       // Each row spans 24 scanlines (3 line + 21 spacing)
+    constexpr int LINE_HEIGHT = 3;       // Grid lines are 3 scanlines thick
+    constexpr int COL_WIDTH = 16;        // Each column is 16 pixels wide
+}
+
 // Control register (0xA0) bit definitions
 // Reference: doc/o2doc.md section 4.6, doc/8245.md lines 440-470
 namespace ControlBits {
@@ -126,12 +137,6 @@ constexpr uint16 AUDIO_FREQ_HIGH = 3933;       // High shift frequency
 // Video timing constants
 // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
 namespace VideoTiming {
-    // VDC clock frequency
-    constexpr double VDC_CLOCK_MHZ = 3.54;
-    
-    // Cycles per scanline (including HBLANK)
-    constexpr uint32 CYCLES_PER_SCANLINE = 227;
-    
     // NTSC timing (60Hz)
     constexpr uint16 NTSC_SCANLINES = 262;
     
@@ -146,12 +151,20 @@ namespace VideoTiming {
     #endif
     
     constexpr uint16 NTSC_VBLANK_LINES = 22;
+    
+    // Cycles per scanline (integer approximation)
+    // Hardware: ~227.5 cycles/scanline (3.579545 MHz / 59.94 Hz / 262 scanlines)
+    // Using 227 as integer approximation: 262 × 227 = 59,474 cycles/frame
     constexpr uint32 NTSC_CYCLES_PER_SCANLINE = 227;
     
     // PAL timing (50Hz)
     constexpr uint16 PAL_SCANLINES = 312;
     constexpr uint16 PAL_VBLANK_START = 284;
     constexpr uint16 PAL_VBLANK_LINES = 28;
+    
+    // Cycles per scanline (integer approximation)
+    // Hardware: ~227.36 cycles/scanline (3.546895 MHz / 50 Hz / 312 scanlines)
+    // Using 227 as integer approximation: 312 × 227 = 70,824 cycles/frame
     constexpr uint32 PAL_CYCLES_PER_SCANLINE = 227;
 }
 
@@ -176,6 +189,7 @@ struct VDCState {
     uint16 beam_y;                                  // Vertical beam position (0-261 NTSC, 0-311 PAL)
     uint64 total_cycles;                            // Total VDC cycles since reset
     VideoStandard video_standard;                   // PAL or NTSC
+    bool frame_complete;                            // Frame just completed (beam wrapped to scanline 0)
     
     // Collision detection state
     // Reference: doc/o2doc.md section 4.8, doc/8245.md lines 480-500
@@ -234,6 +248,7 @@ public:
     bool is_vblank() const;
     bool is_hblank() const;
     bool is_beam_visible() const;                   // Check if beam is in visible area
+    bool is_frame_complete() const;                 // Check if frame just completed (beam wrapped to scanline 0)
     
     // Audio
     int16 get_audio_sample();
@@ -247,6 +262,8 @@ public:
     uint16 get_scanline() const { return state_.beam_y; }  // For backward compatibility
     uint16 get_beam_x() const { return state_.beam_x; }
     uint16 get_beam_y() const { return state_.beam_y; }
+    uint64 get_total_cycles() const { return state_.total_cycles; }
+    uint64 get_frame_number() const;                    // Calculate current frame number from total cycles
     VideoStandard get_video_standard() const { return state_.video_standard; }
     
     // VDC trace (for debugging VDC register writes)
@@ -266,7 +283,7 @@ private:
     std::string last_vdc_trace_;
     
     // Timing
-    uint32 cycles_per_scanline_;
+    uint32 cycles_per_scanline_;  // VDC cycles per scanline (standard-specific)
     uint32 total_scanlines_;
     uint32 vblank_start_;
     

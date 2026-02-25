@@ -17,8 +17,6 @@ EmulatorCore::EmulatorCore(const Configuration& config)
     cpu_.set_input_handler(&input_);
     memory_.set_vdc(&vdc_);
     memory_.set_cpu(&cpu_);  // Allow memory system to read Port 1 from CPU
-    
-    calculate_timing();
 }
 
 Result<void> EmulatorCore::load_bios(const std::string& path) {
@@ -93,8 +91,8 @@ void EmulatorCore::run_frame() {
     // Reset scanline tracking for counter mode
     prev_scanline_ = 0;
     
-    // Reset master clock for new frame
-    master_clock_.reset_frame();
+    // Frame complete - no need to reset anything, VDC's total_cycles continues
+    // and frame_complete flag will be set again on next frame wrap
     
     // Diagnostic counters (only if profiling enabled)
     static uint64 total_cpu_calls = 0;
@@ -115,7 +113,7 @@ void EmulatorCore::run_frame() {
     
     // Cycle-accurate execution loop
     // CPU and VDC execute interleaved based on master clock cycle debt
-    while (!master_clock_.is_frame_complete()) {
+    while (!vdc_.is_frame_complete()) {
         auto loop_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
         
         MasterClock::ExecuteNext next = master_clock_.tick();
@@ -193,11 +191,6 @@ void EmulatorCore::run_frame() {
                     auto vdc_end = std::chrono::high_resolution_clock::now();
                     vdc_time_this_frame += std::chrono::duration_cast<std::chrono::microseconds>(vdc_end - vdc_start).count();
                 }
-                break;
-            }
-            
-            case MasterClock::ExecuteNext::FRAME_COMPLETE: {
-                // Frame is complete, exit loop
                 break;
             }
         }
@@ -318,16 +311,6 @@ Result<void> EmulatorCore::load_state(const std::string& path) {
     frame_count_ = state.frame_count;
     
     return Result<void>::ok();
-}
-
-void EmulatorCore::calculate_timing() {
-    if (config_.video_standard == VideoStandard::NTSC) {
-        cycles_per_frame_ = (NTSC_CPU_CLOCK / CPU_CLOCK_DIVIDER) / NTSC_FRAME_RATE;
-        cycles_per_scanline_ = cycles_per_frame_ / NTSC_SCANLINES;
-    } else {
-        cycles_per_frame_ = (PAL_CPU_CLOCK / CPU_CLOCK_DIVIDER) / PAL_FRAME_RATE;
-        cycles_per_scanline_ = cycles_per_frame_ / PAL_SCANLINES;
-    }
 }
 
 void EmulatorCore::handle_interrupts() {

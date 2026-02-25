@@ -556,12 +556,12 @@ void Debugger::log_vdc_write() {
     std::string trace = emulator_->get_vdc().get_last_vdc_trace();
     if (!trace.empty()) {
         // Add frame and cycle count prefix (like CPU trace format)
-        uint64 cycles = emulator_->get_master_clock().get_master_cycle_count();
-        uint32 frame = cycles / emulator_->get_master_clock().get_cycles_per_frame();
+        uint64 cycles = emulator_->get_vdc().get_total_cycles();
+        uint64 frame = emulator_->get_vdc().get_frame_number();
         
         char buffer[256];
-        snprintf(buffer, sizeof(buffer), "[F:%u C:%llu] %s", 
-                 frame, (unsigned long long)cycles, trace.c_str());
+        snprintf(buffer, sizeof(buffer), "[F:%llu C:%llu] %s", 
+                 (unsigned long long)frame, (unsigned long long)cycles, trace.c_str());
         
         vdc_trace_log_.push_back(buffer);
         // Clear the trace after logging to avoid duplicates
