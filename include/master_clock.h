@@ -25,7 +25,7 @@ public:
     ExecuteNext tick();
     
     // Notify that component executed (no parameters needed with master clock approach)
-    void cpu_executed();
+    void cpu_executed(uint8 cycles = 1);  // cycles: number of CPU cycles consumed (1 or 2)
     void vdc_executed();
     
     // Reset master clock (for emulator reset)
@@ -51,6 +51,9 @@ private:
     
     // VDC cycle counter (for compatibility)
     uint64 vdc_cycle_count_;        // Total VDC cycles (increments every vdc_tick_divisor ticks)
+    
+    // CPU cycle debt tracking (for multi-cycle instructions)
+    uint8 cpu_cycles_remaining_;    // Remaining CPU cycles to consume (0 = ready for next instruction)
     
     // Standard-specific timing constants
     uint32 ticks_per_scanline_;     // Master ticks per scanline (455 NTSC, 1135 PAL)

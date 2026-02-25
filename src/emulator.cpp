@@ -152,15 +152,15 @@ void EmulatorCore::run_frame() {
                 }
                 
                 // Execute one CPU instruction
-                cpu_.execute_instruction();
+                uint8 cycles = cpu_.execute_instruction();
                 
                 // Log VDC trace if enabled (after instruction execution, in case it wrote to VDC)
                 if (debugger_ && debugger_->is_vdc_trace_enabled()) {
                     debugger_->log_vdc_write();
                 }
                 
-                // Notify master clock that CPU executed
-                master_clock_.cpu_executed();
+                // Notify master clock that CPU executed (with cycle count)
+                master_clock_.cpu_executed(cycles);
                 
                 if (profiling) {
                     auto cpu_end = std::chrono::high_resolution_clock::now();
@@ -216,15 +216,15 @@ void EmulatorCore::run_frame() {
                 }
                 
                 // Execute one CPU instruction
-                cpu_.execute_instruction();
+                uint8 cycles = cpu_.execute_instruction();
                 
                 // Log VDC trace if enabled (after instruction execution, in case it wrote to VDC)
                 if (debugger_ && debugger_->is_vdc_trace_enabled()) {
                     debugger_->log_vdc_write();
                 }
                 
-                // Notify master clock that CPU executed
-                master_clock_.cpu_executed();
+                // Notify master clock that CPU executed (with cycle count)
+                master_clock_.cpu_executed(cycles);
                 
                 if (profiling) {
                     auto cpu_end = std::chrono::high_resolution_clock::now();

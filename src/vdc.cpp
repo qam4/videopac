@@ -118,9 +118,7 @@ void VDC::tick_one_cycle() {
     
     // Render pixel at current beam position BEFORE incrementing
     // This fixes the off-by-one error that caused black bands and broken collision detection
-    if (is_beam_visible()) {
-        render_current_pixel();
-    }
+    render_current_pixel();
     
     // Increment H-Counter (horizontal beam position in VDC cycles)
     // This will be reset to 0 by end_scanline() when the master clock
@@ -204,7 +202,22 @@ void VDC::write_register(uint8 address, uint8 value) {
     if (vdc_trace_enabled_) {
         std::ostringstream trace;
         trace << "[VDC] write_register(0x" << std::hex << std::setw(2) << std::setfill('0') 
-              << (int)address << ", 0x" << (int)value << std::dec << ")";
+              << (int)address << ", 0x" << (int)value << ")";
+        
+        // Add register name for important registers
+        if (address == VDCRegisters::CONTROL) {
+            trace << " [CONTROL: DISP=" << ((value & ControlBits::ENABLE_DISPLAY) ? "1" : "0")
+                  << " GRID=" << ((value & ControlBits::ENABLE_GRID) ? "1" : "0")
+                  << "]";
+        } else if (address >= 0xC0 && address <= 0xC8) {
+            trace << " [GRID_H" << (address - 0xC0) << "]";
+        } else if (address >= 0xE0 && address <= 0xE9) {
+            trace << " [GRID_V" << (address - 0xE0) << "]";
+        } else if (address == VDCRegisters::COLOR) {
+            trace << " [COLOR]";
+        }
+        
+        trace << std::dec;
         last_vdc_trace_ = trace.str();
     }
     
@@ -279,24 +292,26 @@ void VDC::write_register(uint8 address, uint8 value) {
 // Read from VDC register
 // Reference: doc/o2doc.md Appendix D, doc/8245.md lines 600-650
 uint8 VDC::read_register(uint8 address) {
+    uint8 value = 0;
+    
     // Special handling for read-only registers
     switch (address) {
         case VDCRegisters::STATUS:
             // Reading status register clears certain bits
             // Reference: doc/o2doc.md section 4.7, doc/8245.md lines 480-500
             {
-                uint8 status = state_.registers[address];
+                value = state_.registers[address];
                 // Clear sound needs service bit on read
                 state_.registers[address] &= ~StatusBits::SOUND_NEEDS_SERVICE;
-                return status;
             }
+            break;
             
         case VDCRegisters::COLLISION:
             // Reading collision register returns collision state and clears it
-            // Reference: doc/o2doc.md section 4.8, doc/8245.md lines 500-520
+            // Reference: doc/o2em section 4.8, doc/8245.md lines 500-520
             {
                 // Return the accumulated collision state
-                uint8 collision = state_.collision_state;
+                value = state_.collision_state;
                 
                 // Clear collision state after read
                 state_.collision_state = 0;
@@ -304,12 +319,37 @@ uint8 VDC::read_register(uint8 address) {
                 
                 // Keep the enable mask in the register
                 // (the register value is the enable mask, collision_state is the result)
-                return collision;
             }
+            break;
             
         default:
-            return state_.registers[address];
+            value = state_.registers[address];
+            break;
     }
+    
+    // Generate VDC trace if enabled
+    if (vdc_trace_enabled_) {
+        std::ostringstream trace;
+        trace << "[VDC] read_register(0x" << std::hex << std::setw(2) << std::setfill('0') 
+              << (int)address << ") = 0x" << (int)value;
+        
+        // Add register name and decoded bits for important registers
+        if (address == VDCRegisters::STATUS) {
+            trace << " [STATUS: VBLANK=" << ((value & StatusBits::VBLANK) ? "1" : "0")
+                  << " HBLANK=" << ((value & StatusBits::HBLANK) ? "1" : "0")
+                  << " CHAR_OVL=" << ((value & StatusBits::CHAR_OVERLAP) ? "1" : "0")
+                  << " EXT_OVL=" << ((value & StatusBits::EXT_OVERLAP) ? "1" : "0")
+                  << " SND=" << ((value & StatusBits::SOUND_NEEDS_SERVICE) ? "1" : "0")
+                  << "]";
+        } else if (address == VDCRegisters::COLLISION) {
+            trace << " [COLLISION]";
+        }
+        
+        trace << std::dec;
+        last_vdc_trace_ = trace.str();
+    }
+    
+    return value;
 }
 
 // Render current scanline to framebuffer
@@ -317,51 +357,45 @@ uint8 VDC::read_register(uint8 address) {
 // rendering happens per-pixel via render_current_pixel() called from tick_one_cycle().
 // Reference: doc/o2doc.md section 4.0, doc/8245.md lines 200-300
 void VDC::render_scanline() {
-    // Only render during visible scanlines (hardware scanlines 24-263 for 240-line framebuffer)
-    constexpr int VISIBLE_START_Y = 24;
-    constexpr int VISIBLE_END_Y = VISIBLE_START_Y + FRAMEBUFFER_HEIGHT;  // 264
-    
-    if (is_vblank() || state_.beam_y < VISIBLE_START_Y || state_.beam_y >= VISIBLE_END_Y) {
-        return;
-    }
-    
     // Check if display is enabled
     if (!state_.display_enabled) {
         return;
     }
     
-    // Convert hardware scanline to framebuffer row
-    int y = static_cast<int>(state_.beam_y) - VISIBLE_START_Y;
+    // Use beam_y directly (hardware coordinate)
+    int beam_y = static_cast<int>(state_.beam_y);
+    
+    // Convert to framebuffer coordinate
+    int fb_y = beam_y - FramebufferMapping::FRAMEBUFFER_START_Y;
+    
+    // Only render if within framebuffer bounds
+    if (fb_y < 0 || fb_y >= FRAMEBUFFER_HEIGHT) {
+        return;
+    }
     
     // Render in priority order (background to foreground)
     // Reference: doc/o2doc.md section 4.0, design.md Property 21
-    render_background(y);
-    render_grid(y);
-    render_characters(y);
-    render_sprites(y);
+    // Pass fb_y (framebuffer coordinate) to helper functions
+    render_background(fb_y);
+    render_grid(fb_y);
+    render_characters(fb_y);
+    render_sprites(fb_y);
     
-    // Detect collisions for this scanline
-    detect_collisions(y);
+    // Detect collisions for this scanline (uses framebuffer coordinate)
+    detect_collisions(fb_y);
 }
 
 // Render pixel at current beam position
 // Reference: Requirements 2.1, 2.3, 2.6, 12.1-12.4
 void VDC::render_current_pixel() {
-    if (!is_beam_visible()) {
-        return;
-    }
-    
-    
     // Check if display is enabled
     if (!state_.display_enabled) {
         return;
     }
     
-    // Convert hardware beam coordinates to framebuffer coordinates
-    // Hardware: beam_x = 0-159, beam_y = 24-223
-    // Framebuffer: x = 0-159, y = 0-199
-    int x = static_cast<int>(state_.beam_x);
-    int y = static_cast<int>(state_.beam_y) - GridLayout::START_Y;  // Subtract top blanking lines
+    // Use beam coordinates for rendering logic (hardware coordinates)
+    int beam_x = static_cast<int>(state_.beam_x);
+    int beam_y = static_cast<int>(state_.beam_y);
     
     // Render in priority order (background to foreground)
     // Priority: sprites (highest) > characters > grid > background (lowest)
@@ -380,7 +414,7 @@ void VDC::render_current_pixel() {
     // Formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
     // Bits 0-2: BGR components, Bit 6: luminance, Bit 7: inverted luminance
     if (state_.grid_enabled) {
-        if (is_grid_pixel_at(x, y)) {
+        if (is_grid_pixel_at(beam_x, beam_y)) {
             uint8 grid_color = (color_reg & 0x07) | ((color_reg & 0x40) >> 3) | (color_reg & 0x80 ? 0 : 8);
             pixel_color = grid_color;
         }
@@ -391,7 +425,7 @@ void VDC::render_current_pixel() {
     // Formula: ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8
     // Reorders BGR bits to RGB and adds 8 for high-intensity palette
     uint8 char_color;
-    if (is_character_pixel_at(x, y, char_color)) {
+    if (is_character_pixel_at(beam_x, beam_y, char_color)) {
         pixel_color = char_color;
     }
     
@@ -400,18 +434,27 @@ void VDC::render_current_pixel() {
     // Formula: ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8
     // Reorders BGR bits to RGB and adds 8 for high-intensity palette
     uint8 sprite_color;
-    if (is_sprite_pixel_at(x, y, sprite_color)) {
+    if (is_sprite_pixel_at(beam_x, beam_y, sprite_color)) {
         pixel_color = sprite_color;
     }
     
+    // Convert beam coordinates to framebuffer coordinates
+    int fb_x = beam_x - FramebufferMapping::FRAMEBUFFER_START_X;
+    int fb_y = beam_y - FramebufferMapping::FRAMEBUFFER_START_Y;
+    
     // Write to normal framebuffer if within bounds
-    if (x < FRAMEBUFFER_WIDTH && y < FRAMEBUFFER_HEIGHT) {
-        state_.framebuffer[y][x] = pixel_color;
+    if (fb_x >= 0 && fb_x < FRAMEBUFFER_WIDTH && fb_y >= 0 && fb_y < FRAMEBUFFER_HEIGHT) {
+        state_.framebuffer[fb_y][fb_x] = pixel_color;
     }
     
+    // Convert beam coordinates to extended framebuffer coordinates
+    int ext_fb_x = beam_x - FramebufferMapping::EXTENDED_FB_START_X;
+    int ext_fb_y = beam_y - FramebufferMapping::EXTENDED_FB_START_Y;
+    
     // Write to extended framebuffer if enabled and within extended bounds
-    if (extended_fb_mode_ && x < EXTENDED_FB_WIDTH && y < EXTENDED_FB_HEIGHT) {
-        state_.extended_framebuffer[y][x] = pixel_color;
+    if (extended_fb_mode_ && ext_fb_x >= 0 && ext_fb_x < EXTENDED_FB_WIDTH && 
+        ext_fb_y >= 0 && ext_fb_y < EXTENDED_FB_HEIGHT) {
+        state_.extended_framebuffer[ext_fb_y][ext_fb_x] = pixel_color;
     }
 }
 
@@ -437,13 +480,6 @@ bool VDC::is_vblank() const {
     return state_.beam_y >= vblank_start_;
 }
 
-// Check if in horizontal blank period
-// Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
-bool VDC::is_hblank() const {
-    // HBLANK is active when beam_x is beyond visible width
-    return state_.beam_x >= FRAMEBUFFER_WIDTH;
-}
-
 // Check if frame just completed (beam wrapped to scanline 0)
 bool VDC::is_frame_complete() const {
     return state_.frame_complete;
@@ -457,25 +493,6 @@ void VDC::clear_frame_complete() {
 // Get current frame number from total cycles
 uint64 VDC::get_frame_number() const {
     return state_.frame_number;
-}
-
-// Check if beam is in visible area
-// Reference: Requirements 2.4, 2.6
-bool VDC::is_beam_visible() const {
-    // Visible area in hardware coordinates:
-    // - Scanlines 24-263 (240 lines total for full framebuffer)
-    // - For 240-line framebuffer: scanlines 24-263
-    // - Pixels 0-159 (160 pixels)
-    constexpr int VISIBLE_START_Y = 24;
-    constexpr int VISIBLE_END_Y = VISIBLE_START_Y + FRAMEBUFFER_HEIGHT;  // 24 + 240 = 264
-    
-    // Clamp to actual scanlines available (262 for NTSC, 312 for PAL)
-    int effective_end_y = std::min(static_cast<int>(VISIBLE_END_Y), static_cast<int>(total_scanlines_));
-    
-    return state_.beam_x < FRAMEBUFFER_WIDTH && 
-           state_.beam_y >= VISIBLE_START_Y &&
-           state_.beam_y < effective_end_y &&
-           !is_hblank();
 }
 
 // Get current audio sample

@@ -5,21 +5,31 @@ Verify if Killer Bees actually works in o2em and capture key information about h
 
 ## Compile Flags for Debugging
 
-### O2EM_VBLANK_TIMING
-When comparing traces with o2em, you can enable o2em-compatible VBlank timing:
+### O2EM_COMPAT
+When comparing traces with o2em, you can enable o2em compatibility mode:
 
 ```bash
-# Build with o2em-compatible timing (VBlank at scanline 241)
-cmake --build --preset=dev-mingw -D O2EM_VBLANK_TIMING=ON
+# Method 1: Add to CMakeUserPresets.json (recommended)
+# Edit CMakeUserPresets.json and add to your preset's cacheVariables:
+"O2EM_COMPAT": "ON"
 
-# Or add to CMakeLists.txt:
-add_compile_definitions(O2EM_VBLANK_TIMING)
+# Then reconfigure and rebuild:
+cmake --preset=dev-mingw
+cmake --build --preset=dev-mingw
+
+# Method 2: Command line (temporary, not persistent)
+cmake -B build -DO2EM_COMPAT=ON
+cmake --build build
 ```
 
-This changes VBlank start from scanline 240 (hardware spec) to scanline 241 (o2em implementation).
-Use this when doing trace comparison debugging to minimize timing divergences.
+This enables o2em-specific behaviors:
+- VBlank timing: Changes from scanline 240 (hardware spec) to scanline 242 (o2em implementation)
+- Timer quirk: STOP TCNT only stops timer mode, leaving counter mode active (deviates from Intel 8048 spec)
 
-**Default behavior:** Hardware-accurate timing (scanline 240)
+Use this when doing trace comparison debugging to minimize divergences.
+
+**Default behavior:** Hardware-accurate (Intel 8048 spec + scanline 240)
+**O2EM compatibility:** O2EM quirks (timer behavior + scanline 242)
 
 ## Setup (Linux)
 

@@ -9,6 +9,7 @@ MasterClock::MasterClock(VideoStandard standard)
     , current_scanline_(0)
     , current_frame_(0)
     , vdc_cycle_count_(0)
+    , cpu_cycles_remaining_(0)
     , ticks_per_scanline_(0)
     , vdc_tick_divisor_(0)
     , cpu_tick_divisor_(0)
@@ -51,8 +52,14 @@ MasterClock::ExecuteNext MasterClock::tick() {
     
     // Determine what should execute at this tick
     // Both CPU and VDC can be ready at the same tick (every LCM of divisors)
-    bool cpu_ready = (master_tick_count_ % cpu_tick_divisor_) == 0;
+    // CPU is only ready if it has no remaining cycles from a multi-cycle instruction
+    bool cpu_ready = (cpu_cycles_remaining_ == 0) && ((master_tick_count_ % cpu_tick_divisor_) == 0);
     bool vdc_ready = (master_tick_count_ % vdc_tick_divisor_) == 0;
+    
+    // Decrement CPU cycle debt if we're at a CPU tick boundary
+    if ((master_tick_count_ % cpu_tick_divisor_) == 0 && cpu_cycles_remaining_ > 0) {
+        cpu_cycles_remaining_--;
+    }
     
     if (cpu_ready && vdc_ready) {
         return ExecuteNext::BOTH;
@@ -70,9 +77,11 @@ MasterClock::ExecuteNext MasterClock::tick() {
     return ExecuteNext::NONE;
 }
 
-void MasterClock::cpu_executed() {
-    // CPU executed an instruction
-    // No state tracking needed - master clock handles everything
+void MasterClock::cpu_executed(uint8 cycles) {
+    // CPU executed an instruction that consumed 'cycles' CPU cycles (1 or 2)
+    // Set remaining cycles so CPU won't execute again until debt is paid
+    // Subtract 1 because the current cycle is already consumed
+    cpu_cycles_remaining_ = cycles - 1;
 }
 
 void MasterClock::vdc_executed() {
@@ -86,6 +95,7 @@ void MasterClock::reset() {
     current_scanline_ = 0;
     current_frame_ = 0;
     vdc_cycle_count_ = 0;
+    cpu_cycles_remaining_ = 0;
 }
 
 } // namespace videopac

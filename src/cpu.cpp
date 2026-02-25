@@ -507,11 +507,22 @@ uint8 CPU::execute_instruction() {
         // Flags affected: None
         // Cycles: 1
         // Initiates timer accumulation. Timer is incremented every 32 instruction cycles.
+        // STRT T - Start timer (0x55)
+        // Operation: Start timer with 32-cycle prescaler
+        // Flags affected: None
+        // Cycles: 1
         // The prescaler is cleared but the timer register is not.
         // Reference: doc/mcs-48-assembly-language-manual.md, "Start Timer" section
+        // Intel 8048 spec: Timer and counter modes are mutually exclusive
         case 0x55:
             state_.timer_on = true;
-            state_.counter_on = false;  // Timer mode disables counter mode
+#ifdef O2EM_COMPAT
+            // O2EM quirk: Both modes can run simultaneously
+            // Don't clear counter_on
+#else
+            // Hardware spec: Starting timer mode stops counter mode
+            state_.counter_on = false;
+#endif
             state_.timer_prescaler = 0;  // Clear prescaler
             break;
             
@@ -523,9 +534,16 @@ uint8 CPU::execute_instruction() {
         // In the Odyssey 2, this mode increments the timer once per scanline.
         // Reference: doc/mcs-48-assembly-language-manual.md, "Start Event Counter" section
         // Reference: doc/o2em/cpu.c lines 1536-1545 - counter increments per scanline
+        // Intel 8048 spec: Timer and counter modes are mutually exclusive
         case 0x45:
             state_.counter_on = true;
-            state_.timer_on = false;  // Counter mode disables timer mode
+#ifdef O2EM_COMPAT
+            // O2EM quirk: Both modes can run simultaneously
+            // Don't clear timer_on
+#else
+            // Hardware spec: Starting counter mode stops timer mode
+            state_.timer_on = false;
+#endif
             state_.timer_prescaler = 0;  // Clear prescaler
             break;
             
@@ -533,11 +551,18 @@ uint8 CPU::execute_instruction() {
         // Operation: Stop timer or disable event counter
         // Flags affected: None
         // Cycles: 1
-        // Stops both time accumulation and event counting.
         // Reference: doc/mcs-48-assembly-language-manual.md, "Stop Timer/Event Counter" section
+        // Intel 8048 spec: "Both modes are disabled by the STOP TCNT instruction"
         case 0x65:
             state_.timer_on = false;
+#ifdef O2EM_COMPAT
+            // O2EM quirk: STOP TCNT only disables timer mode, leaving counter mode active.
+            // This deviates from Intel spec but is required for O2EM trace compatibility.
+            // Games like Killer Bees may depend on this behavior.
+#else
+            // Hardware spec: STOP TCNT disables both timer and counter modes
             state_.counter_on = false;
+#endif
             break;
             
         // ========== INPUT/OUTPUT INSTRUCTIONS ==========

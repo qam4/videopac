@@ -87,7 +87,8 @@ BEGIN { in_ext_write = 0; added_globals = 0; added_trace = 0; in_main_loop = 0 }
     if (!added_globals) {
         print ""
         print "/* VDC TRACE: Frame counter and trace file */"
-        print "unsigned long long vdc_frame_count = 0;"
+        print "static unsigned long long vdc_frame_count = 0;"
+        print "static unsigned long long vdc_last_master_count = 0;"
         print "static FILE *vdc_trace_fp = NULL;"
         print "static int vdc_trace_count = 0;"
         added_globals = 1
@@ -103,27 +104,40 @@ BEGIN { in_ext_write = 0; added_globals = 0; added_trace = 0; in_main_loop = 0 }
 # Add trace code at the start of ext_write function, after the opening brace
 in_ext_write && /^{/ && !added_trace {
     print
-    print "\t/* VDC TRACE: Log first 10000 VDC writes */"
+    print "\t/* VDC TRACE: Update frame counter based on master_count wraparound */"
+    print "\tif (master_count < vdc_last_master_count) {"
+    print "\t\tvdc_frame_count++;"
+    print "\t}"
+    print "\tvdc_last_master_count = master_count;"
+    print ""
+    print "\t/* VDC TRACE: Log VDC writes until 10 frames captured */"
     print "\tif (!vdc_trace_fp) {"
     print "\t\tvdc_trace_fp = fopen(\"o2em_vdc_trace.log\", \"a\");"
     print "\t\tif (vdc_trace_fp) {"
     print "\t\t\tif (vdc_trace_count == 0) {"
-    print "\t\t\t\tfprintf(vdc_trace_fp, \"# O2EM VDC Trace: FRAME ADDR VALUE\\n\");"
+    print "\t\t\t\tfprintf(vdc_trace_fp, \"# O2EM VDC Trace: FRAME CYCLE ADDR VALUE TYPE\\n\");"
+    print "\t\t\t\tfprintf(stderr, \"VDC TRACE: Started logging\\n\");"
     print "\t\t\t}"
     print "\t\t} else {"
     print "\t\t\tfprintf(stderr, \"VDC TRACE ERROR: Could not open o2em_vdc_trace.log\\n\");"
     print "\t\t}"
     print "\t}"
-    print "\tif (vdc_trace_fp && vdc_trace_count < 10000) {"
-    print "\t\t/* Log frame, address, and value */"
-    print "\t\tfprintf(vdc_trace_fp, \"%llu 0x%02X 0x%02X\\n\", vdc_frame_count, adr, dat);"
+    print "\tif (vdc_trace_fp && vdc_frame_count < 10) {"
+    print "\t\t/* Log frame, cycle, address, value, and register name */"
+    print "\t\tconst char *reg_name = \"\";"
+    print "\t\tif (adr == 0xA0) reg_name = \" [CONTROL]\";"
+    print "\t\telse if (adr == 0xA1) reg_name = \" [STATUS]\";"
+    print "\t\telse if (adr == 0xA3) reg_name = \" [COLOR]\";"
+    print "\t\telse if (adr >= 0xC0 && adr <= 0xC8) reg_name = \" [GRID_H]\";"
+    print "\t\telse if (adr >= 0xE0 && adr <= 0xE9) reg_name = \" [GRID_V]\";"
+    print "\t\tfprintf(vdc_trace_fp, \"%llu %llu 0x%02X 0x%02X W%s\\n\", "
+    print "\t\t        vdc_frame_count, master_count, adr, dat, reg_name);"
     print "\t\tvdc_trace_count++;"
-    print "\t\tif (vdc_trace_count == 10000) {"
-    print "\t\t\tfprintf(stderr, \"VDC TRACE: Completed 10000 writes\\n\");"
-    print "\t\t\tfflush(vdc_trace_fp);"
-    print "\t\t\tfclose(vdc_trace_fp);"
-    print "\t\t\tvdc_trace_fp = NULL;"
-    print "\t\t}"
+    print "\t} else if (vdc_trace_fp && vdc_frame_count >= 10) {"
+    print "\t\tfprintf(stderr, \"VDC TRACE: Completed 10 frames (%d writes)\\n\", vdc_trace_count);"
+    print "\t\tfflush(vdc_trace_fp);"
+    print "\t\tfclose(vdc_trace_fp);"
+    print "\t\tvdc_trace_fp = NULL;"
     print "\t}"
     added_trace = 1
     next
@@ -132,7 +146,6 @@ in_ext_write && /^{/ && !added_trace {
 # Track frame count - look for EVBLCLK (end of vertical blank)
 /master_count.*==.*EVBLCLK/ {
     print
-    print "\t\t\tvdc_frame_count++; /* Track frames for VDC trace */"
     next
 }
 
@@ -180,8 +193,8 @@ echo "To generate traces, run:"
 echo "  ./run_o2em_trace.sh 'Killer Bees (1983)(Philips)(US).bin'"
 echo ""
 echo "This will create:"
-echo "  - o2em_trace.log (first 50000 CPU instructions)"
-echo "  - o2em_vdc_trace.log (first 10000 VDC writes)"
+echo "  - o2em_trace.log (first 3,000,000 CPU instructions)"
+echo "  - o2em_vdc_trace.log (first 10 frames of VDC writes)"
 echo ""
 echo "Press any key to start the game, then close the window after a few seconds."
 

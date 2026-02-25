@@ -30,6 +30,13 @@ option(BUILD_TESTS "Build unit tests" ON)
 option(BUILD_LIBRETRO "Build libretro core" ON)
 option(BUILD_STANDALONE "Build standalone emulator" ON)
 option(ENABLE_SDL "Enable SDL2 frontend (requires SDL2)" ON)
+option(O2EM_COMPAT "Enable O2EM compatibility mode (VBlank timing and timer quirks)" OFF)
+
+# Apply O2EM_COMPAT compile definition if enabled
+if(O2EM_COMPAT)
+    add_compile_definitions(O2EM_COMPAT)
+    message(STATUS "O2EM_COMPAT enabled: Using O2EM-compatible behavior")
+endif()
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)

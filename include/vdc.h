@@ -72,6 +72,18 @@ namespace GridLayout {
     constexpr int COL_WIDTH = 16;        // Each column is 16 pixels wide
 }
 
+// Framebuffer mapping constants
+// Maps hardware beam coordinates to framebuffer coordinates
+namespace FramebufferMapping {
+    // Standard framebuffer (160x240)
+    constexpr int FRAMEBUFFER_START_X = 0;   // beam_x 0-159 maps to framebuffer x 0-159
+    constexpr int FRAMEBUFFER_START_Y = 0;   // beam_y 0-239 maps to framebuffer y 0-239
+    
+    // Extended framebuffer (240x250) - for debugging
+    constexpr int EXTENDED_FB_START_X = 0;   // beam_x 0-239 maps to extended fb x 0-239
+    constexpr int EXTENDED_FB_START_Y = 0;   // beam_y 0-249 maps to extended fb y 0-249
+}
+
 // Control register (0xA0) bit definitions
 // Reference: doc/o2doc.md section 4.6, doc/8245.md lines 440-470
 namespace ControlBits {
@@ -148,7 +160,11 @@ constexpr uint16 AUDIO_FREQ_HIGH = 3933;       // High shift frequency
 namespace VideoTiming {
     // NTSC timing (60Hz)
     constexpr uint16 NTSC_SCANLINES = 262;
-    constexpr uint16 NTSC_VBLANK_START = 240;
+    #ifdef O2EM_COMPAT
+        constexpr uint16 NTSC_VBLANK_START = 242;  // O2EM compatibility: ~54,930 VDC cycles
+    #else
+        constexpr uint16 NTSC_VBLANK_START = 240;  // Hardware spec: 240 visible scanlines
+    #endif
     constexpr uint16 NTSC_VBLANK_LINES = 22;
     
     // PAL timing (50Hz)
@@ -237,8 +253,6 @@ public:
     
     // Status queries
     bool is_vblank() const;
-    bool is_hblank() const;
-    bool is_beam_visible() const;                   // Check if beam is in visible area
     bool is_frame_complete() const;                 // Check if frame just completed (beam wrapped to scanline 0)
     void clear_frame_complete();                    // Clear frame_complete flag (called at start of new frame)
     

@@ -148,12 +148,12 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False,
             "--headless",
             "--screenshot", "1",
             "--frames", str(frames),
-            "--press-joystick", "2", "0", "20", str(frames),  # Press joystick 2 UP at frame 20
-            "--press-key", "1", "5", "5",   # Press '1' at frame 5 for 5 frames (title screen)
-            "--press-key", "1", "12", "5",  # Press '1' at frame 12 for 5 frames (select game)
+            # "--press-joystick", "2", "0", "20", str(frames),  # Press joystick 2 UP at frame 20
+            # "--press-key", "1", "5", "5",   # Press '1' at frame 5 for 5 frames (title screen)
+            # "--press-key", "1", "12", "5",  # Press '1' at frame 12 for 5 frames (select game)
             "--debug",
             "--trace",
-            "region=france",
+            "--region france",
             "--vdc-trace",
             "--bios", bios_path,
             rom_path
@@ -230,9 +230,9 @@ Examples:
     parser.add_argument(
         "rom",
         nargs="?",
-        # default="roms/Magnavox Odyssey 2 [TOSEC]/Magnavox Odyssey2 - Games (TOSEC-v2011-02-22_CM)/Killer Bees (1983)(Philips)(US).zip",
-        # default="roms/ROMS/o2_47.bin",
-        default="roms/Satellite Attack (1981)(Philips)(EU).bin",
+        # default="roms/Satellite Attack (1981)(Philips)(EU).bin",
+        # default="roms/Course de Voitures + Autodrome + Cryptogramme (1980)(Philips)(FR).bin",
+        default="roms/Killer Bees (1983)(Philips)(US).bin",
         help="Path to ROM file"
     )
     
