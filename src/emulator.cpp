@@ -10,7 +10,7 @@ namespace videopac {
 EmulatorCore::EmulatorCore(const Configuration& config)
     : config_(config), vdc_(config.video_standard), master_clock_(config.video_standard),
       debugger_(nullptr), running_(false), paused_(false), frame_count_(0), 
-      vblank_interrupt_triggered_(false), prev_scanline_(0) {
+      prev_vdc_cycles_(0), vblank_interrupt_triggered_(false), prev_scanline_(0) {
     
     // Connect components
     cpu_.set_memory_system(&memory_);
@@ -91,8 +91,12 @@ void EmulatorCore::run_frame() {
     // Reset scanline tracking for counter mode
     prev_scanline_ = 0;
     
-    // Frame complete - no need to reset anything, VDC's total_cycles continues
-    // and frame_complete flag will be set again on next frame wrap
+    // Clear frame_complete flag at start of frame
+    // The VDC will set it again when the frame completes
+    vdc_.clear_frame_complete();
+    
+    // Track VDC cycles at start of frame for statistics
+    uint64 frame_start_vdc_cycles = vdc_.get_total_cycles();
     
     // Diagnostic counters (only if profiling enabled)
     static uint64 total_cpu_calls = 0;
@@ -124,6 +128,72 @@ void EmulatorCore::run_frame() {
         }
         
         switch (next) {
+            case MasterClock::ExecuteNext::BOTH: {
+                // Both CPU and VDC execute at this tick
+                // Execute CPU first, then VDC
+                auto cpu_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
+                
+                if (profiling) cpu_calls_this_frame++;
+                
+                // Check for interrupts BEFORE executing next instruction
+                handle_interrupts();
+                
+                // Check for breakpoint before executing instruction
+                check_debugger_breakpoint();
+                
+                // If paused by debugger, stop execution
+                if (paused_) {
+                    return;
+                }
+                
+                // Log instruction trace BEFORE executing (so we capture the PC before it changes)
+                if (debugger_ && debugger_->is_trace_enabled()) {
+                    debugger_->log_instruction(master_clock_.get_vdc_cycle_count());
+                }
+                
+                // Execute one CPU instruction
+                cpu_.execute_instruction();
+                
+                // Log VDC trace if enabled (after instruction execution, in case it wrote to VDC)
+                if (debugger_ && debugger_->is_vdc_trace_enabled()) {
+                    debugger_->log_vdc_write();
+                }
+                
+                // Notify master clock that CPU executed
+                master_clock_.cpu_executed();
+                
+                if (profiling) {
+                    auto cpu_end = std::chrono::high_resolution_clock::now();
+                    cpu_time_this_frame += std::chrono::duration_cast<std::chrono::microseconds>(cpu_end - cpu_start).count();
+                }
+                
+                // Now execute VDC
+                auto vdc_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
+                
+                if (profiling) vdc_calls_this_frame++;
+                
+                // Advance VDC by one cycle FIRST
+                vdc_.tick_one_cycle();
+                
+                // THEN check if we're at the end of a scanline (master clock wrapped to next scanline)
+                uint32 current_scanline = master_clock_.get_current_scanline();
+                if (current_scanline != prev_scanline_) {
+                    // Scanline boundary - tell VDC to wrap its counters
+                    vdc_.end_scanline();
+                    cpu_.increment_counter();
+                    prev_scanline_ = current_scanline;
+                }
+                
+                // Notify master clock that VDC ticked
+                master_clock_.vdc_executed();
+                
+                if (profiling) {
+                    auto vdc_end = std::chrono::high_resolution_clock::now();
+                    vdc_time_this_frame += std::chrono::duration_cast<std::chrono::microseconds>(vdc_end - vdc_start).count();
+                }
+                break;
+            }
+            
             case MasterClock::ExecuteNext::CPU: {
                 auto cpu_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
                 
@@ -142,11 +212,11 @@ void EmulatorCore::run_frame() {
                 
                 // Log instruction trace BEFORE executing (so we capture the PC before it changes)
                 if (debugger_ && debugger_->is_trace_enabled()) {
-                    debugger_->log_instruction(master_clock_.get_master_cycle_count());
+                    debugger_->log_instruction(master_clock_.get_vdc_cycle_count());
                 }
                 
                 // Execute one CPU instruction
-                uint8 instruction_cycles = cpu_.execute_instruction();
+                cpu_.execute_instruction();
                 
                 // Log VDC trace if enabled (after instruction execution, in case it wrote to VDC)
                 if (debugger_ && debugger_->is_vdc_trace_enabled()) {
@@ -154,7 +224,7 @@ void EmulatorCore::run_frame() {
                 }
                 
                 // Notify master clock that CPU executed
-                master_clock_.cpu_executed(instruction_cycles);
+                master_clock_.cpu_executed();
                 
                 if (profiling) {
                     auto cpu_end = std::chrono::high_resolution_clock::now();
@@ -168,24 +238,26 @@ void EmulatorCore::run_frame() {
                 
                 if (profiling) vdc_calls_this_frame++;
                 
-                // Advance VDC by one cycle
+                // Advance VDC by one cycle FIRST
                 vdc_.tick_one_cycle();
                 
-                // Check if scanline changed (for counter mode)
-                // Hardware: The VDC generates a pulse on scanline completion that is wired to the
-                // CPU's T1 pin. When STRT CNT is executed, the CPU configures its timer to increment
-                // on high-to-low transitions of T1. This emulates that hardware connection.
-                // Reference: Intel 8048 datasheet - T1 pin is event counter input
-                // Reference: doc/o2em/cpu.c lines 1536-1545
-                uint16 current_scanline = vdc_.get_beam_y();
+                // THEN check if we're at the end of a scanline (master clock wrapped to next scanline)
+                uint32 current_scanline = master_clock_.get_current_scanline();
                 if (current_scanline != prev_scanline_) {
-                    // Scanline completed - VDC would pulse T1 pin, increment counter if active
+                    // Scanline boundary - tell VDC to wrap its counters
+                    vdc_.end_scanline();
+                    
+                    // Hardware: The VDC generates a pulse on scanline completion that is wired to the
+                    // CPU's T1 pin. When STRT CNT is executed, the CPU configures its timer to increment
+                    // on high-to-low transitions of T1. This emulates that hardware connection.
+                    // Reference: Intel 8048 datasheet - T1 pin is event counter input
+                    // Reference: doc/o2em/cpu.c lines 1536-1545
                     cpu_.increment_counter();
                     prev_scanline_ = current_scanline;
                 }
                 
                 // Notify master clock that VDC ticked
-                master_clock_.vdc_ticked();
+                master_clock_.vdc_executed();
                 
                 if (profiling) {
                     auto vdc_end = std::chrono::high_resolution_clock::now();
@@ -193,6 +265,11 @@ void EmulatorCore::run_frame() {
                 }
                 break;
             }
+            
+            case MasterClock::ExecuteNext::NONE:
+                // Neither CPU nor VDC ready at this tick
+                // Continue to next tick
+                break;
         }
     }
     
@@ -224,7 +301,9 @@ void EmulatorCore::run_frame() {
     
     // Update debugger frame statistics
     if (debugger_) {
-        debugger_->update_frame_stats(master_clock_.get_master_cycle_count());
+        uint64 frame_end_vdc_cycles = vdc_.get_total_cycles();
+        uint64 cycles_this_frame = frame_end_vdc_cycles - frame_start_vdc_cycles;
+        debugger_->update_frame_stats(cycles_this_frame);
     }
     
     frame_count_++;

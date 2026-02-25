@@ -6,8 +6,9 @@
 namespace videopac {
 
 // Master clock synchronization for cycle-accurate emulation
-// Uses VDC 3.54 MHz clock as base unit, coordinates CPU and VDC execution
-// Reference: .kiro/specs/character-rendering-fix/design.md
+// Uses true hardware master clock (7.15909 MHz NTSC, 17.734476 MHz PAL)
+// Both CPU and VDC derive their timing from this master clock via integer divisors
+// Reference: .kiro/specs/true-master-clock-timing/design.md
 class MasterClock {
 public:
     explicit MasterClock(VideoStandard standard);
@@ -15,63 +16,69 @@ public:
     // Execution control
     enum class ExecuteNext {
         CPU,             // CPU should execute next instruction
-        VDC              // VDC should advance one cycle
+        VDC,             // VDC should advance one cycle
+        BOTH,            // Both CPU and VDC should execute (happens every LCM of divisors)
+        NONE             // Neither ready (continue to next tick)
     };
     
-    // Advance the master clock and determine what to execute next
+    // Advance the master clock by 1 tick and determine what to execute next
     ExecuteNext tick();
     
-    // Notify that CPU executed an instruction
-    void cpu_executed(uint8 instruction_cycles);
+    // Notify that component executed (no parameters needed with master clock approach)
+    void cpu_executed();
+    void vdc_executed();
     
-    // Notify that VDC advanced one cycle
-    void vdc_ticked();
-    
-    // Reset master cycle count (for emulator reset)
+    // Reset master clock (for emulator reset)
     void reset();
     
-    // Accessors for testing
-    uint64 get_master_cycle_count() const { return master_cycle_count_; }
-    double get_cpu_cycle_debt() const { return static_cast<double>(cpu_cycle_debt_numerator_) / cpu_cycle_debt_denominator_; }
-    double get_vdc_cycle_debt() const { return static_cast<double>(vdc_cycle_debt_numerator_) / vdc_cycle_debt_denominator_; }
-    double get_cycles_per_cpu_instruction() const { return static_cast<double>(cycles_per_cpu_instruction_); }
+    // Accessors for testing and debugging
+    uint64 get_master_tick_count() const { return master_tick_count_; }
+    uint32 get_current_scanline() const { return current_scanline_; }
+    uint32 get_scanline_tick() const { return scanline_tick_; }
+    uint32 get_current_frame() const { return current_frame_; }
+    
+    // Get VDC cycle count (for compatibility with existing code)
+    uint64 get_vdc_cycle_count() const { return vdc_cycle_count_; }
     
 private:
     VideoStandard standard_;
-    uint64 master_cycle_count_;      // Total VDC cycles since start
     
-    // Integer-based debt tracking (eliminates floating-point rounding errors)
-    // CPU debt: tracks when CPU should execute (numerator/denominator >= 1.0 means execute)
-    int64 cpu_cycle_debt_numerator_;     // Accumulated CPU cycle debt (numerator)
-    int64 cpu_cycle_debt_denominator_;   // Debt threshold (denominator)
+    // Master clock state
+    uint64 master_tick_count_;      // Total master ticks since start
+    uint32 scanline_tick_;          // Tick within current scanline (0 to ticks_per_scanline-1)
+    uint32 current_scanline_;       // Current scanline number (0 to total_scanlines-1)
+    uint32 current_frame_;          // Current frame number
     
-    // VDC debt: tracks VDC cycles that CPU execution "owes" to VDC
-    int64 vdc_cycle_debt_numerator_;     // Accumulated VDC cycle debt (numerator)
-    int64 vdc_cycle_debt_denominator_;   // Debt threshold (denominator)
+    // VDC cycle counter (for compatibility)
+    uint64 vdc_cycle_count_;        // Total VDC cycles (increments every vdc_tick_divisor ticks)
     
-    // Standard-specific timing (set by calculate_timing())
-    uint32 cycles_per_cpu_instruction_;  // VDC cycles per CPU instruction (10 for NTSC, 9 for PAL)
+    // Standard-specific timing constants
+    uint32 ticks_per_scanline_;     // Master ticks per scanline (455 NTSC, 1135 PAL)
+    uint32 vdc_tick_divisor_;       // VDC ticks every N master ticks (2 NTSC, 5 PAL)
+    uint32 cpu_tick_divisor_;       // CPU ticks every M master ticks (20 NTSC, 45 PAL)
+    uint32 total_scanlines_;        // Scanlines per frame (262 NTSC, 312/313 PAL)
     
-    // Hardware reference constants (NOT used in emulation, for documentation only)
-    // The actual hardware has a master crystal oscillator that gets divided down.
-    // Our emulator uses VDC cycles as the base unit instead of simulating the crystal.
+    // NTSC timing constants
+    static constexpr uint32 NTSC_MASTER_CLOCK_HZ = 7159090;      // 7.15909 MHz
+    static constexpr uint32 NTSC_TICKS_PER_SCANLINE = 455;
+    static constexpr uint32 NTSC_SCANLINES_PER_FRAME = 262;
+    static constexpr uint32 NTSC_TICKS_PER_FRAME = 119210;       // 455 × 262
+    static constexpr uint32 NTSC_VDC_TICK_DIVISOR = 2;           // VDC ticks every 2 master ticks
+    static constexpr uint32 NTSC_CPU_TICK_DIVISOR = 20;          // CPU ticks every 20 master ticks
     
-    // NTSC hardware clock frequencies (reference only)
-    static constexpr double NTSC_HARDWARE_MASTER_CLOCK_MHZ = 7.15909;   // Hardware crystal oscillator
-    static constexpr double NTSC_HARDWARE_VDC_CLOCK_MHZ = 3.579545;     // master / 2
-    static constexpr double NTSC_HARDWARE_CPU_CLOCK_MHZ = 0.357954;     // (master × 0.75 / 3) / 5
-    static constexpr uint32 NTSC_CYCLES_PER_CPU_INSTRUCTION = 10;       // USED: VDC cycles per CPU instruction
+    // PAL timing constants
+    static constexpr uint32 PAL_MASTER_CLOCK_HZ = 17734476;      // 17.734476 MHz
+    static constexpr uint32 PAL_TICKS_PER_SCANLINE = 1135;
+    static constexpr uint32 PAL_SCANLINES_PER_FRAME = 312;       // (or 313 for alternate frames)
+    static constexpr uint32 PAL_TICKS_PER_FRAME = 354120;        // 1135 × 312
+    static constexpr uint32 PAL_VDC_TICK_DIVISOR = 5;            // VDC ticks every 5 master ticks
+    static constexpr uint32 PAL_CPU_TICK_DIVISOR = 45;           // CPU ticks every 45 master ticks
     
-    // PAL hardware clock frequencies (reference only)
-    static constexpr double PAL_HARDWARE_MASTER_CLOCK_MHZ = 17.734476;  // Hardware crystal oscillator
-    static constexpr double PAL_HARDWARE_VDC_CLOCK_MHZ = 3.546895;      // master / 5
-    static constexpr double PAL_HARDWARE_CPU_CLOCK_MHZ = 0.394099;      // (master × 0.8 / 4) / 9
-    static constexpr uint32 PAL_CYCLES_PER_CPU_INSTRUCTION = 9;         // USED: VDC cycles per CPU instruction
+    // Derived constants (for documentation)
+    // NTSC: VDC = 3.579545 MHz (master ÷ 2), CPU = 0.357954 MHz (master ÷ 20)
+    // PAL:  VDC = 3.546895 MHz (master ÷ 5), CPU = 0.394099 MHz (master ÷ 45)
     
-    // Note: Our emulator's "master clock" (master_cycle_count_) counts VDC cycles, not hardware crystal cycles.
-    // This is simpler and sufficient for cycle-accurate emulation.
-    
-    // Calculate cycles per frame based on video standard
+    // Initialize timing constants based on video standard
     void calculate_timing();
 };
 

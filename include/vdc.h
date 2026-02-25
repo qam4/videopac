@@ -136,36 +136,25 @@ constexpr uint16 AUDIO_FREQ_HIGH = 3933;       // High shift frequency
 
 // Video timing constants
 // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
+// 
+// IMPORTANT: VDC cycles per scanline are NOT fixed - they vary based on master clock phase.
+// The master clock (MasterClock class) determines when scanlines end and calls vdc.end_scanline().
+// 
+// Relationship to master clock:
+//   NTSC: 455 master ticks/scanline ÷ 2 = 227.5 VDC cycles/scanline (alternates 227/228)
+//   PAL:  1135 master ticks/scanline ÷ 5 = 227 VDC cycles/scanline (exact)
+// 
+// See include/master_clock.h for master clock timing details.
 namespace VideoTiming {
     // NTSC timing (60Hz)
     constexpr uint16 NTSC_SCANLINES = 262;
-    
-    // VBlank start scanline
-    // Hardware spec: 240 (VBlank starts after 240 visible scanlines)
-    // O2EM uses: 241 (due to scanline batching implementation)
-    // Use O2EM_VBLANK_TIMING compile flag to match o2em for trace comparison debugging
-    #ifdef O2EM_VBLANK_TIMING
-        constexpr uint16 NTSC_VBLANK_START = 241;  // O2EM-compatible timing for debugging
-    #else
-        constexpr uint16 NTSC_VBLANK_START = 240;  // Hardware-accurate timing (default)
-    #endif
-    
+    constexpr uint16 NTSC_VBLANK_START = 240;
     constexpr uint16 NTSC_VBLANK_LINES = 22;
-    
-    // Cycles per scanline (integer approximation)
-    // Hardware: ~227.5 cycles/scanline (3.579545 MHz / 59.94 Hz / 262 scanlines)
-    // Using 227 as integer approximation: 262 × 227 = 59,474 cycles/frame
-    constexpr uint32 NTSC_CYCLES_PER_SCANLINE = 227;
     
     // PAL timing (50Hz)
     constexpr uint16 PAL_SCANLINES = 312;
     constexpr uint16 PAL_VBLANK_START = 284;
     constexpr uint16 PAL_VBLANK_LINES = 28;
-    
-    // Cycles per scanline (integer approximation)
-    // Hardware: ~227.36 cycles/scanline (3.546895 MHz / 50 Hz / 312 scanlines)
-    // Using 227 as integer approximation: 312 × 227 = 70,824 cycles/frame
-    constexpr uint32 PAL_CYCLES_PER_SCANLINE = 227;
 }
 
 // VDC state structure
@@ -188,6 +177,7 @@ struct VDCState {
     uint16 beam_x;                                  // Horizontal beam position (0-227 for full scanline including HBLANK)
     uint16 beam_y;                                  // Vertical beam position (0-261 NTSC, 0-311 PAL)
     uint64 total_cycles;                            // Total VDC cycles since reset
+    uint64 frame_number;                            // Current frame number (increments when beam_y wraps to 0)
     VideoStandard video_standard;                   // PAL or NTSC
     bool frame_complete;                            // Frame just completed (beam wrapped to scanline 0)
     
@@ -227,6 +217,7 @@ public:
     void reset();
     void tick(uint8 cycles);
     void tick_one_cycle();                          // Advance VDC by exactly 1 clock cycle
+    void end_scanline();                            // End of scanline - wrap H-counter and increment V-counter
     
     // Register access
     void write_register(uint8 address, uint8 value);
@@ -249,6 +240,7 @@ public:
     bool is_hblank() const;
     bool is_beam_visible() const;                   // Check if beam is in visible area
     bool is_frame_complete() const;                 // Check if frame just completed (beam wrapped to scanline 0)
+    void clear_frame_complete();                    // Clear frame_complete flag (called at start of new frame)
     
     // Audio
     int16 get_audio_sample();
@@ -282,10 +274,9 @@ private:
     bool vdc_trace_enabled_;
     std::string last_vdc_trace_;
     
-    // Timing
-    uint32 cycles_per_scanline_;  // VDC cycles per scanline (standard-specific)
-    uint32 total_scanlines_;
-    uint32 vblank_start_;
+    // Timing (standard-specific)
+    uint32 total_scanlines_;      // Total scanlines per frame (262 NTSC, 312 PAL)
+    uint32 vblank_start_;         // Scanline where VBlank starts
     
     // Character ROM (64 characters, 8 bytes each for 8x7 patterns)
     // Reference: doc/o2doc.md Appendix C, doc/8245.md lines 700-750

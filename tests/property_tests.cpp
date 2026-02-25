@@ -8,59 +8,132 @@
 using namespace videopac;
 
 // Property-based tests using RapidCheck
-// Feature: character-rendering-fix
+// Feature: true-master-clock-timing
 
 // ============================================================================
-// Task 2.2: Property 1 - Master clock cycle ratio
-// Validates: Requirements 1.2
+// Property 1: NTSC VDC ticks every 2 master ticks
+// Validates: Requirements R2
 // ============================================================================
-TEST(MasterClockProperties, CycleRatio) {
-    rc::check("Property 1: Master clock cycle ratio - For any CPU instruction execution, "
-              "the VDC cycle debt should increase by exactly 10.0 cycles for NTSC",
-              [](uint8 instruction_cycles) {
-        RC_PRE(instruction_cycles >= 1 && instruction_cycles <= 3);  // Valid CPU instruction cycles
+TEST(MasterClockProperties, NTSCVDCTickInterval) {
+    rc::check("Property 1: NTSC VDC ticks every 2 master ticks",
+              [](uint16 num_ticks) {
+        RC_PRE(num_ticks >= 2 && num_ticks <= 1000);
         
         MasterClock clock(VideoStandard::NTSC);
         
-        // Execute CPU instruction
-        clock.cpu_executed(instruction_cycles);
+        int vdc_tick_count = 0;
+        for (uint16 i = 0; i < num_ticks; i++) {
+            auto result = clock.tick();
+            if (result == MasterClock::ExecuteNext::VDC) {
+                vdc_tick_count++;
+                clock.vdc_executed();
+            }
+        }
         
-        // VDC cycle debt should increase by exactly 10.0 * instruction_cycles for NTSC
-        double expected_vdc_debt = instruction_cycles * 10.0;
-        double actual_vdc_debt = clock.get_vdc_cycle_debt();
-        
-        // Allow small tolerance for floating point arithmetic
-        double tolerance = 0.001;
-        RC_ASSERT(std::abs(actual_vdc_debt - expected_vdc_debt) < tolerance);
+        // VDC should tick every 2 master ticks
+        int expected_vdc_ticks = static_cast<int>(num_ticks) / 2;
+        RC_ASSERT(vdc_tick_count == expected_vdc_ticks);
     });
 }
 
 // ============================================================================
-// Task 2.3: Property 2 - Cycle debt determines execution order
-// Validates: Requirements 1.3
+// Property 2: NTSC CPU ticks every 20 master ticks
+// Validates: Requirements R3
 // ============================================================================
-TEST(MasterClockProperties, CycleDebtExecutionOrder) {
-    rc::check("Property 2: Cycle debt determines execution order - The component with higher "
-              "cycle debt should be selected to execute next",
-              [](uint8 vdc_ticks) {
-        RC_PRE(vdc_ticks >= 1 && vdc_ticks <= 100);
+TEST(MasterClockProperties, NTSCCPUTickInterval) {
+    rc::check("Property 2: NTSC CPU ticks every 20 master ticks",
+              [](uint16 num_ticks) {
+        RC_PRE(num_ticks >= 20 && num_ticks <= 1000);
         
         MasterClock clock(VideoStandard::NTSC);
         
-        // Accumulate CPU debt by ticking VDC
-        for (uint8 i = 0; i < vdc_ticks; i++) {
-            clock.vdc_ticked();
+        int cpu_tick_count = 0;
+        for (uint16 i = 0; i < num_ticks; i++) {
+            auto result = clock.tick();
+            if (result == MasterClock::ExecuteNext::CPU) {
+                cpu_tick_count++;
+                clock.cpu_executed();
+            }
         }
         
-        double cpu_debt = clock.get_cpu_cycle_debt();
+        // CPU should tick every 20 master ticks
+        int expected_cpu_ticks = static_cast<int>(num_ticks) / 20;
+        RC_ASSERT(cpu_tick_count == expected_cpu_ticks);
+    });
+}
+
+// ============================================================================
+// Property 3: PAL VDC ticks every 5 master ticks
+// Validates: Requirements R2
+// ============================================================================
+TEST(MasterClockProperties, PALVDCTickInterval) {
+    rc::check("Property 3: PAL VDC ticks every 5 master ticks",
+              [](uint16 num_ticks) {
+        RC_PRE(num_ticks >= 5 && num_ticks <= 1000);
         
-        // If CPU debt >= 9.9 (one instruction threshold), tick() should return CPU
-        auto next = clock.tick();
-        if (cpu_debt >= 9.9) {
-            RC_ASSERT(next == MasterClock::ExecuteNext::CPU);
-        } else {
-            // Otherwise should return VDC (frame completion tracking moved to VDC)
-            RC_ASSERT(next == MasterClock::ExecuteNext::VDC);
+        MasterClock clock(VideoStandard::PAL);
+        
+        int vdc_tick_count = 0;
+        for (uint16 i = 0; i < num_ticks; i++) {
+            auto result = clock.tick();
+            if (result == MasterClock::ExecuteNext::VDC) {
+                vdc_tick_count++;
+                clock.vdc_executed();
+            }
         }
+        
+        // VDC should tick every 5 master ticks
+        int expected_vdc_ticks = static_cast<int>(num_ticks) / 5;
+        RC_ASSERT(vdc_tick_count == expected_vdc_ticks);
+    });
+}
+
+// ============================================================================
+// Property 4: PAL CPU ticks every 45 master ticks
+// Validates: Requirements R3
+// ============================================================================
+TEST(MasterClockProperties, PALCPUTickInterval) {
+    rc::check("Property 4: PAL CPU ticks every 45 master ticks",
+              [](uint16 num_ticks) {
+        RC_PRE(num_ticks >= 45 && num_ticks <= 2000);
+        
+        MasterClock clock(VideoStandard::PAL);
+        
+        int cpu_tick_count = 0;
+        for (uint16 i = 0; i < num_ticks; i++) {
+            auto result = clock.tick();
+            if (result == MasterClock::ExecuteNext::CPU) {
+                cpu_tick_count++;
+                clock.cpu_executed();
+            }
+        }
+        
+        // CPU should tick every 45 master ticks
+        int expected_cpu_ticks = static_cast<int>(num_ticks) / 45;
+        RC_ASSERT(cpu_tick_count == expected_cpu_ticks);
+    });
+}
+
+// ============================================================================
+// Property 5: Scanline boundaries occur at correct intervals
+// Validates: Requirements R4
+// ============================================================================
+TEST(MasterClockProperties, ScanlineBoundaries) {
+    rc::check("Property 5: NTSC scanline boundaries occur every 455 ticks",
+              [](uint8 num_scanlines) {
+        RC_PRE(num_scanlines >= 1 && num_scanlines <= 10);
+        
+        MasterClock clock(VideoStandard::NTSC);
+        
+        // Tick through N scanlines
+        for (uint8 scanline = 0; scanline < num_scanlines; scanline++) {
+            for (int tick = 0; tick < 455; tick++) {
+                clock.tick();
+            }
+        }
+        
+        // Should be at scanline N
+        RC_ASSERT(clock.get_current_scanline() == static_cast<uint32>(num_scanlines));
+        RC_ASSERT(clock.get_scanline_tick() == 0u);
     });
 }

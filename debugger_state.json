@@ -1,0 +1,17 @@
+{
+  "breakpoints": [
+  ],
+  "watch_expressions": [
+  ],
+  "display_mode": "overlay",
+  "panel_visibility": {
+    "cpu_state": true,
+    "memory": true,
+    "vdc_registers": true,
+    "breakpoints": true,
+    "disassembly": true,
+    "call_stack": true,
+    "watch": true,
+    "controls": true
+  }
+}

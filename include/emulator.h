@@ -91,8 +91,9 @@ private:
     bool running_;
     bool paused_;
     uint64 frame_count_;
+    uint64 prev_vdc_cycles_;           // VDC cycles at start of current frame (for statistics)
     bool vblank_interrupt_triggered_;  // Track if VBlank interrupt fired this frame
-    uint16 prev_scanline_;             // Track previous scanline for counter mode
+    uint32 prev_scanline_;             // Track previous scanline for counter mode (from master clock)
     
     // Helpers
     void handle_interrupts();

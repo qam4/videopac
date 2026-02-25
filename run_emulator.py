@@ -231,8 +231,9 @@ Examples:
         "rom",
         nargs="?",
         # default="roms/Magnavox Odyssey 2 [TOSEC]/Magnavox Odyssey2 - Games (TOSEC-v2011-02-22_CM)/Killer Bees (1983)(Philips)(US).zip",
-        default="roms/ROMS/o2_47.bin",
-        help="Path to ROM file (default: Killer Bees)"
+        # default="roms/ROMS/o2_47.bin",
+        default="roms/Satellite Attack (1981)(Philips)(EU).bin",
+        help="Path to ROM file"
     )
     
     parser.add_argument(

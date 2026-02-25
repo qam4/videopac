@@ -70,6 +70,8 @@ void VDC::reset() {
     state_.beam_x = 0;
     state_.beam_y = 0;
     state_.total_cycles = 0;
+    state_.frame_number = 0;
+    state_.frame_complete = false;
     
     // Reset collision state
     state_.collision_state = 0;
@@ -101,18 +103,29 @@ void VDC::tick(uint8 cycles) {
 
 // Advance VDC by exactly one clock cycle
 // Reference: Requirements 2.1, 2.3, 2.4
+// 
+// With the master clock implementation, the VDC increments beam_x on each tick.
+// The master clock calls end_scanline() when a scanline completes (after 455 master
+// ticks for NTSC, 1135 for PAL), which naturally produces varying VDC cycle counts
+// per scanline (227/228 alternating for NTSC, exactly 227 for PAL).
+// 
+// The VDC does NOT wrap beam_x internally - it relies on end_scanline() from the
+// master clock to provide the authoritative scanline boundary.
 void VDC::tick_one_cycle() {
-    // Save previous beam position to detect scanline completion
-    uint32 prev_beam_y = state_.beam_y;
-    
-    // Advance total cycles
+    // Advance total cycles (for compatibility and debugging)
     state_.total_cycles++;
     
-    // Calculate beam position from total cycles
-    uint32 cycles_per_frame = total_scanlines_ * VideoTiming::CYCLES_PER_SCANLINE;
-    uint32 frame_cycles = state_.total_cycles % cycles_per_frame;
-    state_.beam_y = frame_cycles / VideoTiming::CYCLES_PER_SCANLINE;
-    state_.beam_x = frame_cycles % VideoTiming::CYCLES_PER_SCANLINE;
+    
+    // Render pixel at current beam position BEFORE incrementing
+    // This fixes the off-by-one error that caused black bands and broken collision detection
+    if (is_beam_visible()) {
+        render_current_pixel();
+    }
+    
+    // Increment H-Counter (horizontal beam position in VDC cycles)
+    // This will be reset to 0 by end_scanline() when the master clock
+    // indicates a scanline boundary
+    state_.beam_x++;
     
     // Update audio
     update_audio();
@@ -152,20 +165,39 @@ void VDC::tick_one_cycle() {
                                                           StatusBits::CHAR_OVERLAP));
     
     state_.registers[VDCRegisters::STATUS] = status;
+}
+
+// End of scanline - wrap counters for next scanline
+// Called by emulator when master clock transitions to a new scanline
+// This is the authoritative scanline boundary - the master clock determines
+// when scanlines end based on master tick count (455 ticks NTSC, 1135 PAL)
+void VDC::end_scanline() {
+    // Detect collisions for the scanline that just finished rendering
+    // Only check visible scanlines (hardware scanlines 24-263 for 240-line framebuffer)
+    constexpr int VISIBLE_START_Y = GridLayout::START_Y;  // 24
+    constexpr int VISIBLE_END_Y = VISIBLE_START_Y + FRAMEBUFFER_HEIGHT;  // 264
     
-    // Render pixel at current beam position if visible
-    if (is_beam_visible()) {
-        render_current_pixel();
+    if (state_.beam_y >= VISIBLE_START_Y && state_.beam_y < VISIBLE_END_Y) {
+        // Convert hardware scanline to framebuffer row
+        int y = static_cast<int>(state_.beam_y) - VISIBLE_START_Y;
+        detect_collisions(y);
     }
     
-    // Detect collisions at the end of each scanline
-    // This must happen after all pixels on the scanline have been rendered
-    if (state_.beam_y != prev_beam_y && prev_beam_y < FRAMEBUFFER_HEIGHT) {
-        detect_collisions(prev_beam_y);
+    // Reset horizontal counter for next scanline
+    state_.beam_x = 0;
+    
+    // Advance to next scanline
+    state_.beam_y++;
+    
+    // Check for end of frame
+    if (state_.beam_y >= total_scanlines_) {
+        state_.beam_y = 0;
+        state_.frame_number++;
+        state_.frame_complete = true;
     }
 }
 
-// Write to VDC register
+
 // Reference: doc/o2doc.md Appendix D, doc/8245.md lines 600-650
 void VDC::write_register(uint8 address, uint8 value) {
     // Generate VDC trace if enabled
@@ -285,11 +317,11 @@ uint8 VDC::read_register(uint8 address) {
 // rendering happens per-pixel via render_current_pixel() called from tick_one_cycle().
 // Reference: doc/o2doc.md section 4.0, doc/8245.md lines 200-300
 void VDC::render_scanline() {
-    // Determine max height based on extended framebuffer mode
-    int max_height = extended_fb_mode_ ? EXTENDED_FB_HEIGHT : FRAMEBUFFER_HEIGHT;
+    // Only render during visible scanlines (hardware scanlines 24-263 for 240-line framebuffer)
+    constexpr int VISIBLE_START_Y = 24;
+    constexpr int VISIBLE_END_Y = VISIBLE_START_Y + FRAMEBUFFER_HEIGHT;  // 264
     
-    // Only render during visible scanlines (not in VBLANK)
-    if (is_vblank() || state_.beam_y >= max_height) {
+    if (is_vblank() || state_.beam_y < VISIBLE_START_Y || state_.beam_y >= VISIBLE_END_Y) {
         return;
     }
     
@@ -298,7 +330,8 @@ void VDC::render_scanline() {
         return;
     }
     
-    int y = static_cast<int>(state_.beam_y);
+    // Convert hardware scanline to framebuffer row
+    int y = static_cast<int>(state_.beam_y) - VISIBLE_START_Y;
     
     // Render in priority order (background to foreground)
     // Reference: doc/o2doc.md section 4.0, design.md Property 21
@@ -314,18 +347,21 @@ void VDC::render_scanline() {
 // Render pixel at current beam position
 // Reference: Requirements 2.1, 2.3, 2.6, 12.1-12.4
 void VDC::render_current_pixel() {
-    // Only render if beam is in visible area
     if (!is_beam_visible()) {
         return;
     }
+    
     
     // Check if display is enabled
     if (!state_.display_enabled) {
         return;
     }
     
+    // Convert hardware beam coordinates to framebuffer coordinates
+    // Hardware: beam_x = 0-159, beam_y = 24-223
+    // Framebuffer: x = 0-159, y = 0-199
     int x = static_cast<int>(state_.beam_x);
-    int y = static_cast<int>(state_.beam_y);
+    int y = static_cast<int>(state_.beam_y) - GridLayout::START_Y;  // Subtract top blanking lines
     
     // Render in priority order (background to foreground)
     // Priority: sprites (highest) > characters > grid > background (lowest)
@@ -408,16 +444,38 @@ bool VDC::is_hblank() const {
     return state_.beam_x >= FRAMEBUFFER_WIDTH;
 }
 
+// Check if frame just completed (beam wrapped to scanline 0)
+bool VDC::is_frame_complete() const {
+    return state_.frame_complete;
+}
+
+// Clear frame_complete flag (called at start of new frame)
+void VDC::clear_frame_complete() {
+    state_.frame_complete = false;
+}
+
+// Get current frame number from total cycles
+uint64 VDC::get_frame_number() const {
+    return state_.frame_number;
+}
+
 // Check if beam is in visible area
 // Reference: Requirements 2.4, 2.6
 bool VDC::is_beam_visible() const {
-    int max_width = extended_fb_mode_ ? EXTENDED_FB_WIDTH : FRAMEBUFFER_WIDTH;
-    int max_height = extended_fb_mode_ ? EXTENDED_FB_HEIGHT : FRAMEBUFFER_HEIGHT;
+    // Visible area in hardware coordinates:
+    // - Scanlines 24-263 (240 lines total for full framebuffer)
+    // - For 240-line framebuffer: scanlines 24-263
+    // - Pixels 0-159 (160 pixels)
+    constexpr int VISIBLE_START_Y = 24;
+    constexpr int VISIBLE_END_Y = VISIBLE_START_Y + FRAMEBUFFER_HEIGHT;  // 24 + 240 = 264
     
-    return state_.beam_x < max_width && 
-           state_.beam_y < max_height &&
-           !is_hblank() && 
-           !is_vblank();
+    // Clamp to actual scanlines available (262 for NTSC, 312 for PAL)
+    int effective_end_y = std::min(static_cast<int>(VISIBLE_END_Y), static_cast<int>(total_scanlines_));
+    
+    return state_.beam_x < FRAMEBUFFER_WIDTH && 
+           state_.beam_y >= VISIBLE_START_Y &&
+           state_.beam_y < effective_end_y &&
+           !is_hblank();
 }
 
 // Get current audio sample
@@ -458,11 +516,9 @@ void VDC::calculate_timing() {
     if (state_.video_standard == VideoStandard::NTSC) {
         total_scanlines_ = VideoTiming::NTSC_SCANLINES;
         vblank_start_ = VideoTiming::NTSC_VBLANK_START;
-        cycles_per_scanline_ = VideoTiming::NTSC_CYCLES_PER_SCANLINE;
     } else {  // PAL
         total_scanlines_ = VideoTiming::PAL_SCANLINES;
         vblank_start_ = VideoTiming::PAL_VBLANK_START;
-        cycles_per_scanline_ = VideoTiming::PAL_CYCLES_PER_SCANLINE;
     }
 }
 
@@ -567,10 +623,9 @@ void VDC::render_grid(int y) {
     //   Total: 10 columns × 8 rows = 80 segments
     
     // Calculate grid row (0-8) based on scanline
-    // Grid starts at scanline 24, each row is 24 scanlines apart (3 lines + 21 spacing)
-    const int GRID_START_Y = 24;
-    const int GRID_ROW_HEIGHT = 24;
-    const int GRID_LINE_HEIGHT = 3;
+    const int GRID_START_Y = GridLayout::START_Y;
+    const int GRID_ROW_HEIGHT = GridLayout::ROW_HEIGHT;
+    const int GRID_LINE_HEIGHT = GridLayout::LINE_HEIGHT;
     
     // Check if we're on a horizontal grid line
     if (y >= GRID_START_Y) {
@@ -581,8 +636,8 @@ void VDC::render_grid(int y) {
         // Render horizontal grid lines (9 rows total: 0-8)
         if (grid_row < 9 && row_offset < GRID_LINE_HEIGHT) {
             // Render horizontal line segments
-            const int GRID_START_X = 10;  // Grid starts at column 10 (10 clock cycles from HBL end)
-            const int GRID_COL_WIDTH = 16; // 14 spacing + 2 for vertical line
+            const int GRID_START_X = GridLayout::START_X;
+            const int GRID_COL_WIDTH = GridLayout::COL_WIDTH;
             
             // Loop through columns (0-8) and check if segment at this row is enabled
             for (int col = 0; col < 9; col++) {
@@ -620,8 +675,8 @@ void VDC::render_grid(int y) {
     // Vertical bars extend from one horizontal bar down to the next horizontal bar
     // to create proper connections at grid intersections
     // Reference: doc/o2doc.md section 4.2
-    const int GRID_START_X = 10;
-    const int GRID_COL_WIDTH = 16;
+    const int GRID_START_X = GridLayout::START_X;
+    const int GRID_COL_WIDTH = GridLayout::COL_WIDTH;
     const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
     
     // Calculate which grid row we're in for vertical line rendering
@@ -1255,11 +1310,11 @@ void VDC::track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable
     bool fill_mode = (control & ControlBits::ENABLE_FILL_MODE) != 0;
     bool dot_mode = (control & ControlBits::ENABLE_DOT_GRID) != 0;
 
-    const int GRID_START_Y = 24;
-    const int GRID_ROW_HEIGHT = 24;
-    const int GRID_LINE_HEIGHT = 3;
-    const int GRID_START_X = 10;
-    const int GRID_COL_WIDTH = 16;
+    const int GRID_START_Y = GridLayout::START_Y;
+    const int GRID_ROW_HEIGHT = GridLayout::ROW_HEIGHT;
+    const int GRID_LINE_HEIGHT = GridLayout::LINE_HEIGHT;
+    const int GRID_START_X = GridLayout::START_X;
+    const int GRID_COL_WIDTH = GridLayout::COL_WIDTH;
     const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
     
     bool h_grid_enabled = (collision_enable & CollisionBits::HORIZ_GRID) != 0;
@@ -1680,11 +1735,11 @@ bool VDC::is_grid_pixel_at(int x, int y) const {
     bool fill_mode = (control & ControlBits::ENABLE_FILL_MODE) != 0;
     bool dot_mode = (control & ControlBits::ENABLE_DOT_GRID) != 0;
     
-    const int GRID_START_Y = 24;
-    const int GRID_ROW_HEIGHT = 24;
-    const int GRID_LINE_HEIGHT = 3;
-    const int GRID_START_X = 10;
-    const int GRID_COL_WIDTH = 16;
+    const int GRID_START_Y = GridLayout::START_Y;
+    const int GRID_ROW_HEIGHT = GridLayout::ROW_HEIGHT;
+    const int GRID_LINE_HEIGHT = GridLayout::LINE_HEIGHT;
+    const int GRID_START_X = GridLayout::START_X;
+    const int GRID_COL_WIDTH = GridLayout::COL_WIDTH;
     const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
     
     if (y < GRID_START_Y) {
@@ -1800,9 +1855,6 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
         if (n < 3) {
             n = n + 7;  // Minimum 3 rows, wraps around for very small values
         }
-        if (n < 3) {
-            n = n + 7;
-        }
         
         // Character renders for n rows (each row is 2 scanlines)
         int char_height = n * 2;
@@ -1863,9 +1915,6 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
             int n = 8 - (ypos_half % 8) - (char_ptr_low % 8);
             if (n < 3) {
                 n = n + 7;  // Minimum 3 rows, wraps around for very small values
-            }
-            if (n < 3) {
-                n = n + 7;
             }
             
             // Character renders for n rows (each row is 2 scanlines)
@@ -1993,3 +2042,4 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
 }
 
 } // namespace videopac
+
