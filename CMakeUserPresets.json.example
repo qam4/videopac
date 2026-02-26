@@ -24,7 +24,7 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
         // Uncomment to enable O2EM compatibility mode (VBlank timing and timer quirks):
-        "O2EM_COMPAT": "ON"
+        // "O2EM_COMPAT": "ON"
       }
     }
   ],

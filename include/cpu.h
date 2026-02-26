@@ -70,7 +70,9 @@ public:
     void write_port(uint8 port, uint8 value);
     
     // Interrupt handling
-    void trigger_interrupt(uint16 vector);
+    // Returns number of cycles consumed (2 if interrupt fired, 0 if interrupts disabled)
+    uint8 trigger_interrupt(uint16 vector);
+    void set_external_interrupt_pending(bool pending) { state_.external_interrupt_pending = pending; }
     
     // Timer/counter management
     // Hardware: Simulates T1 pin pulse from VDC (called once per scanline for counter mode)

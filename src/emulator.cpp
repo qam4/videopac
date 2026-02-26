@@ -135,9 +135,6 @@ void EmulatorCore::run_frame() {
                 
                 if (profiling) cpu_calls_this_frame++;
                 
-                // Check for interrupts BEFORE executing next instruction
-                handle_interrupts();
-                
                 // Check for breakpoint before executing instruction
                 check_debugger_breakpoint();
                 
@@ -159,7 +156,7 @@ void EmulatorCore::run_frame() {
                     debugger_->log_vdc_write();
                 }
                 
-                // Notify master clock that CPU executed (with cycle count)
+                // Notify master clock that CPU executed (cycles include interrupt overhead from execute_instruction)
                 master_clock_.cpu_executed(cycles);
                 
                 if (profiling) {
@@ -184,6 +181,10 @@ void EmulatorCore::run_frame() {
                     prev_scanline_ = current_scanline;
                 }
                 
+                // Check for interrupts AFTER VDC updates (so beam_y is current)
+                // Interrupt will be processed before next CPU instruction
+                handle_interrupts();
+                
                 // Notify master clock that VDC ticked
                 master_clock_.vdc_executed();
                 
@@ -198,9 +199,6 @@ void EmulatorCore::run_frame() {
                 auto cpu_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
                 
                 if (profiling) cpu_calls_this_frame++;
-                
-                // Check for interrupts BEFORE executing next instruction
-                handle_interrupts();
                 
                 // Check for breakpoint before executing instruction
                 check_debugger_breakpoint();
@@ -223,7 +221,7 @@ void EmulatorCore::run_frame() {
                     debugger_->log_vdc_write();
                 }
                 
-                // Notify master clock that CPU executed (with cycle count)
+                // Notify master clock that CPU executed (cycles include interrupt overhead from execute_instruction)
                 master_clock_.cpu_executed(cycles);
                 
                 if (profiling) {
@@ -256,6 +254,10 @@ void EmulatorCore::run_frame() {
                     prev_scanline_ = current_scanline;
                 }
                 
+                // Check for interrupts AFTER VDC updates (so beam_y is current)
+                // Interrupt will be processed before next CPU instruction
+                handle_interrupts();
+        
                 // Notify master clock that VDC ticked
                 master_clock_.vdc_executed();
                 
@@ -401,7 +403,7 @@ void EmulatorCore::handle_interrupts() {
     
     if (vdc_.is_vblank() && !vblank_interrupt_triggered_) {
         // Trigger external interrupt (VBlank) to BIOS vector 0x003
-        cpu_.trigger_interrupt(0x003);
+        cpu_.set_external_interrupt_pending(true);
         vblank_interrupt_triggered_ = true;
     }
     

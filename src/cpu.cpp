@@ -76,7 +76,7 @@ void CPU::write_port(uint8 port, uint8 value) {
     }
 }
 
-void CPU::trigger_interrupt(uint16 vector) {
+uint8 CPU::trigger_interrupt(uint16 vector) {
     if (state_.interrupts_enabled) {
         // Interrupt processing takes 2 machine cycles (same as CALL instruction)
         // Reference: doc/reference/mcs-48-assembly-language-manual.md
@@ -89,7 +89,9 @@ void CPU::trigger_interrupt(uint16 vector) {
         uint16 stack_value = (state_.pc & 0x0FFF) | ((state_.psw & 0xF0) << 8);
         push_stack(stack_value);
         state_.pc = vector;
+        return 2;  // Interrupt consumed 2 cycles
     }
+    return 0;  // Interrupts disabled, no cycles consumed
 }
 
 CPUState CPU::get_state() const {
@@ -1419,18 +1421,19 @@ uint8 CPU::execute_instruction() {
     // Interrupts are sampled every cycle but only processed "as soon as all cycles
     // of the current instruction are complete."
     // This ensures multi-cycle instructions complete atomically before interrupt processing.
+    uint8 interrupt_cycles = 0;
     if (state_.interrupts_enabled) {
         // External interrupt has higher priority than timer interrupt
         if (state_.external_interrupt_pending) {
             state_.external_interrupt_pending = false;
-            trigger_interrupt(0x003);  // External interrupt vector
+            interrupt_cycles = trigger_interrupt(0x003);  // Returns 2 if fired, 0 if disabled
         } else if (state_.timer_interrupt_pending) {
             state_.timer_interrupt_pending = false;
-            trigger_interrupt(0x007);  // Timer interrupt vector
+            interrupt_cycles = trigger_interrupt(0x007);  // Returns 2 if fired, 0 if disabled
         }
     }
     
-    return cycles;
+    return cycles + interrupt_cycles;
 }
 
 // Counter mode: increment timer once per scanline
