@@ -251,19 +251,21 @@ TEST(VDCTest, VBlankTiming) {
     VDC vdc(VideoStandard::NTSC);
     vdc.reset();
     
-    // Not in VBLANK at start
+    // Not in VBLANK at start (scanline 0, beam_x < 183)
     EXPECT_FALSE(vdc.is_vblank());
     
-    // Advance to VBLANK start (242 with O2EM_COMPAT, 240 without)
-    #ifdef O2EM_COMPAT
-        advance_to_scanline(vdc, 242);
-    #else
-        advance_to_scanline(vdc, 240);
-    #endif
+    // Advance to VBLANK start scanline (240)
+    advance_to_scanline(vdc, 240);
     
-    // Tick once to update status register
-    vdc.tick(1);
+    // At start of scanline 240, beam_x=0, so not yet in VBlank
+    EXPECT_FALSE(vdc.is_vblank());
     
+    // Advance to beam_x >= 183 where VBlank transitions
+    for (int i = 0; i < 183; i++) {
+        vdc.tick(1);
+    }
+    
+    // Now should be in VBlank
     EXPECT_TRUE(vdc.is_vblank());
     
     // Check status register
@@ -278,6 +280,12 @@ TEST(VDCTest, PALTiming) {
     
     // PAL has 312 scanlines, VBLANK starts at 284
     advance_to_scanline(vdc, 284);
+    
+    // Advance to beam_x >= 183 where VBlank transitions
+    for (int i = 0; i < 183; i++) {
+        vdc.tick(1);
+    }
+    
     EXPECT_TRUE(vdc.is_vblank());
 }
 

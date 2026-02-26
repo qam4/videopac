@@ -172,12 +172,16 @@ void EmulatorCore::run_frame() {
                 // Advance VDC by one cycle FIRST
                 vdc_.tick_one_cycle();
                 
+                // Update CPU T1 pin with current VDC blanking state
+                // T1 = Hblank OR Vblank (counter increments on falling edges)
+                // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
+                cpu_.update_counter(vdc_.get_t1_state());
+                
                 // THEN check if we're at the end of a scanline (master clock wrapped to next scanline)
                 uint32 current_scanline = master_clock_.get_current_scanline();
                 if (current_scanline != prev_scanline_) {
                     // Scanline boundary - tell VDC to wrap its counters
                     vdc_.end_scanline();
-                    cpu_.increment_counter();
                     prev_scanline_ = current_scanline;
                 }
                 
@@ -239,18 +243,16 @@ void EmulatorCore::run_frame() {
                 // Advance VDC by one cycle FIRST
                 vdc_.tick_one_cycle();
                 
+                // Update CPU T1 pin with current VDC blanking state
+                // T1 = Hblank OR Vblank (counter increments on falling edges)
+                // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
+                cpu_.update_counter(vdc_.get_t1_state());
+                
                 // THEN check if we're at the end of a scanline (master clock wrapped to next scanline)
                 uint32 current_scanline = master_clock_.get_current_scanline();
                 if (current_scanline != prev_scanline_) {
                     // Scanline boundary - tell VDC to wrap its counters
                     vdc_.end_scanline();
-                    
-                    // Hardware: The VDC generates a pulse on scanline completion that is wired to the
-                    // CPU's T1 pin. When STRT CNT is executed, the CPU configures its timer to increment
-                    // on high-to-low transitions of T1. This emulates that hardware connection.
-                    // Reference: Intel 8048 datasheet - T1 pin is event counter input
-                    // Reference: doc/o2em/cpu.c lines 1536-1545
-                    cpu_.increment_counter();
                     prev_scanline_ = current_scanline;
                 }
                 

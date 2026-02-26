@@ -9,9 +9,16 @@
 using namespace videopac;
 
 // Helper function to advance VDC to a specific scanline
+// Note: With the master clock implementation, we need to manually call end_scanline()
+// to advance beam_y. In real emulation, the master clock does this.
 static void advance_to_scanline(VDC& vdc, int target_scanline) {
     while (vdc.get_beam_y() < target_scanline) {
-        vdc.tick(1);
+        // Tick through one scanline (227 VDC cycles for NTSC)
+        for (int i = 0; i < 227; i++) {
+            vdc.tick(1);
+        }
+        // Master clock would call this at scanline boundary
+        vdc.end_scanline();
     }
 }
 

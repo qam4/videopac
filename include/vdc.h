@@ -65,11 +65,14 @@ namespace VDCRegisters {
 // Values derived from o2em implementation and hardware testing
 // Reference: o2em vdc.c, Intel 8245 datasheet
 namespace GridLayout {
-    constexpr int START_X = 8;           // Horizontal start position (adjusted for alignment)
+    constexpr int START_X = 8;           // Grid start position (both horizontal and vertical bars)
     constexpr int START_Y = 24;          // Vertical start position (hardware specification)
     constexpr int ROW_HEIGHT = 24;       // Each row spans 24 scanlines (3 line + 21 spacing)
     constexpr int LINE_HEIGHT = 3;       // Grid lines are 3 scanlines thick
-    constexpr int COL_WIDTH = 16;        // Each column is 16 pixels wide
+    constexpr int COL_WIDTH = 16;        // Each column is 16 pixels wide (hardware resolution)
+    constexpr int HBAR_WIDTH = 18;       // Horizontal bars are 18 pixels wide
+    constexpr int VBAR_WIDTH_NORMAL = 2; // Vertical bars normal width
+    constexpr int VBAR_WIDTH_FILL = 16;  // Vertical bars fill mode width
 }
 
 // Framebuffer mapping constants
@@ -160,17 +163,28 @@ constexpr uint16 AUDIO_FREQ_HIGH = 3933;       // High shift frequency
 namespace VideoTiming {
     // NTSC timing (60Hz)
     constexpr uint16 NTSC_SCANLINES = 262;
-    #ifdef O2EM_COMPAT
-        constexpr uint16 NTSC_VBLANK_START = 242;  // O2EM compatibility: ~54,930 VDC cycles
-    #else
-        constexpr uint16 NTSC_VBLANK_START = 240;  // Hardware spec: 240 visible scanlines
-    #endif
-    constexpr uint16 NTSC_VBLANK_LINES = 22;
+    constexpr uint16 NTSC_VBLANK_START = 242;  // Hardware: scanline F2h (from odyssey2_timing.txt)
     
     // PAL timing (50Hz)
     constexpr uint16 PAL_SCANLINES = 312;
     constexpr uint16 PAL_VBLANK_START = 284;
-    constexpr uint16 PAL_VBLANK_LINES = 28;
+    
+    // Blanking signal timing (from doc/hardware/odyssey2_timing.txt)
+    // Hardware uses master clock ticks (455 per scanline NTSC), VDC uses VDC cycles (227.5 per scanline)
+    // VDC ticks every 2 master ticks, so: master_tick / 2 = beam_x
+    //
+    // Hardware timing (master ticks):
+    // - Vblank transitions at master tick 365 (between ticks 364-365)
+    // - Hblank starts at master tick 366
+    //
+    // VDC cycle timing:
+    // - Master ticks 364-365 = VDC cycle 182 (365/2 = 182.5)
+    // - Master ticks 366-367 = VDC cycle 183
+    // - At beam_x=182: Vblank transition happens at END of cycle (master tick 365)
+    // - At beam_x=183: Vblank is low, Hblank is high (master tick 366)
+    //
+    // Therefore both signals transition at beam_x >= 183
+    constexpr uint16 BLANKING_START_X = 183;  // Both Vblank and Hblank transition here
 }
 
 // VDC state structure
@@ -271,6 +285,11 @@ public:
     uint64 get_total_cycles() const { return state_.total_cycles; }
     uint64 get_frame_number() const;                    // Calculate current frame number from total cycles
     VideoStandard get_video_standard() const { return state_.video_standard; }
+    
+    // T1 pin output (for CPU counter mode)
+    // T1 = Hblank OR Vblank (active low)
+    // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
+    bool get_t1_state() const;
     
     // VDC trace (for debugging VDC register writes)
     void enable_vdc_trace(bool enabled) { vdc_trace_enabled_ = enabled; }

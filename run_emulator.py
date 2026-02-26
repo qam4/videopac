@@ -126,7 +126,7 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False,
     
     # Use provided frames or defaults
     if frames is None:
-        frames = 20
+        frames = 10
     
     if no_input:
         # No input mode - only basic setup, no key/joystick presses
@@ -153,7 +153,7 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False,
             # "--press-key", "1", "12", "5",  # Press '1' at frame 12 for 5 frames (select game)
             "--debug",
             "--trace",
-            "--region france",
+            "--region", "usa",
             "--vdc-trace",
             "--bios", bios_path,
             rom_path

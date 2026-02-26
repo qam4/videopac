@@ -476,8 +476,62 @@ const uint8* VDC::get_extended_framebuffer() const {
 
 // Check if in vertical blank period
 // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
+// Reference: doc/hardware/odyssey2_timing.txt - Vblank transitions at master tick 365
+//
+// Hardware timing: Vblank transitions at master tick 365 (between master ticks 364-365)
+// VDC timing: Master ticks 364-365 correspond to VDC cycle 182 (365/2 = 182.5)
+//             Transition happens at END of VDC cycle 182
+//             At beam_x=183, Vblank has transitioned
+//
+// Implementation: Use beam_x >= BLANKING_START_X (183) for transition point
 bool VDC::is_vblank() const {
-    return state_.beam_y >= vblank_start_;
+    if (state_.beam_y == vblank_start_) {
+        // On vblank start scanline, Vblank goes high at beam_x = 183
+        return (state_.beam_x >= VideoTiming::BLANKING_START_X);
+    } else if (state_.beam_y == 0) {
+        // On scanline 0, Vblank goes low at beam_x = 183
+        return (state_.beam_x < VideoTiming::BLANKING_START_X);
+    } else if (state_.beam_y > vblank_start_) {
+        // Between vblank start and end of frame, Vblank is active
+        return true;
+    } else {
+        // Before vblank start, Vblank is inactive
+        return false;
+    }
+}
+
+// Get T1 pin state (for CPU counter mode)
+// T1 = !(Hblank OR Vblank) - T1 is HIGH during visible period, LOW during blanking
+// Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
+// "The Hblank and Vblank are OR'd together and connect to the T1 input on the 8048."
+//
+// Hardware timing (master ticks 0-454 per scanline):
+// - Hblank: tick > 365 && tick < 453 (active from tick 366-452)
+// - Vblank: transitions at tick 365 on scanlines vblank_start and 0
+//
+// VDC cycle timing (0-227 per scanline, VDC ticks every 2 master ticks):
+// - Master ticks 366-367 = VDC cycle 183
+// - Both Hblank and Vblank transition at beam_x = 183
+// - The 140ns gap (1 master tick) between them is not observable at VDC granularity
+//
+// T1 behavior:
+// - T1 is HIGH (1) during visible period (not blanking)
+// - T1 is LOW (0) during blanking (hblank or vblank)
+// - Counter increments on falling edge (visible → blanking transition)
+//
+// Note: VDC cycle granularity is sufficient because:
+// - CPU samples T1 every 20 master ticks (10 VDC cycles)
+// - VDC updates every 2 master ticks (1 VDC cycle)
+// - The 1 master tick gap is too small to observe
+bool VDC::get_t1_state() const {
+    // Hblank is active when beam_x >= BLANKING_START_X
+    bool hblank = (state_.beam_x >= VideoTiming::BLANKING_START_X);
+    
+    // Vblank uses same logic as is_vblank()
+    bool vblank = is_vblank();
+    
+    // T1 is inverted: HIGH during visible, LOW during blanking
+    return !(hblank || vblank);
 }
 
 // Check if frame just completed (beam wrapped to scanline 0)
@@ -643,6 +697,8 @@ void VDC::render_grid(int y) {
     const int GRID_START_Y = GridLayout::START_Y;
     const int GRID_ROW_HEIGHT = GridLayout::ROW_HEIGHT;
     const int GRID_LINE_HEIGHT = GridLayout::LINE_HEIGHT;
+    const int GRID_START_X = GridLayout::START_X;
+    const int GRID_COL_WIDTH = GridLayout::COL_WIDTH;
     
     // Check if we're on a horizontal grid line
     if (y >= GRID_START_Y) {
@@ -653,8 +709,6 @@ void VDC::render_grid(int y) {
         // Render horizontal grid lines (9 rows total: 0-8)
         if (grid_row < 9 && row_offset < GRID_LINE_HEIGHT) {
             // Render horizontal line segments
-            const int GRID_START_X = GridLayout::START_X;
-            const int GRID_COL_WIDTH = GridLayout::COL_WIDTH;
             
             // Loop through columns (0-8) and check if segment at this row is enabled
             for (int col = 0; col < 9; col++) {
@@ -672,7 +726,7 @@ void VDC::render_grid(int y) {
                 
                 if (segment_on) {
                     int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                    int x_end = x_start + 16;  // Segment spans full column width (16 pixels)
+                    int x_end = x_start + GridLayout::HBAR_WIDTH;
                     
                     for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
                         state_.framebuffer[y][x] = grid_color;
@@ -688,62 +742,35 @@ void VDC::render_grid(int y) {
     }
     
     // Render vertical grid lines (10 lines, columns 0-9)
-    // Each vertical bar is 2 or 16 clock intervals wide depending on fill mode
-    // Vertical bars extend from one horizontal bar down to the next horizontal bar
-    // to create proper connections at grid intersections
+    // Vertical bars span the full 24-scanline height of their row
     // Reference: doc/o2doc.md section 4.2
-    const int GRID_START_X = GridLayout::START_X;
-    const int GRID_COL_WIDTH = GridLayout::COL_WIDTH;
-    const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
+    const int VERT_LINE_WIDTH = fill_mode ? GridLayout::VBAR_WIDTH_FILL : GridLayout::VBAR_WIDTH_NORMAL;
     
     // Calculate which grid row we're in for vertical line rendering
-    // Vertical bars span between horizontal bars, extending from the current row
-    // down through the horizontal bar of the next row
     if (y >= GRID_START_Y) {
         int y_offset = y - GRID_START_Y;
         int grid_row = y_offset / GRID_ROW_HEIGHT;
-        int row_offset = y_offset % GRID_ROW_HEIGHT;
         
-        // Render vertical grid lines
-        // A vertical bar at row N renders from the start of row N through the
-        // horizontal bar at row N+1 (first 3 scanlines of row N+1)
-        // 
-        // IMPORTANT: Vertical bars must extend through the NEXT row's horizontal bar
-        // to create proper corner connections. This means:
-        // - Vertical bar row 0 renders during grid_row 0 AND into grid_row 1's h-bar
-        // - Vertical bar row 7 renders during grid_row 7 AND into grid_row 8's h-bar
-        for (int col = 0; col < 10; col++) {
-            uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
-            bool segment_on = false;
-            
-            // Check which vertical bar segment should render at this scanline
-            if (grid_row < 8) {
-                // Rows 0-7: Check bit for current row
-                // This renders the vertical bar for the full 24-scanline span of this row
-                segment_on = (v_line_data & (1 << grid_row)) != 0;
+        // Only render vertical bars for rows 0-7 (8 rows total)
+        // Each vertical bar spans the full 24 scanlines of its row
+        if (grid_row < 8) {
+            for (int col = 0; col < 10; col++) {
+                uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
                 
-                // ALSO check if we need to render the PREVIOUS row's vertical bar
-                // extending down into this row's horizontal bar area (first 3 scanlines)
-                if (!segment_on && grid_row > 0 && row_offset < GRID_LINE_HEIGHT) {
-                    // Check if previous row's vertical bar extends down
-                    segment_on = (v_line_data & (1 << (grid_row - 1))) != 0;
-                }
-            } else if (grid_row == 8 && row_offset < GRID_LINE_HEIGHT) {
-                // Row 8, first 3 scanlines (horizontal bar area):
-                // Check if vertical bar from row 7 extends down to connect
-                segment_on = (v_line_data & (1 << 7)) != 0;
-            }
-            
-            if (segment_on) {
-                int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                int x_end = x_start + VERT_LINE_WIDTH;
+                // Check if this vertical bar segment is enabled for current row
+                bool segment_on = (v_line_data & (1 << grid_row)) != 0;
                 
-                for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
-                    state_.framebuffer[y][x] = grid_color;
+                if (segment_on) {
+                    int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                    int x_end = x_start + VERT_LINE_WIDTH;
                     
-                    // Write to extended framebuffer if enabled
-                    if (extended_fb_mode_ && x < EXTENDED_FB_WIDTH && y < EXTENDED_FB_HEIGHT) {
-                        state_.extended_framebuffer[y][x] = grid_color;
+                    for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
+                        state_.framebuffer[y][x] = grid_color;
+                        
+                        // Write to extended framebuffer if enabled
+                        if (extended_fb_mode_ && x < EXTENDED_FB_WIDTH && y < EXTENDED_FB_HEIGHT) {
+                            state_.extended_framebuffer[y][x] = grid_color;
+                        }
                     }
                 }
             }
@@ -1018,7 +1045,6 @@ void VDC::render_sprites(int y) {
         // Render sprite pixels for this scanline
         int sprite_width = double_size ? 16 : 8;
         for (int x = 0; x < sprite_width; x++) {
-            // Calculate pixel position on screen
             int screen_x = sprite_x + x;
             
             // Apply horizontal shift if enabled
@@ -1360,7 +1386,7 @@ void VDC::track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable
                 
                 if (segment_on) {
                     int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                    int x_end = x_start + 16;  // Match rendering code (was 14, causing 2-pixel gap)
+                    int x_end = x_start + GridLayout::HBAR_WIDTH;
 
                     for (int x = x_start; x < x_end && x < FRAMEBUFFER_WIDTH; x++) {
                         // Check for collision with existing objects
@@ -1757,7 +1783,7 @@ bool VDC::is_grid_pixel_at(int x, int y) const {
     const int GRID_LINE_HEIGHT = GridLayout::LINE_HEIGHT;
     const int GRID_START_X = GridLayout::START_X;
     const int GRID_COL_WIDTH = GridLayout::COL_WIDTH;
-    const int VERT_LINE_WIDTH = fill_mode ? 16 : 2;
+    const int VERT_LINE_WIDTH = fill_mode ? GridLayout::VBAR_WIDTH_FILL : GridLayout::VBAR_WIDTH_NORMAL;
     
     if (y < GRID_START_Y) {
         return false;
@@ -1785,7 +1811,7 @@ bool VDC::is_grid_pixel_at(int x, int y) const {
             
             if (segment_on) {
                 int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-                int x_end = x_start + 16;  // Segment spans full column width (16 pixels)
+                int x_end = x_start + GridLayout::HBAR_WIDTH;
                 
                 if (x >= x_start && x < x_end) {
                     return true;
@@ -1795,40 +1821,21 @@ bool VDC::is_grid_pixel_at(int x, int y) const {
     }
     
     // Check vertical grid lines (10 columns: 0-9)
-    // Vertical bars extend between horizontal bars, so they appear in multiple rows
-    // Each byte E0-E9 represents a column, bits 0-7 represent rows
-    // A vertical bar at row N extends through the horizontal bar at row N+1
-    //
-    // IMPORTANT: Vertical bars must extend through the NEXT row's horizontal bar
-    // to create proper corner connections.
-    for (int col = 0; col < 10; col++) {
-        uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
-        bool segment_on = false;
-        
-        // Check which vertical bar segment should render at this position
-        if (grid_row < 8) {
-            // Rows 0-7: Check bit for current row
-            // This renders the vertical bar for the full 24-scanline span of this row
-            segment_on = (v_line_data & (1 << grid_row)) != 0;
+    // Each vertical bar spans the full 24 scanlines of its row
+    if (grid_row < 8) {
+        for (int col = 0; col < 10; col++) {
+            uint8 v_line_data = state_.registers[VDCRegisters::GRID_V_BASE + col];
             
-            // ALSO check if we need to render the PREVIOUS row's vertical bar
-            // extending down into this row's horizontal bar area (first 3 scanlines)
-            if (!segment_on && grid_row > 0 && row_offset < GRID_LINE_HEIGHT) {
-                // Check if previous row's vertical bar extends down
-                segment_on = (v_line_data & (1 << (grid_row - 1))) != 0;
-            }
-        } else if (grid_row == 8 && row_offset < GRID_LINE_HEIGHT) {
-            // Row 8, first 3 scanlines (horizontal bar area):
-            // Check if vertical bar from row 7 extends down to connect
-            segment_on = (v_line_data & (1 << 7)) != 0;
-        }
-        
-        if (segment_on) {
-            int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
-            int x_end = x_start + VERT_LINE_WIDTH;
+            // Check if this vertical bar segment is enabled for current row
+            bool segment_on = (v_line_data & (1 << grid_row)) != 0;
             
-            if (x >= x_start && x < x_end) {
-                return true;
+            if (segment_on) {
+                int x_start = GRID_START_X + (col * GRID_COL_WIDTH);
+                int x_end = x_start + VERT_LINE_WIDTH;
+                
+                if (x >= x_start && x < x_end) {
+                    return true;
+                }
             }
         }
     }

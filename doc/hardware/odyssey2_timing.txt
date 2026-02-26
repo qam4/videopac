@@ -1,0 +1,1444 @@
+
+
+Odyssey^2 X/Y Count and video timing
+------------------------------------
+
+12/06/11
+Kevin Horton
+V 7.00
+
+
+I have successfully reverse engineered the Odyssey^2's X/Y counter timing as well as its frame timing now.
+
+This was done by removing the 8244 from my NTSC (US) machine and hooking it up to a PIC micro, then performing the following operations:
+
+
+1) write 02h to register A0h
+2) read register A5h, output it
+3) read register A4h, output it
+4) read the video pins (blanks, synch, burst gate) and output them
+5) toggle the clock pin 1/2 cycle (i.e. high to low, or low to high)
+6) repeat for 15 or so frames
+
+
+A large log file was then produced, which I then pored over to generate the exact timing of the video chip.
+
+One thing to note, is that this chip works on 1/2 cycle increments.  I am pretty surprised by this, especially for its copyright date of 1977.
+
+Exact timing for a particular scanline is as follows:
+
+key:
+
+Cyc - the 1/2 cycle #
+X   - X register value
+HB  - horiz blanking pin
+HS  - horiz synch pin
+BG  - burst gate pin
+Y/Y+1 - point where Y increments from Y to Y+1
+
+Cyc   X    HB HS BG  
+----------------------
+(previous scanline)
+451   E2   1  0  0
+452   E2   1  0  0
+453   E3   0  0  0
+454   E3   0  0  0
+(current scanline)
+ 0    00   0  0  0
+ 1    00   0  0  0
+ 2    01   0  0  0
+ 3    01   0  0  0
+ 4    02   0  0  0
+ 5    02   0  0  0
+...
+362   B5   0  0  0
+363   B5   0  0  0
+364   B6   0  0  0
+365   B6   0  0  0  Vblank changes here (see below) 
+366   B7   1  0  0
+367   B7   1  0  0
+368   B8   1  0  0
+369   B8   1  0  0
+370   B9   1  0  0
+371   B9   1  0  0
+372   BA   1  0  0
+373   BA   1  0  0
+374   BB   1  0  0
+375   BB   1  1  0
+...
+406   CB   1  1  0
+407   CB   1  1  0
+408   CC   1  1  0
+409   CC   1  0  0
+410   CD   1  0  0  Y
+411   CD   1  0  0  Y
+412   CE   1  0  0  Y      <- note: there is only one CEh.
+413   CF   1  0  1  Y+1
+414   CF   1  0  1  Y+1
+415   D0   1  0  1  Y+1
+416   D0   1  0  1
+...
+427   D6   1  0  1
+428   D6   1  0  1
+429   D7   1  0  1
+430   D7   1  0  1
+431   D8   1  0  1
+432   D8   1  0  0
+433   D9   1  0  0
+434   D9   1  0  0
+...
+447   E0   1  0  0
+448   E0   1  0  0
+449   E1   1  0  0
+450   E1   1  0  0
+451   E2   1  0  0
+452   E2   1  0  0
+453   E3   0  0  0
+454   E3   0  0  0
+(next scanline)
+0     00   0  0  0
+1     00   0  0  0
+2     01   0  0  0
+3     01   0  0  0
+
+
+To emulate this, the timing can just be "doubled up".  Even though each scanline is 227.5 cycles, doubling this to 454 cycles will make calculating things easy.  At no time is there a scanline that takes more or less than 227.5 cycles.  Everything occurs at the same place relatively on each scanline so this dodge will work.
+
+If we assume that a hypothetical cycle counter counts from 0-454 then wraps back to 0 again, we can use it to calculate scanline timing:
+
+Hblank = (cycle > 365) && (cycle < 453)
+Hsynch = (cycle > 374) && (cycle < 409)
+ Bgate = (cycle > 412) && (cycle < 432)
+Xvalue = (cycle + ((cycle > 412) ? 1 : 0)) >> 1
+
+Xvalue is calculated by adding 1 to cycle before shifting right, if it's > 412 to skip the second CEh value.
+
+If Xvalue == 412 (or 413, depending on if you're writing C or verilog), then we increment Yvalue.  I find it highly odd that Y is incremented long before X wraps back to 0.
+
+That takes care of the scanline timing.  Now for the frame timing.
+
+The Y counter is somewhat strange near the end of the frame.  It increments every scanline at cycle 412, from scanlines 0 through 106h.
+
+Then, at the next increment point (cycle 412 on scanline 106h) it increments to 107h!  This is technically scanline 264.  This lasts until cycle 365, where it is reset to 0, along with the falling edge of vblank.  It is then incremented to 1 at cycle 412.
+
+This is why Yvalue is almost never read as 0 at this point in time: it's only 0 for 47 cycles or so.  It makes sense to do things this way:  The internal chip logic is simplified from this trick.
+
+The Yvalue returned to the CPU is only the lower 8 bits.  Bit 9 is stripped off.  When Xvalue is read, it latches Yvalue.  This is so the CPU can read both counters without Yvalue incrementing between the time Xvalue is read and Yvalue is read, if Xvalue were read near the end of the scanline.
+
+Now for the remainder:
+
+Vblank goes high on cycle 365 of scanline F2h.
+Vblank goes low on cycle 365 of scanline 107h/00h.
+
+Vsynch goes high on cycle 409 of scanline F5h.
+Vsynch goes low on cycle 345 of scanline F8h.
+
+T1 input caveat:
+----------------
+
+The Hblank and Vblank are OR'd together and connect to the T1 input on the 8048.  Many games use this to increment the timer, and fire off an interrupt.
+
+There's a 140ns point between Vblank ending and Hblank starting.  This could theoretically decrement the timer, but it doesn't.  The pulse is too thin for the 8048 to register it.  This is important for the proper functioning of many games (i.e. the title screen to Killer Bees).
+
+
+Sprite timing:
+--------------
+
+Using the same hardware, I decided to do some basic sprite reverse engineering.
+
+In the following information, everything is based off of the X/Y counters.  I will be using them as the be-all end-all timing information from now on.
+
+Test 1:
+
+Sprites were loaded as such:
+Spr:   0   1   2   3
+---------------------
+X      10  10  10  10
+Y      10  30  50  70
+Attr   38  39  3A  3B
+
+
+It turns out that sprite 0's first pixel is returned at 15,10 (all coordinates will be returned in hex).  This is the stock bare bones sprite, with no attributes set. It performs about what you'd expect, except the X coord emitted is actually +5.
+
+Details for sprite 0: (attrib bits = 000b)
+
+X  Y  Sprite on
+---------------
+14 10   0
+14 10   0
+15 10   1
+15 10   1
+16 10   1
+16 10   1
+17 10   1
+17 10   1
+18 10   1
+18 10   1
+19 10   1
+19 10   1
+1a 10   1
+1a 10   1
+1b 10   1
+1b 10   1
+1c 10   1
+1c 10   1
+1d 10   0
+1d 10   0
+
+The sprite is emitted from scanlines 10h through 1Fh, which is 16 scanlines, like you'd expect.  No surprises there.
+
+
+Details for sprite 1: (attrib bits = 001b)
+
+X  Y  Sprite on
+---------------
+14 30   0
+14 30   0
+15 30   0
+15 30   1
+16 30   1
+16 30   1
+17 30   1
+17 30   1
+18 30   1
+18 30   1
+19 30   1
+19 30   1
+1a 30   1
+1a 30   1
+1b 30   1
+1b 30   1
+1c 30   1
+1c 30   1
+1d 30   1
+1d 30   0
+
+The sprite is shifted RIGHT on the screen 1/2 pixel, as witnessed by the "sprite on" moving down 1/2 clock.  Otherwise, it works the same as sprite 0.
+
+
+Details for sprite 2: (attrib bits = 010b)
+
+X  Y  Sprite on
+---------------
+14 50   0
+14 50   0
+15 50   0
+15 50   1
+16 50   1
+16 50   1
+17 50   1
+17 50   1
+18 50   1
+18 50   1
+19 50   1
+19 50   1
+1a 50   1
+1a 50   1
+1b 50   1
+1b 50   1
+1c 50   1
+1c 50   1
+1d 50   1
+1d 50   0
+(scanline 51 looks the same as 50)
+....
+X  Y  Sprite on
+---------------
+14 52   0
+14 52   0
+15 52   1
+15 52   1
+16 52   1
+16 52   1
+17 52   1
+17 52   1
+18 52   1
+18 52   1
+19 52   1
+19 52   1
+1a 52   1
+1a 52   1
+1b 52   1
+1b 52   1
+1c 52   1
+1c 52   1
+1d 52   0
+1d 52   0
+(scanline 53 looks the same as 52)
+
+The sprite now alternates shifting scanlines right 1/2 pixel, every other SPRITE ROW-  Not every scanline.  The first row of the sprite is always shifted right, the second row is not shifted, the 3rd row is shifted, etc.
+
+
+Details for sprite 3: (attrib bits = 011b)
+
+X  Y  Sprite on
+---------------
+14 70   0
+14 70   0
+15 70   1
+15 70   1
+16 70   1
+16 70   1
+17 70   1
+17 70   1
+18 70   1
+18 70   1
+19 70   1
+19 70   1
+1a 70   1
+1a 70   1
+1b 70   1
+1b 70   1
+1c 70   1
+1c 70   1
+1d 70   0
+1d 70   0
+(scanline 71 looks the same as 70)
+....
+X  Y  Sprite on
+---------------
+14 72   0
+14 72   0
+15 72   0
+15 72   1
+16 72   1
+16 72   1
+17 72   1
+17 72   1
+18 72   1
+18 72   1
+19 72   1
+19 72   1
+1a 72   1
+1a 72   1
+1b 72   1
+1b 72   1
+1c 72   1
+1c 72   1
+1d 72   1
+1d 72   0
+(scanline 73 looks the same as 72)
+
+sprite 3 is exactly the same as sprite 2, except the sprite line that's shifted right is reversed- the first row of the sprite is NOT shifted, while the second row is shifted, the 3rd row is not, etc.
+
+Test 2:
+
+For completeness, I then tested all of the above things again, shifting Y coordinates down 1 scanline.  i.e. sprites 0 through 3 had a Y coord of 11, 31, 51, and 71 respectively. This is to see if the patterns change at all, or if they stay the same (i.e. to see if the right shifting pattern of sprites 2 or 3 change at all, or if they stay the same).  The result is all the timings above do indeed stay the same.
+
+Tests 3 and 4: Same as above but Y is shifted down again.  Y coords were 12, 32, 52 and 72,  and finally 13, 33, 53, and 73.  Again this is to see if the pattern changes. Nope, no changes.  The sprites are always emitted the same way regardless of starting scanline.
+
+Test 5: set the sprite Y coords to 12, 32, 52, and 72 and then bump the X coords from 10 to 11.  This is to see if X affects the sprite rendering.  I suspect it won't, but you never know.  It worked as expected, the sprite patterns did not change, and they simply shifted right 1 full pixel.
+
+The first 4 types of attributes have been fully tested now to my satisfaction.
+
+
+Test 6:
+
+Next, I tested the 4 types with the double size flag set.
+
+Sprites were loaded as such:
+Spr:   0   1   2   3
+---------------------
+X      10  10  10  10
+Y      10  40  70  A0
+Attr   3C  3D  3E  3F
+
+
+Details for sprite 0: (attrib bits = 100b)
+
+X  Y  Sprite on
+---------------
+14 10   0
+14 10   0
+15 10   1
+15 10   1
+16 10   1
+16 10   1
+17 10   1
+17 10   1
+18 10   1
+18 10   1
+19 10   1
+19 10   1
+1a 10   1
+1a 10   1
+...
+22 10   1
+22 10   1
+23 10   1
+23 10   1
+24 10   1
+24 10   1
+25 10   0
+25 10   0
+26 10   0
+26 10   0
+
+The double size mode without any of the other attribute bits is pretty straight forward.  The first pixel is still emitted in the same place as it is on the single size sprite.  This means the sprite expands to the right and down, and not up or to the left.
+
+It's emitted for 32 scanlines as you would expect from a double size sprite.  In this case, from scanline 10 to 2F.
+
+
+Details for sprite 1: (attrib bits = 101b)
+
+X  Y  Sprite on
+---------------
+14 40   0
+14 40   0
+15 40   0
+15 40   0
+16 40   1
+16 40   1
+17 40   1
+17 40   1
+18 40   1
+18 40   1
+19 40   1
+19 40   1
+1a 40   1
+1a 40   1
+...
+22 40   1
+22 40   1
+23 40   1
+23 40   1
+24 40   1
+24 40   1
+25 40   1
+25 40   1
+26 40   0
+26 40   0
+
+
+In this case (Double + shift right), the sprite shifts right one whole pixel, instead of just 1/2 pixel as in a single wide sprite.
+
+
+Details for sprite 2: (attrib bits = 110b)
+
+X  Y  Sprite on
+---------------
+14 70   0
+14 70   0
+15 70   0
+15 70   0
+16 70   1
+16 70   1
+17 70   1
+17 70   1
+18 70   1
+18 70   1
+19 70   1
+19 70   1
+1a 70   1
+1a 70   1
+...
+22 70   1
+22 70   1
+23 70   1
+23 70   1
+24 70   1
+24 70   1
+25 70   1
+25 70   1
+26 70   0
+26 70   0
+(scanlines 71, 72, and 73 are the same as 70)
+...
+14 74   0
+14 74   0
+15 74   1
+15 74   1
+16 74   1
+16 74   1
+17 74   1
+17 74   1
+18 74   1
+18 74   1
+19 74   1
+19 74   1
+1a 74   1
+1a 74   1
+...
+22 74   1
+22 74   1
+23 74   1
+23 74   1
+24 74   1
+24 74   1
+25 74   0
+25 74   0
+26 74   0
+26 74   0
+(scanlines 75, 76, and 77 are the same as 74)
+
+This pattern is similar to the single size sprite, except expanded 2x.  Every 4 scanlines on the screen is shifted right 1 full pixel now.  The pattern starts with the first row of the sprite shifted right, while the next row is not shifted, etc.
+
+
+Details for sprite 3: (attrib bits = 111b)
+
+X  Y  Sprite on
+---------------
+14 A4   0
+14 A4   0
+15 A4   0
+15 A4   0
+16 A4   1
+16 A4   1
+17 A4   1
+17 A4   1
+18 A4   1
+18 A4   1
+19 A4   1
+19 A4   1
+1a A4   1
+1a A4   1
+...
+22 A4   1
+22 A4   1
+23 A4   1
+23 A4   1
+24 A4   1
+24 A4   1
+25 A4   1
+25 A4   1
+26 A4   0
+26 A4   0
+(scanlines A5, A6, and A7 are the same as A4)
+...
+14 A0   0
+14 A0   0
+15 A0   1
+15 A0   1
+16 A0   1
+16 A0   1
+17 A0   1
+17 A0   1
+18 A0   1
+18 A0   1
+19 A0   1
+19 A0   1
+1a A0   1
+1a A0   1
+...
+22 A0   1
+22 A0   1
+23 A0   1
+23 A0   1
+24 A0   1
+24 A0   1
+25 A0   0
+25 A0   0
+26 A0   0
+26 A0   0
+(scanlines A1, A2, and A3 are the same as A0)
+
+Again, this is similar to the single size sprite, just twice as wide.  It's exactly opposite (in regards to which lines are shifted) sprite 2.
+
+
+So, to recap, the sprite patterns are as follows:
+NOTE: each character is 1/2 pixel on the screen.  
+NOTE: each character line is TWO scanlines on the screen.
+NOTE: the X/Y coordinate where rendering of each sprite shown below starts is always (X+5, Y).
+
+[] is a single wide sprite pixel. 
+[  ] is a double wide sprite pixel.
+. is a 1/2 clock space
+.. is a 1 clock space
+
+(sprite attribute bits 2, 1, 0 respectively)
+000b:
+-----
+
+[][][][][][][][]
+[][][][][][][][]
+[][][][][][][][]
+[][][][][][][][]
+[][][][][][][][]
+[][][][][][][][]
+[][][][][][][][]
+[][][][][][][][]
+
+
+001b:
+-----
+
+.[][][][][][][][]
+.[][][][][][][][]
+.[][][][][][][][]
+.[][][][][][][][]
+.[][][][][][][][]
+.[][][][][][][][]
+.[][][][][][][][]
+.[][][][][][][][]
+
+010b:
+-----
+
+.[][][][][][][][]
+[][][][][][][][]
+.[][][][][][][][]
+[][][][][][][][]
+.[][][][][][][][]
+[][][][][][][][]
+.[][][][][][][][]
+[][][][][][][][]
+
+011b:
+-----
+
+[][][][][][][][]
+.[][][][][][][][]
+[][][][][][][][]
+.[][][][][][][][]
+[][][][][][][][]
+.[][][][][][][][]
+[][][][][][][][]
+.[][][][][][][][]
+
+100b:
+-----
+
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+
+101b:
+-----
+
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+
+110b:
+-----
+
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+
+111b:
+-----
+
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+..[  ][  ][  ][  ][  ][  ][  ][  ]
+
+
+Sprite rendering bounds:
+------------------------
+
+Test 7:
+
+Sprites were reset to normal single wide by clearing all attribute bits.  The sprites were then loaded with X coordinates of A0, A8, B0, and B8.
+
+Sprites 0, 1 and 2 emitted pixels.  Sprite 3 did NOT emit pixels.  
+
+Test 8:
+
+Sprites were reset to X coords B8, B6, B4, B2.
+
+Sprites 2 and 3 emitted pixels this time, so the maximum X coord is greater than B4, but less than B6.
+
+Test 9:
+
+Sprites were reset to X coords B4, B5, B6, B7.
+
+Sprites 0, 1 emitted pixels.  So the maximum X coordinate is B5h, at least for "barefoot" (attribute = 000b) sprites.
+
+Test 10:
+
+Sprite X coords are kept the same, and attribute bits are changed.  First is attribute 001b.  This will shift the sprite output 1/2 pixel right.  Indeed this is the case.  No surprises here.
+
+Test 11:
+
+Sprite Attributes were changed again.  This time, double size sprites are enabled (100b).  Again, sprites were emitted up to X=B5.
+
+Test 12:
+
+Finally, attribute 101b was tested.  Again, no surprises.
+
+Test 13:
+
+Sprite X minimum coordinates were tested.  They were loaded with e8, F0, FF, and 00.  Attributes were reset to 000b. Only sprite 3 (X = 00h) was emitted.
+
+Test 14:
+
+Sprite X coords were reset to E1, E2, E3, E4.  E2 and E3 emitted sprites, but E1 and E4 did not.
+
+Test 15:
+
+Sprite X coords were left alone, while attribute was changed to 001b.  No change where sprites emit.
+
+Test 16:
+
+Sprite attributes were changed to 100b. No change.
+
+Test 17:
+
+Sprite attributes changed again to 101b. No change.
+
+So, X range is E2-E3, 00-B5.  An X value of 0 will cause the sprite to start emitting at Xcount = 05.  An X value of E2 causes the sprite to start emitting at Xcount = 03, while an X value of E3 causes it to start emitting at Xcount = 04.  
+
+All other values of X will not cause a sprite to be shown.
+
+Note: An X value of E2 isn't 100% stable.  I wouldn't use it.  
+
+Test 18:
+
+Now that X coordinates are fully defined, it's time to do the Y coordinate.  
+
+Sprites were loaded as such:
+Spr:   0   1   2   3
+---------------------
+X      10  40  70  A0
+Y      00  01  02  03
+Attr   38  38  38  38
+
+Interestingly, no sprite data was emitting on scanline 107h/00h.  I guess this isn't terribly surprising.  Sprite data starts being emitting on scanline 01.  When Y is set to 00, the sprite is started emitting on scanline 01, and it indeed lasts a full 16 scanlines, so when Y is equal to 00, it's the same as if it was set to 01.  Setting Y to 02 or 03 results in what you'd expect.
+
+Test 19:
+
+Y coordinates were changed to EF, F0, F8, and FF.  Sprite 0 and sprite 1 started emitting on scanlines EF/F0 respectively, and then the last scanline with sprite pixels was scanline F2.  Scanline F3 and higher did not have any sprite pixels.
+
+Test 20:
+
+Y coords were changed to F1, F2, F3, and F4.  Nothing out of the ordinary.  The last sprite rendering scanline is still F2.  The end of scanline F2 (at Xcount = B6.5) is where V blanking starts.  This means it might be possible to extend sprite rendering into Vblank.  Sooo, let's give it a try.
+
+Test 21:
+
+This test is to find the upper left and lower right corners of rendering. 
+
+Sprites were loaded as such:
+Spr:   0   1   2   3
+---------------------
+X      e3  b5  10  10
+Y      00  f0  30  30
+Attr   3C  3C  38  38
+
+Sprite 0 didn't emit pixels on scanline 107/00.  It started emitting pixels on scanline 1. 
+Sprite 1 does not emit any pixels on scanline F2 at all.
+
+It appears that scanline F2 only allows sprites to be emitting early in it, before the point where it's blanked.  A binary search will be conducted now to find the last Xcoord where a sprite is allowed to start.  
+
+Test 22: Start: 80.   End: B5.   Test: 80.  Sprite was emitted.
+Test 23: Start: 9C.   End: B5.   Test: 9C.  Sprite was emitted.
+Test 24: Start: A8.   End: B5.   Test: A8.  Sprite was emitted.  It overlaps Vblank
+Test 26: Start: AE.   End: B5.   Test: AE.  Sprite was emitted.  It overlaps Vblank
+Test 27: Start: B1.   End: B5.   Test: B1.  Sprite was emitted.  It almost completely occurs in Vblank
+Test 28: Start: B3.   End: B5.   Test: B3.  Sprite was emitted.  It overlaps Vblank.
+Test 29: Start: B4.   End: B5.   Test: B4.  Sprite was emitted.  It overlaps Vblank.
+Test 29: Start: B5.              Test: B5.  Sprite was NOT emitted.
+
+To summerize:
+
+Sprite general:
+* The size or shift of the sprite via the attribute bits does not affect the position or emission of the sprite.
+* The upper left corner is always in the same place for all 8 attribute values.
+* 
+
+Sprite X:
+* Sprite X coordinate can range from E2, E3, 00-B5.
+* A value of E2 is the same as -2.
+* A value of E3 is the same as -1.
+* Sprite X position is delayed 5 pixels from the X coordinate register.
+* Because of the delay, the sprite starts on X coord = 03 to BA. (for range [E2, E3, 00-B5]).
+* An X coordinate of E2 acts somewhat wonky.  Don't use it.  It's off the screen anyways.
+
+Sprite Y:
+* Sprite Y coordinate 00 is the same as sprite Y coordinate 01.
+* Sprites are emitted from scanline 01 to F2.
+* If the Sprite's X coordinate is B5, the sprite will not be emitted at all on line F2.
+* A sprite that starts earlier (say, scanline F0) with an X coordinate will stop on scanline F1.
+
+
+That about takes care of sprites.
+
+
+Test 30:
+
+Now the grid will be tested.  
+
+We are testing only the HORIZONTAL grid at this point.  Vertical grid bars are all turned off for these tests.
+
+All the grid registers are cleared, then register C0 was loaded with 01.  The result was this:
+
+Scanline 18, 19, 1A, Xcoord:
+X   grid on
+----------
+0C  0
+0C  0
+0D  1
+0D  1
+0E  1
+0E  1
+0F  1
+0F  1
+...
+1D  1
+1D  1
+1E  1
+1E  1
+1F  0
+1F  0
+
+Test 31:  Grid C0 = 02h now.
+
+The grid appears on scanlines 30, 31, and 32 at the same X coordinates.
+
+Test 32:  Grid C0 = ffh now.
+
+The grid appears on scanlines 18-1A, 30-32, 48-4A, 60-62, 78-7A, 90-92, A8-AA, C0-C2.
+
+Test 33:  Grid D0 = ffh.
+
+The grid appears on scanlines D8-DA.
+
+Test 34: Grid C1 = ffh.
+
+Grid C1/D1 is emitted on Xcoord 1D through 2F, which overlaps 2 pixels of grid C0/D0.
+This overlap is to allow complete boxes to be formed on the screen.  Without this 2 pixel overlap, boxes would have cut out corners.
+
+Each horizontal grid segment outputs 18 pixels when turned on, and they are spaced 16 pixels apart:
+
+Each character is 1 pixel.  
+/     C0         \              /       C2       \
+**--------------**--------------**--------------**
+                \      C1        /
+|0D             |1D             |2D             |3D
+
+The above diagram attempts to show how this happens for a particular horizontal section of the grid.  The bottom marker is the X coordinate number, and the C0/C1/C2 with associated slashes denotes which part of the grid is controlled by which register.  The -- chars are the bar section, and ** is the 2 pixel overlap areas.  (No vertical grid bars are shown for clarity)
+
+
+Thus, there are exactly 9 horizontal grid bars, spaced 24 scanlines apart, and are 3 pixels high each.  Arrangement is like so for a particular column of horizontal bars:
+
+
+---  C0.0
+---  C0.1
+---  C0.2
+---  C0.3
+---  C0.4
+---  C0.5
+---  C0.6
+---  C0.7
+---  D0.0
+
+There are 9 columns of horizontal bars, corresponding to the following registers:
+
+ C0 C1 C2 C3 C4 C5 C6 C7 C8
+*--*--*--*--*--*--*--*--*--*
+
+Test 35:
+
+Now, only the VERTICAL grid will be tested.  
+
+All grid registers are cleared again, and register E0 is loaded with 01.
+
+Pixels were emitted:
+
+0C  0
+0C  0
+0D  1
+0D  1
+0E  1
+0E  1
+0F  0
+0F  0
+
+On scanlines 18-2F (18h total scanlines).
+
+Test 36:
+
+E0 was reloaded with 02.
+
+It emits pixels on scanlines 30-47 now (18h total scanlines).
+
+Test 37:
+
+E0 was finally loaded with FF.
+
+Pixels were emitted on scanlines 18-D7 (C0h scanlines total) as suspected.
+
+The vertical grid sections do not overlap each other like the horizontal sections do, however the do intersect with the horizontal grid sections.
+
+Vertical grid is emitted for 2 pixels starting on Xcoord:
+
+E0:  0D
+E1:  1D
+E2:  2D
+E3:  3D
+E4:  4D
+E5:  5D
+E6:  6D
+E7:  7D
+E8:  8D
+E9:  9D
+
+Vertical grid sections are 24 pixels high.
+
+reg#:
+
+E0 E1    E9 
+------------------
+|  | ... | bit 0
+|  |     | bit 1
+|  |     | bit 2
+|  |     | bit 3
+|  |     | bit 4
+|  |     | bit 5
+|  |     | bit 6
+|  |     | bit 7
+
+
+Grid Summary:
+-------------
+
+* Horizontal grid pieces start on Xcoords 0D, 1D, 2D, 3D, 4D, 5D, 6D, 7D, 8D
+* Horizontal grid pieces are 18 pixels wide
+* Horizontal grid pieces thus overlap 2 pixels on their right ends.
+* Horizontal grid pieces are spaced every 24 scanlines: 18, 30, 48, 60, 78, 90, A8, C0, D8
+* Horizontal grid pieces are 3 scanlines high
+
+* Vertical grid pieces start on Xcoords 0D, 1D, 2D, 3D, 4D, 5D, 6D, 7D, 8D, 9D
+* Vertical grid pieces are 2 pixels wide.
+* Vertical grid pieces DO NOT overlap each other, but can overlap with horizontal grid pieces.
+* Vertical grid pieces start on scanlines 18, 30, 48, 60, 78, 90, A8, C0
+* Vertical grid pieces are 24 scanlines high
+
+* setting bit 7 of register A0 ("grid width") does NOT affect the length of the dots on the dot grid.
+
+
+Test 38:
+
+Dot mode.  The grid is turned off, and the dot mode is turned on.  Well, not so fast.  Turning off the grid DISABLES THE DOT MODE.  To enable dot mode, the grid MUST be turned on, too.
+
+Turning the grid and dot bits on in register A0, and clearing all the grid registers gets a clean set of dots.
+
+The dots indeed appear at grid intersections, on Xcoords 0D, 1D, 2D, 3D, 4D, 5D, 6D, 7D, 8D, 9D.
+They appear on scanlines 18, 30, 48, 60, 78, 90, A8, C0, D8.
+The dots are 3 scanlines high.
+
+
+Test 39:
+
+It's now time to test the character rendering stuff.  I am using character 2F (the "block" character), and the usual formula to calculate where to position the character: (char * 8) - (y / 2)
+
+The first character will be positioned:
+
+Y     10
+X     10
+Offs  70 (char 2F)
+Attr  0F (char 2F, colour 7)
+
+The character is emitted exactly like a sprite with coordinates 10,10.  That is, the first pixel is at Xcoord 15, Y coord 10. Since this character is the block char, it lasts 8 pixels.  The character is 7 lines high as usual, so the character is rendered from scanline 10 through 1D.  This is not too surprising and what I would expect.
+
+Test 40:
+
+Everything is kept the same, except the X coordinate is set to E2.  No surprises, works just like the sprites did with randomish results.
+
+Test 41:
+
+X coord changed to E3.  works.
+
+Test 42:
+
+X coord changed to E1. Hmm, it still is emitting pixels, but it's somewhat messed up.  It's doing the wird randomish thing like E2 does, but this time it started emitting pixels on scanline 11h.
+
+Test 43:
+
+X coord changed to D8. Extremely weird things happened.  It started emitting pixels during blanking, at E0 on scanline 12.  It continued to emit pixels every 14 scanlines or so, all the way to scanline F2.  Apparently the chip didn't know when to stop rendering the character!  I guess this is fairly safe since it happens during blanking, but still weird.
+
+I suggest not setting character X to anything except the range [E3, 00-B3].  Other values invoke some kind of internal bus conflicts or analog effects in the chip.
+
+Test 44:
+
+X coord was changed to B5.  The chip did the same thing at the same place as when X was D8.
+
+Test 45:
+
+It has been determined that character rendering is messed up when X is in the range of B4-E2.  When it's in the range of B4-E1, it starts emitting pixels in the same place in Hblank, so you cannot see them.  When it's E2, it has the same randomish behaviour that the sprites exhibit.  When X is in the range of [E3, 00-B3] the character is rendered as expected.
+
+Test 46:
+
+Minimum Y coord was tested.  The character did not output at all when Y was 00 through 0D.  It had to be 0E or higher before it emitted the character.
+
+Test 47:
+
+Maximum Y coord was tested.  It was set to F0, and output 3 rows of pixels like expected.
+
+Test 48:
+
+Y coord changed to F1. Interestingly, it still output three lines of pixels- scanlines F0, F1, and F2.
+Y coord was changed then to F2.  It only output 1 row of pixels.
+
+Test 49:
+
+Y coord changed to EF. Pixels were output starting on scanline EE. It's looking like the hardware just strips off bit 0 of the Y coordinate.  
+
+Test 50:
+
+Tested more Y coordinates.  Indeed the chip does strip off bit 0 of the Y coordinate.  hunh.
+
+
+Character summary:
+------------------
+
+* Characters are rendered properly from char X = [E3, 00-B3].
+* Weird/bad things happens if X is anything else.  Usually the data is pushed into Hblank where it isn't seen.
+* Character Y resolution is only every 2 scanlines.  It is impossible to position one every scanline.
+* Character Y coord is ANDed with FEh. (thus you can never have it on an odd scanline).
+* Character Y coordinates can only range from [0E-F2].  Outside this range it is not rendered.
+
+
+
+Misc. timing:
+-------------
+
+The test system was modified to dump registers A5, A4, A1, and A0,  along with pin states for RGB, /int, Csynch, Vblank, Hblank, and burst gate.
+
+
+Test 51:
+--------
+
+Testing bit 0 of register A1 ("horizontal status").
+
+This horizontal status bit goes high on Xcoord = 70.5, and is cleared on Xcoord = CF:
+
+X   A1.0
+--------
+6E  0
+6E  0
+6F  0
+6F  0
+70  0
+70  1
+71  1
+....
+CD  1
+CD  1
+CE  1
+CF  0
+CF  0
+
+It is active on scanlines 00 through F2.  On scanlines F3-107 it is always cleared.  Interestingly, on scanline 00, it goes active at the point where the Ycoord changes from 107 to 00:
+
+Y   X   A1.0
+------------
+07  B4  0
+07  B4  0
+07  B5  0
+07  B5  0
+00  B6  1
+00  B6  1
+00  B7  1
+...
+
+It is cleared as you would expect on Xcoord = CF.
+
+Test 52:
+--------
+
+Vertical interrupt was tested.   The interrupt line goes low on Xcoord = B6.5 and Ycoord = F2.  A1.3 goes high at the same time.
+
+Y  X  A1.3 /INT
+---------------
+F2 B4 0    1
+F2 B4 0    1
+F2 B5 0    1
+F2 B5 0    1
+F2 B6 0    1
+F2 B6 1    0
+F2 B7 1    0
+....
+
+The interrupt line is set, and A1.3 is cleared when register A1 is read.
+
+
+Test 53:
+--------
+
+Horizontal interrupt was tested.  The horizontal interrupt does not appear to exist.  Setting bit 0 of register A0 does not appear to do anything.  
+
+
+Register A1: (read only)
+
+bit   function
+--------------
+0 - Horizontal status.  Goes high during a rendering scanline
+1 - Position strobe status.  
+**2 - Sound needs service.  not tested yet
+3 - Vertical status.  Goes high when Vint interrupt is pending.
+4 - Always reads 0
+5 - Always reads 1
+**6 - External overlap.
+7 - Major system overlap.  Set when 2 or more characters overlap.  Cleared on read.
+
+Register A0: (read/write)
+
+bit   function
+--------------
+0 - Horizontal interrupt.  Does not do anything.  There's no Horizontal interrupt.
+1 - Latch position.  1 = latch, 0 = allow external hardware to latch.
+**2 - Enable sound interrupt.
+3 - Enable grid.  Setting this turns the grid on.
+**4 - Enable ext. overlap interrupt.
+5 - Enable display of characters and sprites.  1 = enable, 0 = disable.
+6 - Enable dot grid.  Bit 3 must also be set to enable dots.
+7 - Grid width.  When set, makes Y grid segments 16 pixels wide instead of 2.
+
+
+Test 54:
+--------
+
+Now for the quad characters.
+
+One of the quad characters was loaded with the following params:
+
+40 41 42 43 46 47 4a 4b 4e 4f
+-----------------------------
+10 10 78 0f 78 0f 78 0f 78 0f
+
+This will set the X/Y locations to 10,10 and display the block character 4x.  This test was successful and the expected output was produced.
+
+At this time, I added another feature to the dumping program:  A way to dump the contents of all 256 registers on the chip.
+
+A dump from this particular test is as follows:
+
+00: 00 00 00 00 00 00 00 00 00-00 00 00 00 00 00 00 
+10: 00 00 00 10 00 00 00 10 00-00 00 10 00 00 00 10 
+20: 00 00 00 20 00 00 00 20 00-00 00 20 00 00 00 20 
+30: 00 00 00 30 00 00 00 30 00-00 00 30 00 00 00 30 
+40: 10 10 70 4F 10 10 70 4F 10-10 70 4F 10 10 70 4F 
+50: 00 00 00 50 00 00 00 50 00-00 00 50 00 00 00 50 
+60: 00 00 00 60 00 00 00 60 00-00 00 60 00 00 00 60 
+70: 00 00 00 70 00 00 00 70 00-00 00 70 00 00 00 70 
+80: 00 00 00 00 00 00 00 00 00-00 00 00 00 00 00 00 
+90: 00 00 00 00 00 00 00 00 00-00 00 00 00 00 00 00 
+A0: 00 A8 00 A3 97 5F A6 A7 A8-A9 00 AB AC AD AE AF 
+B0: 00 30 00 B3 97 5F B6 B7 B8-B9 00 BB BC BD BE BF 
+C0: 00 00 00 00 00 00 00 00 00-00 00 00 00 00 00 00 
+D0: D0 D0 D2 D2 D4 D4 D6 D6 D8-D8 DA DA DC DC DE DE 
+E0: 00 00 00 00 00 00 00 00 00-00 00 00 00 00 00 00 
+F0: F0 F1 F2 F3 F4 F5 F6 F7 F8-F9 FA FB FC FD FE FF 
+
+From this some information can be gathered:
+
+The upper 4 bits of every 4th byte (03, 07, 0b, 0f, etc) for all characters and sprites (00-7f) returns the upper 4 bits of the address written.
+
+I will be investigating this behaviour more later on.
+
+
+Test 55:
+--------
+
+The mirrors of the X and Y registers were tested for the quad characters.  They indeed work as expected:  Addresses 40, 44, 48, and 4C all read/write the same Y coordinate, and 41, 45, 49, and 4D all read/write the same X coordinate.  Any of the mirrors can be used to read or write the coordinates in question.
+
+The X coordinate was changed to E3.
+
+Interesting:  Only three characters were emitted this time.
+
+They are at Xcoord = 04, 18, and 28.  
+
+It appears to be adding 10h to the X coordinate to perform the character position testing.  Theoretically, it would emit characters at E3+5, F3+5, 03+5, and 13+5.  i.e. 04, 08, 18, and 28.  Best guess is it is skipping the 2nd character because it is overlapping the first.  
+
+Test 56,57:
+-----------
+
+Determine which character is being displayed, and if we clear the displayed character, if the other overlapping one will be shown instead.
+
+The space character was loaded into char 0 and 1 to figure out which is being shown, and if overlapping can be determined.
+
+The 2nd character is never rendered, and only chars 0, 2, and 3 are shown.
+
+
+Test 58,59,60,61,62,63,64,65:
+-----------------------------
+
+X coordinate was swept to find where things went pear-shaped.  The maximum legal X coordinate is 83.  Anything higher than this causes really weird things to happen.  It does not appear to be reproducable, either.  An X coordinate of 83 results in the last character having an effective X coordinate of B3.
+
+When X is increased past 83, various weird things occur, such as some characters not being shown, some characters being shown on the left side of the screen, some being rendered in hblank, and the characters being rendered all the way down the screen (usually in hblank).
+
+Test 66,67:
+-----------
+
+Y coordinate range was swept to determine the maximum/minimum ranges.  I suspect it will be the same as normal characters.
+
+Y Coordinates less than 0Eh seem to be unreliable and doesn't appear to be terribly predictable.
+Y coordinates above F2h do not result in any characters being emitted.
+
+
+Test 68,69,70,71:
+-----------------
+
+The coordinates were reset to 10,10 and the point where the quad character rendering is stopped at different points to see what affect this has.  
+
+i.e. character 0's offset was changed from 170h to 172h.  This was done for all four characters.
+
+Character 0, 1, and 2's end condition did NOT cease character generation.  i.e. when character 2's offset was changed to 172h, all four characters were emitted for 14 scanlines.  character 2 showed the 4 scanlines of the block character, then a space and the top of the next character.
+
+Character 3, however is special.  When character 3's end condition is met, ALL FOUR characters stop rendering.
+
+
+
+Quad character summary:
+-----------------------
+
+* Valid X coordinates range from E3, 00-83.
+* X coords outside this range result in unpredictable behaviour.
+* Y coordinates can range from 0E-F2, just like normal characters.
+* Y coordinates less than 0E result in unpredictable behaviour.
+* X and Y coordinates are repeated 4x at i.e 40/44/48/4C,  and 41/45/49/4D.
+* The offset of the 4th character is what determines when ALL FOUR characters stop rendering.
+
+
+Register map stuff:
+-------------------
+
+(Tests 72-87)
+
+All registers were probed to determine what bit(s) are readable.
+
+
+Open bus map: (a "1" bit means we return open bus here.)
+-------------
+00: 00 00 00 F0 00 00 00 F0 00 00 00 F0 00 00 00 F0
+10: 00 00 00 F0 00 00 00 F0 00 00 00 F0 00 00 00 F0
+20: 00 00 00 F0 00 00 00 F0 00 00 00 F0 00 00 00 F0
+30: 00 00 00 F0 00 00 00 F0 00 00 00 F0 00 00 00 F0
+40: 00 00 00 F0 00 00 00 F0 00 00 00 F0 00 00 00 F0
+50: 00 00 00 F0 00 00 00 F0 00 00 00 F0 00 00 00 F0
+60: 00 00 00 F0 00 00 00 F0 00 00 00 F0 00 00 00 F0
+70: 00 00 00 F0 00 00 00 F0 00 00 00 F0 00 00 00 F0
+80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+A0: 00 20 00 FF 00 00 FF FF FF FF 00 FF FF FF FF FF
+B0: 00 20 00 FF 00 00 FF FF FF FF 00 FF FF FF FF FF
+C0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+D0: FE FE FE FE FE FE FE FE FE FE FE FE FE FE FE FE
+E0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+F0: FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF
+
+AND map: (a "1" bit means we return bits in these registers here.)
+-------------
+00: FF FF 00 00 FF FF 00 00 FF FF 00 00 FF FF 00 00
+10: FE FF FF 0F FE FF FF 0F FE FF FF 0F FE FF FF 0F
+20: FE FF FF 0F FE FF FF 0F FE FF FF 0F FE FF FF 0F
+30: FE FF FF 0F FE FF FF 0F FE FF FF 0F FE FF FF 0F
+40: FE FF FF 0F FE FF FF 0F FE FF FF 0F FE FF FF 0F
+50: FE FF FF 0F FE FF FF 0F FE FF FF 0F FE FF FF 0F
+60: FE FF FF 0F FE FF FF 0F FE FF FF 0F FE FF FF 0F
+70: FE FF FF 0F FE FF FF 0F FE FF FF 0F FE FF FF 0F
+80: FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF
+90: FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF
+A0: FE DF FF 00 FF FF 00 00 00 00 BF 00 00 00 00 00
+B0: FE DF FF 00 FF FF 00 00 00 00 BF 00 00 00 00 00
+C0: FF FF FF FF FF FF FF FF FF 00 00 00 00 00 00 00
+D0: 01 01 01 01 01 01 01 01 01 00 00 00 00 00 00 00
+E0: FF FF FF FF FF FF FF FF FF FF 00 00 00 00 00 00
+F0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+
+To return a value to the CPU,  first AND it with the AND map,  then OR it with (openbus & address).
+
+i.e. if the CPU reads address 73h, and the register has a value of 4h, the following occurs:
+
+            0x04         0x0f             0x73   0xf0
+readback = (regs[addr] & andmap[addr]) | (addr & openbus[addr])
+
+The result is thus 0x74.
+
+
+Register notes:
+
+* Registers A0-AF are mirrored at B0-BF.  Any read/write to Bx and Ax access the same registers.  So, the grid can be enabled by writing 08h to register B0h.  
+* X/Y regs for the quad characters are mirrored 4x.  i.e. 40=44=48=4C and 41=45=49=4D.
+* The lower bit of the character Y registers is not implemented.  
+* When the "enable display" bit is set (reg A0.5), the X and Y regs return internal state and the attribute/offset regs return 0's.
+* When the "enable grid" bit is set (reg A0.3), the grid registers are not readable and return 0's.
+* When the "Enable display" bit is set, the sprite shape registers appear also to be readable.
+* The sound shift register registers are not readable and return open bus.
+
+Sound subsystem
+---------------
+
+Tests 88, 89, 90, 91, 92:
+-------------------------
+
+The volume bits on the sound control register (bits 0-3 of register AA) control the duty cycle of the audio output pin.
+
+Setting the volume bits results in the following:
+
+vol bit pattern      eff. duty cycle
+------------------------------------
+0 - 0000000000000000 (0%)
+1 - 1000000000000000 (6.25%)
+2 - 1100000000000000 (12.5%)
+3 - 1110000000000000 (18.75%)
+4 - 1111000000000000 (25%)
+5 - 1111100000000000 (31.25%)
+6 - 1111110000000000 (37.5%)
+7 - 1111111000000000 (43.75%)
+8 - 1111111100000000 (50%)
+9 - 1111111110000000 (56.25%)
+A - 1111111111000000 (62.5%)
+B - 1111111111100000 (68.75%)
+C - 1111111111110000 (75%)
+D - 1111111111111000 (81.25%)
+E - 1111111111111100 (87.5%)
+F - 1111111111111110 (93.75%)
+
+
+The PWM output is updated at the full 3.579MHz clock rate, thus the square wave repeats at a frequency of 223.721KHz.  This makes it trivial to filter the square wave out to get a nice analog voltage level.
+
+
+Test 93:
+--------
+
+The sound registers were loaded like so:
+
+A7 A8 A9 AA
+-----------
+AA AA AA AF
+
+This should result in a 3933.5Hz shift rate, with a 50% duty cycle square wave, which, because it takes 2 clocks for this, results in a square wave at 1966.8Hz out the audio pin.
+
+Y  X  S
+-------
+0F B6 0
+0F B6 0
+0F B7 1
+0F B7 1
+...
+13 B6 1
+13 B6 1
+13 B7 0
+13 B7 0
+
+The audio output is updated at Xcoord = B7.  This is the same place where Hblank starts.  Calculating this out, it takes 910 cycles to render 4 scanlines.  Dividing 3.57954MHz/910 does indeed result in a 3933.5Hz update rate. 
+
+<supposition> 
+
+The hardware most likely has a 4 bit binary counter prescaler inside.  Each Hblank, this prescaler is incremented (or decremented).  When all 4 bits are 0 or 1 (doesn't matter which), the clock pulse is let through to shift the shift register.  The prescaler wraps every 16 clocks so it clocks the shifter every 16 clocks, thus dividing the input clock by 16.
+
+To perform the divide by 4 function, the upper 2 bits of this counter are simply masked by the audio control register bit.
+
+</supposition>
+
+Test 94:
+--------
+
+The shift register direction and output bit was determined.
+
+The shift register shifts right, A7->A9 in the following order:
+
+    A7        A8        A9       (register address)
+[76543210][76543210][76543210]-> output bit
+ \--<----<----<----<----<---/    (feedback path)
+
+The registers can be loaded at any time, and they are updated as soon as they are loaded.  The first bit that's shifted out is A9.0.  The *last* bit shifted out is A7.7.  Bits are recirculated at all times.  It is not possible to prevent recirculation.
+
+The period where the update occurs was tested.  When a shift register byte is written, the shift clock update is held off.  This prevents the register shifting in the middle of an update.  The shift clock is held off for 1 Hblank (but does not affect the period of the prescaler).
+
+After the above delay via the hblank holdoff, the sound pin's state is updated with the first bit of the shift register (A9.0).
+
+
+Test 95:
+--------
+
+The noise stuff was tested.  
+
+Noise is pretty interesting:  It uses the SAME shift register as A8/A9.  A7 is NOT USED in this mode.
+
+Registers A8/A9 are set up with an XOR gate to generate noise.  The register is not reinitialized.  If A8 and A9 contain all zeros, then the noise generator WILL NOT WORK.  Since it just XORs two bits together, it will continue to recirculate 0 bits.
+
+The feedback taps are bits 0 and 5 of register A9.  These two bits are XOR'd and then passed on to bit 7 of A7 *and* A8. Bit 0 of A9 is still output to the audio output.
+
+    A8        A9
+[76543210][76543210]-> audio output
+ ^           |    |
+ | /---|-----/    |
+ \-|xor|          |
+   \---|----------/
+
+This results in a noise period of 16383.
+
+Interestingly this makes a NON maximal length shift register.
+
+
+Tests 96-101:
+-------------
+
+The sound interrupt was tested.
+
+I cannot get the sound interrupt to work.   I am dubious if it actually exists.
+
+I set register A0 to 06h and 26h, which would turn the interrupt on, and turn it and the screen on (Resp).
+Then, I set AA to AFh.
+
+The sound pin showed the proper audio data coming out, but that was it.  The interrupt line never was pulled low.  It stayed high the entire time.  I tried several other iterations and combinations and could never make it produce an interrupt.  Vblank interrupts kept occuring but I could not get a sound interrupt to ever occur.
+
+Thus, I don't think it exists... or if it does, it is broken.  The "sound interrupt" enable bit CAN be set and cleared on register A0, but it just doesn't want to generate the interrupt.
+
+
+Sound summary:
+--------------
+
+* The 3 byte shift register shifts RIGHT, A7->A8->A9-> sound output.
+* The register always recirculates, and cannot be made to NOT recirculate.
+* There's a 1 Hblank holdoff after writing one or more of the shift register bytes to prevent corruption.
+* Noise mode shortens the shift register from 24 bits to 16 bits.
+* Noise mode simply inserts an XOR gate to the feedback path.
+* Noise period is 16383.
+* Sound interrupt does not appear to function at all.
+

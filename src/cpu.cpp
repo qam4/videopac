@@ -22,6 +22,10 @@ void CPU::reset() {
     state_.port1 = 0xFF;
     state_.port2 = 0xFF;
     
+    // T1 pin state at reset: HIGH (visible period, not blanking)
+    // In our representation: true = T1 HIGH (visible), false = T1 LOW (blanking)
+    state_.t1_state = true;
+    
     // Note: No need to sync with MemorySystem - it reads Port 1 directly from CPU
 }
 
@@ -805,13 +809,17 @@ uint8 CPU::execute_instruction() {
         }
         
         // JNT1 addr - Jump if T1 pin is low (0x46)
-        // Operation: If (T1) = 1 then (PC) <- addr
+        // Operation: If (T1) = 0 then (PC) <- addr
         // Flags affected: None
         // Cycles: 2
-        // Tests the T1 input pin (used for event counter input)
+        // Tests the T1 input pin. T1 is LOW during blanking, HIGH during visible period.
+        // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
         case 0x46: {
-            (void)fetch_byte();  // Read address
-            // T1 pin not emulated - assume high (no jump)
+            uint8 addr = fetch_byte();
+            // Jump if T1 is LOW (false = blanking)
+            if (!state_.t1_state) {
+                state_.pc = (state_.pc & 0xF00) | addr;
+            }
             cycles = 2;
             break;
         }
@@ -820,10 +828,14 @@ uint8 CPU::execute_instruction() {
         // Operation: If (T1) = 1 then (PC) <- addr
         // Flags affected: None
         // Cycles: 2
+        // Tests the T1 input pin. T1 is HIGH during visible period, LOW during blanking.
+        // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
         case 0x56: {
             uint8 addr = fetch_byte();
-            // T1 pin not emulated - assume high (always jump)
-            state_.pc = (state_.pc & 0xF00) | addr;
+            // Jump if T1 is HIGH (true = visible period)
+            if (state_.t1_state) {
+                state_.pc = (state_.pc & 0xF00) | addr;
+            }
             cycles = 2;
             break;
         }
@@ -1436,15 +1448,22 @@ uint8 CPU::execute_instruction() {
     return cycles + interrupt_cycles;
 }
 
-// Counter mode: increment timer once per scanline
-// Called externally (from emulator) once per scanline when counter_on is true
-// Hardware: This simulates the T1 pin receiving a pulse from the VDC on scanline completion.
-// The VDC's scanline pulse output is physically wired to the CPU's T1 input pin.
-// When STRT CNT (0x45) is executed, the CPU's timer increments on each T1 pulse.
+// Counter mode: increment timer on T1 falling edge
+// Called externally (from emulator) on every VDC tick with current T1 state
+// Hardware: This simulates the T1 pin receiving pulses from the VDC.
+// T1 = !(Hblank OR Vblank) - HIGH during visible, LOW during blanking
+// Counter increments on falling edge (T1 going from HIGH to LOW, i.e., visible → blanking)
 // Reference: Intel 8048 datasheet - T1 pin as event counter input
-// Reference: doc/o2em/cpu.c lines 1536-1545
-void CPU::increment_counter() {
-    if (state_.counter_on) {
+// Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
+void CPU::update_counter(bool t1_state) {
+    // Detect falling edge: T1 was HIGH (true) and is now LOW (false)
+    bool falling_edge = state_.t1_state && !t1_state;
+    
+    // Update state for next edge detection
+    state_.t1_state = t1_state;
+    
+    // Increment counter on falling edge if counter mode is enabled
+    if (state_.counter_on && falling_edge) {
         uint8 old_timer = state_.timer;
         state_.timer++;
         

@@ -39,6 +39,12 @@ struct CPUState {
     bool memory_bank;           // Memory bank flag (DBF): false=MB0 (0x000-0x7FF), true=MB1 (0x800-0xFFF)
                                 // Set by SEL MB0/MB1 instructions, affects JMP/CALL target addresses
     
+    // T1 pin state (for counter mode)
+    // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
+    // T1 is HIGH during visible period, LOW during blanking
+    // true = T1 HIGH (visible), false = T1 LOW (blanking)
+    bool t1_state;              // Current T1 pin state
+    
     // Pending interrupt flags
     // Reference: Intel 8048 User Manual, page 3107:
     // "The Interrupt line is sampled every machine cycle during ALE and when detected
@@ -75,8 +81,10 @@ public:
     void set_external_interrupt_pending(bool pending) { state_.external_interrupt_pending = pending; }
     
     // Timer/counter management
-    // Hardware: Simulates T1 pin pulse from VDC (called once per scanline for counter mode)
-    void increment_counter();
+    // Hardware: Simulates T1 pin pulse from VDC
+    // Counter mode increments on T1 falling edges (T1 going from active to inactive)
+    // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
+    void update_counter(bool t1_state);
     
     // State management
     CPUState get_state() const;
