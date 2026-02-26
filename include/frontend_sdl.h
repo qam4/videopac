@@ -50,6 +50,7 @@ public:
     // Testing/debugging methods
     void schedule_key_press(VidKey key, int trigger_frame, int duration_frames);
     void set_disable_sdl_input(bool disable) { disable_sdl_input_ = disable; }
+    void set_frame_limit(int frames) { frame_limit_ = frames; }
     
 private:
     // SDL resources
@@ -86,6 +87,7 @@ private:
     bool running_;
     bool paused_;
     uint32_t frame_count_;
+    uint32_t frame_limit_;  // Frame limit for testing (0 = no limit)
     uint32_t last_fps_time_;
     uint32_t fps_counter_;
     float current_fps_;

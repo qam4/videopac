@@ -104,9 +104,12 @@ def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
     
     cmd = [
         exe_path,
+        "--press-joystick", "2", "4", "20", "5",
+        "--frames", "50",
         "--debug",
         "--trace",
         "--vdc-trace",
+        "--region", "usa",
         "--bios", bios_path,
         rom_path
     ]
@@ -114,50 +117,31 @@ def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
     # Add any extra arguments (breakpoints, watch expressions, region, etc.)
     cmd.extend(extra_args)
     
+    print("Command:", " ".join(cmd))
     subprocess.run(cmd)
 
 
-def run_headless_mode(exe_path, bios_path, rom_path, extra_args, no_input=False, frames=None):
+def run_headless_mode(exe_path, bios_path, rom_path, extra_args):
     """Run emulator in headless mode with screenshot capture."""
     print("Running in HEADLESS mode...")
     print()
     
     setup_screenshots_dir()
     
-    # Use provided frames or defaults
-    if frames is None:
-        frames = 10
-    
-    if no_input:
-        # No input mode - only basic setup, no key/joystick presses
-        cmd = [
-            exe_path,
-            "--headless",
-            "--screenshot", "1",
-            "--frames", str(frames),
-            "--debug",
-            "--trace",
-            "--vdc-trace",
-            "--bios", bios_path,
-            rom_path
-        ]
-    else:
-        # Normal mode with input
-        cmd = [
-            exe_path,
-            "--headless",
-            "--screenshot", "1",
-            "--frames", str(frames),
-            # "--press-joystick", "2", "0", "20", str(frames),  # Press joystick 2 UP at frame 20
-            # "--press-key", "1", "5", "5",   # Press '1' at frame 5 for 5 frames (title screen)
-            # "--press-key", "1", "12", "5",  # Press '1' at frame 12 for 5 frames (select game)
-            "--debug",
-            "--trace",
-            "--region", "usa",
-            "--vdc-trace",
-            "--bios", bios_path,
-            rom_path
-        ]
+    # Test mode - press joystick 2 button at frame 20 for 5 frames (trace comparison)
+    cmd = [
+        exe_path,
+        "--headless",
+        "--screenshot", "1",
+        "--frames", "50",
+        "--press-joystick", "2", "4", "20", "5",
+        "--debug",
+        "--trace",
+        "--region", "usa",
+        "--vdc-trace",
+        "--bios", bios_path,
+        rom_path
+    ]
     
     # Add any extra arguments (breakpoints, watch expressions, region, etc.)
     cmd.extend(extra_args)
@@ -250,16 +234,17 @@ Examples:
     )
     
     parser.add_argument(
-        "--no-input",
-        action="store_true",
-        help="Headless mode: run without any input (for baseline testing)"
-    )
-    
-    parser.add_argument(
         "--frames",
         type=int,
         default=None,
-        help="Number of frames to run in headless mode (default: 200 for no-input, 360 otherwise)"
+        help="Number of frames to run (headless or SDL with scheduled input)"
+    )
+    
+    parser.add_argument(
+        "--press-joystick",
+        nargs=4,
+        metavar=('JOY', 'DIR', 'FRAME', 'DUR'),
+        help="Press joystick: joy (1-2), dir (0-4), frame, duration"
     )
     
     # Debugger options
@@ -317,9 +302,13 @@ Examples:
             if args.conditions and i < len(args.conditions):
                 extra_args.extend(["--condition", args.conditions[i]])
     
+    # Add joystick press if specified
+    if args.press_joystick:
+        extra_args.extend(["--press-joystick"] + args.press_joystick)
+    
     # Run appropriate mode
     if mode == "headless":
-        run_headless_mode(exe_path, args.bios, args.rom, extra_args, no_input=args.no_input, frames=args.frames)
+        run_headless_mode(exe_path, args.bios, args.rom, extra_args)
     elif mode == "dcv":
         run_dcv_mode(exe_path, args.bios, args.rom, extra_args)
     else:  # sdl

@@ -31,6 +31,7 @@ SDLFrontend::SDLFrontend()
     , running_(false)
     , paused_(false)
     , frame_count_(0)
+    , frame_limit_(0)  // No frame limit by default
     , last_fps_time_(0)
     , fps_counter_(0)
     , current_fps_(0.0f)
@@ -265,6 +266,7 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
                 std::cerr << "Unknown trace level: " << config_.trace_level << ", using 'full'" << std::endl;
             }
             debugger_->set_trace_level(level);
+            debugger_->set_trace_limit(false);  // Disable trace limit for full capture
         }
         
         // Set breakpoints from config
@@ -515,9 +517,11 @@ void SDLFrontend::run() {
             uint32 frame_start = SDL_GetTicks();
             
             // Check for scheduled key presses that should trigger this frame
+            // Note: frame_count_ is the current frame, so check frame_count_ + 1 for next frame
+            int next_frame = frame_count_ + 1;
             if (!active_keys_.empty() || !config_.scheduled_keys.empty()) {
                 for (auto it = config_.scheduled_keys.begin(); it != config_.scheduled_keys.end(); ) {
-                    if (frame_count_ >= static_cast<uint32_t>(it->trigger_frame)) {
+                    if (next_frame >= it->trigger_frame) {
                         // Trigger the key press
                         InputHandler& input = emulator_->get_input_handler();
                         VidKey key = static_cast<VidKey>(it->key_code);
@@ -540,6 +544,12 @@ void SDLFrontend::run() {
             if (!paused_ && !emulator_paused && !menu_active) {
                 emulator_->run_frame();
                 frame_count_++;
+                
+                // Check frame limit
+                if (frame_limit_ > 0 && frame_count_ >= frame_limit_) {
+                    std::cout << "\nReached frame limit (" << frame_limit_ << " frames)" << std::endl;
+                    running_ = false;
+                }
             }
             
             // Render

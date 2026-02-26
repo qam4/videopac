@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
             force_headless = true;
         } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             frame_limit = std::atoi(argv[++i]);
-            force_headless = true;  // Frame limit implies headless
+            // Don't force headless - allow SDL mode with frame limit for testing
         } else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
             screenshot_interval = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--extended-fb") == 0) {
@@ -198,6 +198,11 @@ int main(int argc, char* argv[]) {
         if (!scheduled_keys.empty()) {
             frontend.set_disable_sdl_input(true);
             std::cout << "SDL input disabled - using scheduled key presses" << std::endl;
+        }
+        
+        // Set frame limit if specified
+        if (frame_limit > 0) {
+            frontend.set_frame_limit(frame_limit);
         }
         
         if (!frontend.initialize(config)) {
