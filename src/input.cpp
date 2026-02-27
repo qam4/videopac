@@ -26,36 +26,34 @@ void InputHandler::set_key_state(VidKey key, bool pressed) {
 uint8 InputHandler::read_keyboard(uint8 selected_row) {
     // The BIOS writes a row select value to Port 2 (0xF0, 0xF1, 0xF2, etc.)
     // where bits 0-2 encode the row number, and upper bits are 0xF0
-    // When reading back (per o2doc.md section 1.2):
-    // - P24 (bit 4) = 0 if key pressed, 1 if no key (BIOS checks with JB4)
-    // - P25-P27 (bits 5-7) = column number (0-7) when key pressed
-    // - P20-P22 (bits 0-2) = echo back the row select value
-    // - P23 (bit 3) = unused
-    // Note: The BIOS XORs the column with 0x07 (see french_bios_annotated.txt:0x0cd)
-    // so we need to invert the column bits
+    // When reading back (per o2doc.md section 1.2 and o2em vmachine.c read_P2):
+    // - When key pressed: bits 7-5 = column XOR 0x07, bit 4 = 0
+    // - When no key pressed: bits 7-4 = 0xF (all high)
+    // - Bits 0-2 = echo back the row select value
+    // - Bit 3 = preserved from written value
+    //
+    // Reference: o2em vmachine.c read_P2():
+    //   if key found: p2 = (p2 & 0x0F) | (col_xor_7 << 5)
+    //   if no key:    p2 = p2 | 0xF0
     
     uint8 row = selected_row & 0x07;  // Extract row from bits 0-2
+    uint8 lower_nibble = selected_row & 0x0F;  // Preserve bits 0-3 as written
     
-    if (row < 8) {
+    if (row < 6) {  // Only 6 rows are valid (o2em: si < 6)
         for (int col = 0; col < 8; ++col) {
             if (state_.keyboard_matrix[row][col]) {
                 // Key is pressed
-                // Format: [col:3][0:1][0:1][row:3]
-                // Bits 7-5: column (0-7) - inverted by XOR with 0x07
-                // Bit 4: key pressed indicator (0 = pressed)
-                // Bit 3: unused (0)
-                // Bits 2-0: row echo
-                uint8 inverted_col = (7 - col) & 0x07;  // Invert column
-                uint8 result = (inverted_col << 5) | row;
-                return result;
+                // Column is XOR'd with 0x07 (inverted), placed in bits 5-7
+                // Bit 4 = 0 (indicates key pressed)
+                uint8 inverted_col = col ^ 0x07;
+                return (lower_nibble & 0x0F) | (inverted_col << 5);
             }
         }
     }
     
-    // No key pressed - set bit 4 to indicate no key
-    // Format: [xxx][1][0][row:3]
-    uint8 result = 0x10 | row;
-    return result;
+    // No key pressed - set bits 4-7 all high (0xF0)
+    // This matches o2em: p2 = p2 | 0xF0
+    return lower_nibble | 0xF0;
 }
 
 void InputHandler::set_joystick_state(uint8 joystick, Direction direction, bool pressed) {

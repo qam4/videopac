@@ -1280,9 +1280,10 @@ void SDLFrontend::dump_framebuffer(const std::string& filename) {
 }
 
 VidKey SDLFrontend::map_sdl_key(SDL_Keycode key) {
-    // Map SDL keys to Videopac keyboard
+    // Map SDL keys to Videopac keyboard matrix
+    // Layout matches o2em vmachine.c key_map[6][8]
     switch (key) {
-        // Number keys
+        // Row 0: Number keys 0-7
         case SDLK_0: return VidKey::Key0;
         case SDLK_1: return VidKey::Key1;
         case SDLK_2: return VidKey::Key2;
@@ -1291,51 +1292,58 @@ VidKey SDLFrontend::map_sdl_key(SDL_Keycode key) {
         case SDLK_5: return VidKey::Key5;
         case SDLK_6: return VidKey::Key6;
         case SDLK_7: return VidKey::Key7;
+        
+        // Row 1: 8, 9, SPACE, /, L, P
         case SDLK_8: return VidKey::Key8;
         case SDLK_9: return VidKey::Key9;
+        // Note: SDLK_SPACE is handled by joystick (fire button) so won't reach here
+        // SDLK_l and SDLK_p may be intercepted by special key handlers
+        case SDLK_l: return VidKey::KeyL;
         
-        // Letter keys
-        case SDLK_a: return VidKey::KeyA;
-        case SDLK_b: return VidKey::KeyB;
-        case SDLK_c: return VidKey::KeyC;
-        case SDLK_d: return VidKey::KeyD;
+        // Row 2: +, W, E, R, T, U, I, O
+        case SDLK_w: return VidKey::KeyW;
         case SDLK_e: return VidKey::KeyE;
+        case SDLK_r: return VidKey::KeyR;
+        case SDLK_t: return VidKey::KeyT;
+        case SDLK_u: return VidKey::KeyU;
+        case SDLK_i: return VidKey::KeyI;
+        case SDLK_o: return VidKey::KeyO;
+        
+        // Row 3: Q, S, D, F, G, H, J, K
+        case SDLK_q: return VidKey::KeyQ;
+        case SDLK_s: return VidKey::KeyS;
+        case SDLK_d: return VidKey::KeyD;
         case SDLK_f: return VidKey::KeyF;
         case SDLK_g: return VidKey::KeyG;
         case SDLK_h: return VidKey::KeyH;
-        case SDLK_i: return VidKey::KeyI;
         case SDLK_j: return VidKey::KeyJ;
         case SDLK_k: return VidKey::KeyK;
-        case SDLK_l: return VidKey::KeyL;
-        case SDLK_m: return VidKey::KeyM;
-        case SDLK_n: return VidKey::KeyN;
-        case SDLK_o: return VidKey::KeyO;
-        case SDLK_p: return VidKey::KeyP;
-        case SDLK_q: return VidKey::KeyQ;
-        case SDLK_r: return VidKey::KeyR;
-        case SDLK_s: return VidKey::KeyS;
-        case SDLK_t: return VidKey::KeyT;
-        case SDLK_u: return VidKey::KeyU;
-        case SDLK_v: return VidKey::KeyV;
-        case SDLK_w: return VidKey::KeyW;
-        case SDLK_x: return VidKey::KeyX;
-        case SDLK_y: return VidKey::KeyY;
-        case SDLK_z: return VidKey::KeyZ;
         
-        // Special keys
-        case SDLK_SPACE: return VidKey::Space;
-        case SDLK_RETURN: return VidKey::Enter;
+        // Row 4: A, Z, X, C, V, B, M, .
+        case SDLK_a: return VidKey::KeyA;
+        case SDLK_z: return VidKey::KeyZ;
+        case SDLK_x: return VidKey::KeyX;
+        case SDLK_c: return VidKey::KeyC;
+        case SDLK_v: return VidKey::KeyV;
+        case SDLK_b: return VidKey::KeyB;
+        case SDLK_m: return VidKey::KeyM;
         case SDLK_PERIOD: return VidKey::Period;
-        case SDLK_PLUS: return VidKey::Plus;
+        
+        // Row 5: -, *, /, =, Y, N, DEL/Clear, ENTER
         case SDLK_MINUS: return VidKey::Minus;
-        case SDLK_ASTERISK: return VidKey::Multiply;
+        case SDLK_KP_MULTIPLY: return VidKey::Multiply;
         case SDLK_SLASH: return VidKey::Divide;
         case SDLK_EQUALS: return VidKey::Equal;
-        case SDLK_QUESTION: return VidKey::Question;
+        case SDLK_y: return VidKey::KeyY;
+        case SDLK_n: return VidKey::KeyN;
+        case SDLK_DELETE: return VidKey::Clear;
+        case SDLK_BACKSPACE: return VidKey::Clear;
+        case SDLK_RETURN: return VidKey::Enter;
+        
+        // Numpad plus for + key (row 2 col 0)
+        case SDLK_KP_PLUS: return VidKey::Plus;
         
         default:
-            // Return a sentinel value - use Key0 with invalid state
-            // The caller will check if the key is valid
             return static_cast<VidKey>(0xFF);
     }
 }

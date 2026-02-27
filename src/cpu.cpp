@@ -56,14 +56,18 @@ uint8 CPU::read_port(uint8 port) {
     } else if (port == 2) {
         // Port 2 reads keyboard input
         // P12 (bit 2 of Port 1) must be 0 to enable keyboard
-        // P20-P22 (bits 0-2 of Port 2) select the row
+        // When keyboard enabled, read_keyboard modifies upper nibble of P2:
+        //   Key pressed: bits 7-5 = column^7, bit 4 = 0
+        //   No key: bits 7-4 = 0xF
+        // Lower nibble (bits 0-3) is preserved from last write
+        // Reference: o2em vmachine.c read_P2()
         if (input_ && !(state_.port1 & 0x04)) {  // P12 == 0
-            uint8 selected_row = state_.port2 & 0x07;  // P20-P22
-            uint8 result = input_->read_keyboard(selected_row);
+            uint8 result = input_->read_keyboard(state_.port2);
             return result;
         }
-        // Keyboard disabled or no input handler - return last written value
-        return state_.port2;
+        // Keyboard disabled: return P2 with upper nibble set high
+        // Reference: o2em read_P2(): p2 = p2 | 0xF0 when P12=1
+        return state_.port2 | 0xF0;
     }
     return 0xFF;
 }

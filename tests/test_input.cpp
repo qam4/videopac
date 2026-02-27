@@ -3,12 +3,22 @@
 
 using namespace videopac;
 
+// read_keyboard() API:
+//   Input: port2 value where bits 0-2 = row number (0-5)
+//   Output when key pressed: lower_nibble | (col^7 << 5), bit 4 = 0
+//   Output when no key pressed: lower_nibble | 0xF0
+
 TEST(InputTest, KeyboardMatrixReadWrite) {
     InputHandler input;
-    input.set_key_state(0, 0, true);
+    input.set_key_state(0, 0, true);  // Row 0, Col 0
     
-    uint8 result = input.read_keyboard(0xFE);  // Select row 0
-    EXPECT_NE(result, 0xFF);  // Should have at least one key pressed
+    uint8 result = input.read_keyboard(0x00);  // Select row 0
+    // Key at col 0: inverted_col = 0^7 = 7, result = 0x00 | (7 << 5) = 0xE0
+    EXPECT_EQ(result, 0xE0);
+    
+    // No key on row 1
+    uint8 result1 = input.read_keyboard(0x01);
+    EXPECT_EQ(result1, 0xF1);  // 0x01 | 0xF0
 }
 
 TEST(InputTest, KeyboardMultipleRows) {
@@ -19,40 +29,74 @@ TEST(InputTest, KeyboardMultipleRows) {
     input.set_key_state(1, 1, true);  // Row 1, Col 1
     input.set_key_state(2, 2, true);  // Row 2, Col 2
     
-    // Read row 0 (active low, so 0xFE selects row 0)
-    uint8 result0 = input.read_keyboard(0xFE);
-    EXPECT_EQ(result0 & 0x01, 0x00);  // Bit 0 should be clear (key pressed)
-    EXPECT_EQ(result0 & 0x02, 0x02);  // Bit 1 should be set (no key)
+    // Read row 0: col 0 pressed, inverted_col = 7, bits 5-7 = 7 = 0xE0
+    uint8 result0 = input.read_keyboard(0x00);
+    EXPECT_EQ(result0 & 0xF0, 0xE0);  // col 0 → inverted 7 → 0xE0
+    EXPECT_EQ(result0 & 0x0F, 0x00);  // lower nibble preserved
     
-    // Read row 1
-    uint8 result1 = input.read_keyboard(0xFD);
-    EXPECT_EQ(result1 & 0x01, 0x01);  // Bit 0 should be set (no key)
-    EXPECT_EQ(result1 & 0x02, 0x00);  // Bit 1 should be clear (key pressed)
+    // Read row 1: col 1 pressed, inverted_col = 6, bits 5-7 = 6 = 0xC0
+    uint8 result1 = input.read_keyboard(0x01);
+    EXPECT_EQ(result1 & 0xF0, 0xC0);
+    EXPECT_EQ(result1 & 0x0F, 0x01);
     
-    // Read row 2
-    uint8 result2 = input.read_keyboard(0xFB);
-    EXPECT_EQ(result2 & 0x04, 0x00);  // Bit 2 should be clear (key pressed)
+    // Read row 2: col 2 pressed, inverted_col = 5, bits 5-7 = 5 = 0xA0
+    uint8 result2 = input.read_keyboard(0x02);
+    EXPECT_EQ(result2 & 0xF0, 0xA0);
+    EXPECT_EQ(result2 & 0x0F, 0x02);
 }
 
 TEST(InputTest, KeyboardVidKeyEnum) {
     InputHandler input;
     
     // Test using VidKey enum
-    input.set_key_state(VidKey::Key0, true);
-    input.set_key_state(VidKey::KeyA, true);
-    input.set_key_state(VidKey::Space, true);
+    input.set_key_state(VidKey::Key0, true);   // Row 0, Col 0
+    input.set_key_state(VidKey::KeyA, true);   // Row 4, Col 0
+    input.set_key_state(VidKey::Space, true);  // Row 1, Col 4
     
-    // Read row 0 (Key0)
-    uint8 result0 = input.read_keyboard(0);
+    // Read row 0 (Key0 at col 0)
+    uint8 result0 = input.read_keyboard(0x00);
     EXPECT_NE(result0 & 0x10, 0x10);  // Bit 4 clear = key pressed
     
-    // Read row 3 (KeyA)
-    uint8 result3 = input.read_keyboard(3);
-    EXPECT_NE(result3 & 0x10, 0x10);  // Bit 4 clear = key pressed
+    // Read row 4 (KeyA at col 0)
+    uint8 result4 = input.read_keyboard(0x04);
+    EXPECT_NE(result4 & 0x10, 0x10);  // Bit 4 clear = key pressed
     
-    // Read row 5 (Space)
-    uint8 result5 = input.read_keyboard(5);
-    EXPECT_NE(result5 & 0x10, 0x10);  // Bit 4 clear = key pressed
+    // Read row 1 (Space at col 4)
+    uint8 result1 = input.read_keyboard(0x01);
+    EXPECT_NE(result1 & 0x10, 0x10);  // Bit 4 clear = key pressed
+    // Space is col 4, inverted = 3, bits 5-7 = 3 = 0x60
+    EXPECT_EQ(result1 & 0xE0, 0x60);
+}
+
+TEST(InputTest, KeyboardNoKeyPressed) {
+    InputHandler input;
+    
+    // No keys pressed, read any row
+    uint8 result = input.read_keyboard(0x03);
+    EXPECT_EQ(result, 0xF3);  // 0x03 | 0xF0
+}
+
+TEST(InputTest, KeyboardPreservesLowerNibble) {
+    InputHandler input;
+    input.set_key_state(0, 0, true);  // Row 0, Col 0
+    
+    // Port2 value with bits 3-0 = 0x08 (bit 3 set, row 0)
+    uint8 result = input.read_keyboard(0x08);
+    // Row = 0x08 & 0x07 = 0, col 0 found, inverted_col = 7
+    // Result = (0x08 & 0x0F) | (7 << 5) = 0x08 | 0xE0 = 0xE8
+    EXPECT_EQ(result, 0xE8);
+}
+
+TEST(InputTest, KeyboardInvalidRowReturnsNoKey) {
+    InputHandler input;
+    input.set_key_state(0, 0, true);  // Row 0, Col 0
+    
+    // Row 6 and 7 are invalid (only 0-5 valid)
+    uint8 result6 = input.read_keyboard(0x06);
+    EXPECT_EQ(result6, 0xF6);  // No key = 0x06 | 0xF0
+    
+    uint8 result7 = input.read_keyboard(0x07);
+    EXPECT_EQ(result7, 0xF7);
 }
 
 TEST(InputTest, Joystick1Reading) {
@@ -117,22 +161,22 @@ TEST(InputTest, HostKeyMapping) {
     input.process_host_key(65, true);
     
     // Verify key is pressed in matrix (row 0)
-    uint8 result = input.read_keyboard(0);
+    uint8 result = input.read_keyboard(0x00);
     EXPECT_NE(result & 0x10, 0x10);  // Bit 4 clear = key pressed
     
     // Process host key release
     input.process_host_key(65, false);
     
     // Verify key is released
-    result = input.read_keyboard(0);
-    EXPECT_EQ(result & 0x10, 0x10);  // Bit 4 set = no key pressed
+    result = input.read_keyboard(0x00);
+    EXPECT_EQ(result, 0xF0);  // No key = 0x00 | 0xF0
 }
 
 TEST(InputTest, StateSaveRestore) {
     InputHandler input1;
     
     // Set some state
-    input1.set_key_state(VidKey::Key5, true);
+    input1.set_key_state(VidKey::Key5, true);  // Row 0, Col 5
     input1.set_joystick_state(0, Direction::Up, true);
     input1.set_joystick_button(1, true);
     
@@ -144,8 +188,10 @@ TEST(InputTest, StateSaveRestore) {
     input2.set_state(state);
     
     // Verify state matches - Key5 is in row 0
-    uint8 kb_result = input2.read_keyboard(0);
+    uint8 kb_result = input2.read_keyboard(0x00);
     EXPECT_NE(kb_result & 0x10, 0x10);  // Bit 4 clear = key pressed
+    // Key5 is col 5, inverted = 2, bits 5-7 = 2 = 0x40
+    EXPECT_EQ(kb_result & 0xE0, 0x40);
     
     uint8 joy1_result = input2.read_joystick(0x01);  // Joystick 1 = 0b001
     EXPECT_EQ(joy1_result & 0x01, 0x00);  // Up pressed
@@ -158,15 +204,15 @@ TEST(InputTest, ResetClearsState) {
     InputHandler input;
     
     // Set some state
-    input.set_key_state(VidKey::KeyA, true);
+    input.set_key_state(VidKey::KeyA, true);  // Row 4, Col 0
     input.set_joystick_state(0, Direction::Up, true);
     
     // Reset
     input.reset();
     
-    // Verify all cleared - check row 3 where KeyA is
-    uint8 kb_result = input.read_keyboard(3);
-    EXPECT_EQ(kb_result & 0x10, 0x10);  // Bit 4 set = no key pressed
+    // Verify all cleared - check row 4 where KeyA is
+    uint8 kb_result = input.read_keyboard(0x04);
+    EXPECT_EQ(kb_result, 0xF4);  // No key = 0x04 | 0xF0
     
     uint8 joy_result = input.read_joystick(0x07);
     EXPECT_EQ(joy_result, 0xFF);  // No joystick input
