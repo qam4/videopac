@@ -20,13 +20,13 @@ protected:
         cpu_state.port2 = 0x34;
         cpu_state.timer = 0x56;
         
-        // Initialize registers R0-R7
+        // Initialize registers R0-R7 (bank 0 = ram[0..7])
         for (int i = 0; i < 8; i++) {
-            cpu_state.r[i] = 0x10 + i;  // R0=0x10, R1=0x11, etc.
+            cpu_state.ram[i] = 0x10 + i;  // R0=0x10, R1=0x11, etc.
         }
         
-        // Initialize CPU internal RAM with test pattern
-        for (int i = 0; i < 64; i++) {
+        // Initialize remaining CPU internal RAM with test pattern
+        for (int i = 8; i < 64; i++) {
             cpu_state.ram[i] = i;
         }
         

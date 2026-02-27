@@ -266,7 +266,7 @@ TEST_F(CPUTest, MOV_AccumulatorToRegister) {
     cpu->execute_instruction();  // MOV R0,A
     
     auto state = get_state();
-    EXPECT_EQ(state.r[0], 0x42);
+    EXPECT_EQ(state.ram[0], 0x42);
 }
 
 TEST_F(CPUTest, MOV_RegisterToAccumulator) {
@@ -296,7 +296,7 @@ TEST_F(CPUTest, XCH_AccumulatorRegister) {
     
     EXPECT_EQ(cpu->get_accumulator(), 0x55);
     auto state = get_state();
-    EXPECT_EQ(state.r[0], 0xAA);
+    EXPECT_EQ(state.ram[0], 0xAA);
 }
 
 TEST_F(CPUTest, SWAP_Nibbles) {
@@ -380,7 +380,7 @@ TEST_F(CPUTest, DJNZ_DecrementsAndJumps) {
     cpu->execute_instruction();  // DJNZ R0,0x002
     
     auto state = get_state();
-    EXPECT_EQ(state.r[0], 0x02);
+    EXPECT_EQ(state.ram[0], 0x02);
     EXPECT_EQ(cpu->get_pc(), 0x002);  // Jumped because R0 != 0
 }
 
@@ -396,7 +396,7 @@ TEST_F(CPUTest, DJNZ_DoesNotJumpWhenZero) {
     cpu->execute_instruction();  // DJNZ R0,0x002
     
     auto state = get_state();
-    EXPECT_EQ(state.r[0], 0x00);
+    EXPECT_EQ(state.ram[0], 0x00);
     EXPECT_EQ(cpu->get_pc(), pc_before + 2);  // Did not jump
 }
 
@@ -412,7 +412,7 @@ TEST_F(CPUTest, CALL_PushesPC) {
     
     EXPECT_EQ(cpu->get_pc(), 0x020);
     auto state = get_state();
-    EXPECT_EQ(state.sp, 1);  // Stack pointer incremented by 1 (PC + PSW combined in single 16-bit entry)
+    EXPECT_EQ(state.sp, 10);  // Stack pointer: 8 (base) + 2 bytes pushed = 10
 }
 
 TEST_F(CPUTest, RET_PopsPC) {
@@ -435,8 +435,8 @@ TEST_F(CPUTest, RET_PopsPC) {
     
     EXPECT_EQ(cpu->get_pc(), 0x002);  // Returned to after CALL
     auto state = get_state();
-    // CALL pushes 1 value (PC + PSW combined), RET pops 1 value (extracts PC), so SP = 0
-    EXPECT_EQ(state.sp, 0);
+    // CALL pushes 2 bytes, RET pops 2 bytes, so SP back to 8 (empty)
+    EXPECT_EQ(state.sp, 8);
 }
 
 // ========== FLAG TESTS ==========

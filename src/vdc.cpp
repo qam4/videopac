@@ -221,19 +221,15 @@ void VDC::write_register(uint8 address, uint8 value) {
         last_vdc_trace_ = trace.str();
     }
     
-    // Enforce VDC write protection (doc/reference/o2doc.md section 4.0)
-    // "the VDC registers that control the graphic object cannot be changed
-    // while the VDC is enabled by the VDC control register"
-    // Graphic registers (0x00-0x7F) cannot be written when display is enabled
-    if (address <= 0x7F) {
-        bool display_enabled = (state_.registers[VDCRegisters::CONTROL] & ControlBits::ENABLE_DISPLAY) != 0;
-        if (display_enabled) {
-            // Silently ignore write (real hardware behavior)
-            // This protects against game bugs that write to graphic registers
-            // while display is active
-            return;
-        }
-    }
+    // Note: doc/reference/o2doc.md section 4.0 says graphic registers (0x00-0x7F)
+    // "cannot be changed while the VDC is enabled by the VDC control register."
+    // However, this is a programming guideline, NOT hardware enforcement.
+    // The reference emulator o2em (doc/o2em/vmachine.c ext_write()) allows all
+    // writes unconditionally. Games like Killer Bees write to graphic registers
+    // during VBlank without disabling display first, relying on the fact that
+    // the VDC is not actively scanning during VBlank. Blocking these writes
+    // causes the display to freeze after the game switches to its gameplay
+    // VBlank handler (bank 3, address 0xC02).
     
     state_.registers[address] = value;
     

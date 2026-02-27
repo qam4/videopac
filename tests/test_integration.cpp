@@ -43,11 +43,11 @@ TEST(IntegrationTest, CPUExecutesInstructionSequence) {
     
     cpu.execute_instruction();  // MOV R0,A
     auto state = cpu.get_state();
-    EXPECT_EQ(state.r[0], 0x30);
+    EXPECT_EQ(state.ram[0], 0x30);
     
     cpu.execute_instruction();  // INC R0
     state = cpu.get_state();
-    EXPECT_EQ(state.r[0], 0x31);
+    EXPECT_EQ(state.ram[0], 0x31);
 }
 
 // Checkpoint test: Verify memory system loads ROMs and handles banking

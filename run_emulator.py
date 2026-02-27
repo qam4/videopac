@@ -105,11 +105,11 @@ def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
     cmd = [
         exe_path,
         "--press-joystick", "2", "4", "20", "5",
-        "--frames", "50",
+        "--frames", "200",
         "--debug",
         "--trace",
         "--vdc-trace",
-        "--region", "usa",
+        "--region", "france",
         "--bios", bios_path,
         rom_path
     ]
@@ -133,11 +133,11 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args):
         exe_path,
         "--headless",
         "--screenshot", "1",
-        "--frames", "50",
+        "--frames", "200",
         "--press-joystick", "2", "4", "20", "5",
         "--debug",
         "--trace",
-        "--region", "usa",
+        "--region", "france",
         "--vdc-trace",
         "--bios", bios_path,
         rom_path

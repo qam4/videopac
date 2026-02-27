@@ -14,7 +14,7 @@ CPU::CPU() : memory_(nullptr), input_(nullptr) {
 void CPU::reset() {
     std::memset(&state_, 0, sizeof(state_));
     state_.pc = 0x000;
-    state_.sp = 0;
+    state_.sp = 8;  // Stack pointer starts at intRAM[8] (o2em: sp=8)
     
     // Hardware reset behavior: Port 1 and Port 2 are set to 0xFF
     // Reference: Intel 8048/8049 datasheet - all port pins are set to high-impedance (1) on reset
@@ -89,9 +89,19 @@ uint8 CPU::trigger_interrupt(uint16 vector) {
         // "A CALL to location 7 is forced" (timer interrupt)
         state_.clock_cycles += 2;
         
+        // Encode stack pointer into PSW bits 0-2 before pushing (o2em: make_psw())
+        state_.psw = (state_.psw & 0xF0) | 0x08 | (((state_.sp - 8) >> 1) & 0x07);
         // Push PC (12 bits) and PSW bits 4-7 (4 bits) as a single 16-bit value
         uint16 stack_value = (state_.pc & 0x0FFF) | ((state_.psw & 0xF0) << 8);
         push_stack(stack_value);
+        
+        // Save and clear memory bank flag (A11)
+        // Reference: Intel 8048 spec - on interrupt, A11 is saved and cleared to 0
+        // This ensures the interrupt vector (0x003 or 0x007) executes in the lower 2KB bank
+        // o2em: A11ff = A11; A11 = 0;
+        state_.memory_bank_saved = state_.memory_bank;
+        state_.memory_bank = false;
+        
         state_.pc = vector;
         return 2;  // Interrupt consumed 2 cycles
     }
@@ -113,20 +123,36 @@ uint8 CPU::fetch_byte() {
 }
 
 void CPU::push_stack(uint16 value) {
-    state_.stack[state_.sp] = value;
-    state_.sp = (state_.sp + 1) & 0x07;  // Wrap at 8 levels
+    // Push two bytes into intRAM, matching o2em:
+    //   push(pc & 0xFF);  push(((pc & 0xF00) >> 8) | (psw & 0xF0));
+    // Low byte first, then high byte with PSW
+    state_.ram[state_.sp++] = value & 0xFF;
+    if (state_.sp > 23) state_.sp = 8;
+    state_.ram[state_.sp++] = (value >> 8) & 0xFF;
+    if (state_.sp > 23) state_.sp = 8;
 }
 
 uint16 CPU::pop_stack() {
-    state_.sp = (state_.sp - 1) & 0x07;
-    return state_.stack[state_.sp];
+    // Pop two bytes from intRAM, matching o2em:
+    //   dat=pull();  // high byte (PSW | PC high)
+    //   pc = pc | pull();  // low byte
+    // High byte first (reverse of push order)
+    state_.sp--;
+    if (state_.sp < 8) state_.sp = 23;
+    uint8 high = state_.ram[state_.sp];
+    state_.sp--;
+    if (state_.sp < 8) state_.sp = 23;
+    uint8 low = state_.ram[state_.sp];
+    return ((uint16)high << 8) | low;
 }
 
-// Helper function to get the correct register index based on current bank
-// The 8048 has two register banks (RB0 and RB1), each with 8 registers (R0-R7)
-// RB0: registers 0-7, RB1: registers 8-15
+// Helper function to get the correct register RAM index based on current bank
+// The 8048 has two register banks in intRAM:
+//   Bank 0: intRAM[0..7]  (R0-R7)
+//   Bank 1: intRAM[24..31] (R0'-R7')
+// This matches o2em's reg_pnt: 0 for bank 0, 24 for bank 1
 inline uint8 get_register_index(uint8 reg_num, uint8 current_bank) {
-    return current_bank * 8 + (reg_num & 0x07);
+    return (current_bank ? 24 : 0) + (reg_num & 0x07);
 }
 
 // Intel 8048 Instruction Execution
@@ -164,7 +190,7 @@ uint8 CPU::execute_instruction() {
         // The carry and auxiliary carry flags are set if there is a carry out of bit 7 or bit 3 respectively.
         case 0x60: case 0x61: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             uint8 value = (addr < 64) ? state_.ram[addr] : 0xFF;
             uint16 result = state_.a + value;
             // Update PSW: C (bit 7) = 1 if result > 255, AC (bit 6) = 1 if lower nibble overflows
@@ -181,7 +207,7 @@ uint8 CPU::execute_instruction() {
         case 0x68: case 0x69: case 0x6A: case 0x6B:
         case 0x6C: case 0x6D: case 0x6E: case 0x6F: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            uint8 value = state_.r[reg_idx];
+            uint8 value = state_.ram[reg_idx];
             uint16 result = state_.a + value;
             // Update PSW: C (bit 7) = 1 if result > 255, AC (bit 6) = 1 if lower nibble overflows
             state_.psw = (state_.psw & 0x3F) | ((result & 0x100) ? 0x80 : 0) | ((((state_.a & 0x0F) + (value & 0x0F)) & 0x10) ? 0x40 : 0);
@@ -211,7 +237,7 @@ uint8 CPU::execute_instruction() {
         // The contents of the data memory location and the carry bit are added to the accumulator.
         case 0x70: case 0x71: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             uint8 value = (addr < 64) ? state_.ram[addr] : 0xFF;
             uint8 carry = (state_.psw & 0x80) ? 1 : 0;
             uint16 result = state_.a + value + carry;
@@ -228,7 +254,7 @@ uint8 CPU::execute_instruction() {
         case 0x78: case 0x79: case 0x7A: case 0x7B:
         case 0x7C: case 0x7D: case 0x7E: case 0x7F: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            uint8 value = state_.r[reg_idx];
+            uint8 value = state_.ram[reg_idx];
             uint8 carry = (state_.psw & 0x80) ? 1 : 0;
             uint16 result = state_.a + value + carry;
             // Update PSW: C (bit 7) = 1 if result > 255, AC (bit 6) = 1 if lower nibble overflows
@@ -261,7 +287,7 @@ uint8 CPU::execute_instruction() {
         // Performs bitwise AND between accumulator and data memory location.
         case 0x50: case 0x51: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             uint8 value = (addr < 64) ? state_.ram[addr] : 0xFF;
             state_.a &= value;
             break;
@@ -274,7 +300,7 @@ uint8 CPU::execute_instruction() {
         case 0x58: case 0x59: case 0x5A: case 0x5B:
         case 0x5C: case 0x5D: case 0x5E: case 0x5F: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.a &= state_.r[reg_idx];
+            state_.a &= state_.ram[reg_idx];
             break;
         }
             
@@ -333,6 +359,9 @@ uint8 CPU::execute_instruction() {
             if (state_.memory_bank) {
                 addr |= 0x800;  // Set bit 11 for MB1
             }
+            // Encode stack pointer into PSW bits 0-2 before pushing (o2em: make_psw())
+            // PSW bit 3 is always 1, bits 0-2 = stack level = (sp - 8) >> 1
+            state_.psw = (state_.psw & 0xF0) | 0x08 | (((state_.sp - 8) >> 1) & 0x07);
             // Push PC (12 bits) and PSW bits 4-7 (4 bits) as a single 16-bit value
             uint16 stack_value = (state_.pc & 0x0FFF) | ((state_.psw & 0xF0) << 8);
             push_stack(stack_value);
@@ -448,7 +477,7 @@ uint8 CPU::execute_instruction() {
         case 0xC8: case 0xC9: case 0xCA: case 0xCB:
         case 0xCC: case 0xCD: case 0xCE: case 0xCF: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.r[reg_idx]--;
+            state_.ram[reg_idx]--;
             break;
         }
             
@@ -482,8 +511,8 @@ uint8 CPU::execute_instruction() {
         case 0xEC: case 0xED: case 0xEE: case 0xEF: {
             uint8 addr = fetch_byte();
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.r[reg_idx]--;
-            if (state_.r[reg_idx] != 0) {
+            state_.ram[reg_idx]--;
+            if (state_.ram[reg_idx] != 0) {
                 state_.pc = (state_.pc & 0xF00) | addr;
             }
             cycles = 2;
@@ -598,7 +627,7 @@ uint8 CPU::execute_instruction() {
         case 0x18: case 0x19: case 0x1A: case 0x1B:
         case 0x1C: case 0x1D: case 0x1E: case 0x1F: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.r[reg_idx]++;
+            state_.ram[reg_idx]++;
             break;
         }
             
@@ -609,7 +638,7 @@ uint8 CPU::execute_instruction() {
         // Increments the data memory location addressed by R0 or R1.
         case 0x10: case 0x11: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             if (addr < 64) state_.ram[addr]++;
             break;
         }
@@ -883,6 +912,9 @@ uint8 CPU::execute_instruction() {
         // Cycles: 1
         // Copies the Program Status Word to the accumulator for inspection or saving.
         case 0xC7:
+            // Encode stack pointer into PSW bits 0-2 before reading
+            // o2em: make_psw() sets psw bits 0-2 = (sp - 8) >> 1, bit 3 = 1
+            state_.psw = (state_.psw & 0xF0) | 0x08 | (((state_.sp - 8) >> 1) & 0x07);
             state_.a = state_.psw;
             break;
             
@@ -893,7 +925,7 @@ uint8 CPU::execute_instruction() {
         case 0xF8: case 0xF9: case 0xFA: case 0xFB:
         case 0xFC: case 0xFD: case 0xFE: case 0xFF: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.a = state_.r[reg_idx];
+            state_.a = state_.ram[reg_idx];
             break;
         }
             
@@ -904,7 +936,7 @@ uint8 CPU::execute_instruction() {
         // Moves the contents of the data memory location addressed by R0 or R1 to the accumulator.
         case 0xF0: case 0xF1: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             state_.a = (addr < 64) ? state_.ram[addr] : 0xFF;
             break;
         }
@@ -927,6 +959,8 @@ uint8 CPU::execute_instruction() {
         case 0xD7:
             state_.psw = state_.a;
             state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update bank from PSW bit 4
+            // Update stack pointer from PSW bits 0-2 (o2em: sp = (psw & 0x07) << 1; sp += 8)
+            state_.sp = ((state_.psw & 0x07) << 1) + 8;
             break;
             
         // MOV Rr,A - Move accumulator to register (0xA8-0xAF)
@@ -936,7 +970,7 @@ uint8 CPU::execute_instruction() {
         case 0xA8: case 0xA9: case 0xAA: case 0xAB:
         case 0xAC: case 0xAD: case 0xAE: case 0xAF: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.r[reg_idx] = state_.a;
+            state_.ram[reg_idx] = state_.a;
             break;
         }
             
@@ -947,7 +981,7 @@ uint8 CPU::execute_instruction() {
         case 0xB8: case 0xB9: case 0xBA: case 0xBB:
         case 0xBC: case 0xBD: case 0xBE: case 0xBF: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.r[reg_idx] = fetch_byte();
+            state_.ram[reg_idx] = fetch_byte();
             cycles = 2;
             break;
         }
@@ -959,7 +993,7 @@ uint8 CPU::execute_instruction() {
         // Moves the accumulator to the data memory location addressed by R0 or R1.
         case 0xA0: case 0xA1: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             if (addr < 64) state_.ram[addr] = state_.a;
             break;
         }
@@ -972,7 +1006,7 @@ uint8 CPU::execute_instruction() {
         case 0xB0: case 0xB1: {
             uint8 data = fetch_byte();
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             if (addr < 64) state_.ram[addr] = data;
             cycles = 2;
             break;
@@ -1022,7 +1056,7 @@ uint8 CPU::execute_instruction() {
         // The full 8-bit value in Rr is used as the external address.
         case 0x80: case 0x81: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             state_.a = (memory_) ? memory_->read_external(addr) : 0xFF;
             cycles = 2;
             break;
@@ -1035,7 +1069,7 @@ uint8 CPU::execute_instruction() {
         // Writes the accumulator to external data memory addressed by R0 or R1.
         case 0x90: case 0x91: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             if (memory_) {
                 memory_->write_external(addr, state_.a);
             }
@@ -1051,7 +1085,7 @@ uint8 CPU::execute_instruction() {
         // Cycles: 1
         case 0x40: case 0x41: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             uint8 value = (addr < 64) ? state_.ram[addr] : 0xFF;
             state_.a |= value;
             break;
@@ -1064,7 +1098,7 @@ uint8 CPU::execute_instruction() {
         case 0x48: case 0x49: case 0x4A: case 0x4B:
         case 0x4C: case 0x4D: case 0x4E: case 0x4F: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.a |= state_.r[reg_idx];
+            state_.a |= state_.ram[reg_idx];
             break;
         }
             
@@ -1182,17 +1216,22 @@ uint8 CPU::execute_instruction() {
         // RETR - Return from interrupt and restore PSW (0x93)
         // Operation: (PC) <- ((SP)), (PSW4-7) <- ((SP)), (SP) <- (SP) - 1, enable interrupts
         // Restores PC and PSW bits 4-7 (BS, F0, AC, C) from stack.
+        // Also restores the memory bank flag (A11) saved during interrupt entry.
         // NOTE: F1 is NOT restored because F1 is not in the PSW (it's a separate flag)
         // Cycles: 2
         // Used when returning from interrupt service routines.
         // Reference: doc/mcs-48-assembly-language-manual.md: "RETR restores PSW bits 4-7"
+        // Reference: o2em cpu.c case 0x93: A11=A11ff (restore memory bank)
         case 0x93: {
             uint16 stack_value = pop_stack();
             state_.pc = stack_value & 0x0FFF;  // Extract PC (12 bits)
             // Restore PSW bits 4-7 (BS, F0, AC, C) from stack
             state_.psw = (state_.psw & 0x0F) | ((stack_value >> 8) & 0xF0);  // Preserve bits 0-3, restore 4-7
-            state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update bank from restored bit 4
+            state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update register bank from restored BS (bit 4)
             state_.interrupts_enabled = true;  // RETR re-enables interrupts
+            // Restore memory bank flag (A11) saved during interrupt entry
+            // This is separate from the register bank (BS/PSW bit 4)
+            state_.memory_bank = state_.memory_bank_saved;
             cycles = 2;
             break;
         }
@@ -1259,6 +1298,7 @@ uint8 CPU::execute_instruction() {
         // Takes effect on the next jump or call instruction.
         case 0xE5:
             state_.memory_bank = false;  // Set DBF to 0
+            state_.memory_bank_saved = false;  // o2em: A11ff = 0
             break;
             
         // SEL MB1 - Select memory bank 1 (0xF5)
@@ -1313,8 +1353,8 @@ uint8 CPU::execute_instruction() {
         case 0x2C: case 0x2D: case 0x2E: case 0x2F: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
             uint8 temp = state_.a;
-            state_.a = state_.r[reg_idx];
-            state_.r[reg_idx] = temp;
+            state_.a = state_.ram[reg_idx];
+            state_.ram[reg_idx] = temp;
             break;
         }
         
@@ -1325,7 +1365,7 @@ uint8 CPU::execute_instruction() {
         // Exchanges the accumulator with the data memory location addressed by R0 or R1.
         case 0x20: case 0x21: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             if (addr < 64) {
                 uint8 temp = state_.a;
                 state_.a = state_.ram[addr];
@@ -1342,7 +1382,7 @@ uint8 CPU::execute_instruction() {
         // Upper nibbles remain unchanged. Useful for BCD operations.
         case 0x30: case 0x31: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             if (addr < 64) {
                 uint8 temp = state_.a & 0x0F;
                 state_.a = (state_.a & 0xF0) | (state_.ram[addr] & 0x0F);
@@ -1359,7 +1399,7 @@ uint8 CPU::execute_instruction() {
         // Cycles: 1
         case 0xD0: case 0xD1: {
             uint8 reg_idx = get_register_index(opcode & 0x01, state_.current_bank);
-            uint8 addr = state_.r[reg_idx];
+            uint8 addr = state_.ram[reg_idx];
             uint8 value = (addr < 64) ? state_.ram[addr] : 0xFF;
             state_.a ^= value;
             break;
@@ -1372,7 +1412,7 @@ uint8 CPU::execute_instruction() {
         case 0xD8: case 0xD9: case 0xDA: case 0xDB:
         case 0xDC: case 0xDD: case 0xDE: case 0xDF: {
             uint8 reg_idx = get_register_index(opcode & 0x07, state_.current_bank);
-            state_.a ^= state_.r[reg_idx];
+            state_.a ^= state_.ram[reg_idx];
             break;
         }
             

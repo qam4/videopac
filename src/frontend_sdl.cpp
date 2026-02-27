@@ -534,6 +534,45 @@ void SDLFrontend::run() {
                 }
             }
             
+            // Check for scheduled joystick presses
+            for (auto it = scheduled_joystick_.begin(); it != scheduled_joystick_.end(); ) {
+                if (next_frame >= it->trigger_frame) {
+                    InputHandler& input = emulator_->get_input_handler();
+                    if (it->direction == static_cast<Direction>(4)) {
+                        input.set_joystick_button(it->joystick, true);
+                    } else {
+                        input.set_joystick_state(it->joystick, it->direction, true);
+                    }
+                    active_joystick_.push_back({it->joystick, it->direction, it->duration});
+                    const char* dir_names[] = {"UP", "DOWN", "LEFT", "RIGHT", "FIRE"};
+                    std::cout << "\n[Frame " << next_frame << "] Pressing joystick " << (it->joystick + 1)
+                              << " " << dir_names[static_cast<int>(it->direction)]
+                              << " for " << it->duration << " frames" << std::endl;
+                    it = scheduled_joystick_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            
+            // Update active joystick presses and release expired ones
+            for (auto it = active_joystick_.begin(); it != active_joystick_.end(); ) {
+                it->frames_remaining--;
+                if (it->frames_remaining <= 0) {
+                    InputHandler& input = emulator_->get_input_handler();
+                    if (it->direction == static_cast<Direction>(4)) {
+                        input.set_joystick_button(it->joystick, false);
+                    } else {
+                        input.set_joystick_state(it->joystick, it->direction, false);
+                    }
+                    const char* dir_names[] = {"UP", "DOWN", "LEFT", "RIGHT", "FIRE"};
+                    std::cout << "[Frame " << next_frame << "] Releasing joystick " << (it->joystick + 1)
+                              << " " << dir_names[static_cast<int>(it->direction)] << std::endl;
+                    it = active_joystick_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            
             // Process input
             process_input();
             
@@ -2311,6 +2350,14 @@ void SDLFrontend::schedule_key_press(VidKey key, int trigger_frame, int duration
     config_.scheduled_keys.push_back(sk);
     std::cout << "Scheduled key " << sk.key_code 
               << " to be pressed at frame " << trigger_frame 
+              << " for " << duration_frames << " frames" << std::endl;
+}
+
+void SDLFrontend::schedule_joystick_press(int joystick, Direction direction, int trigger_frame, int duration_frames) {
+    scheduled_joystick_.push_back({joystick, direction, trigger_frame, duration_frames});
+    const char* dir_names[] = {"UP", "DOWN", "LEFT", "RIGHT", "FIRE"};
+    std::cout << "Scheduled joystick " << (joystick + 1) << " " << dir_names[static_cast<int>(direction)]
+              << " to be pressed at frame " << trigger_frame
               << " for " << duration_frames << " frames" << std::endl;
 }
 

@@ -772,9 +772,9 @@ void ImGuiDebuggerUI::render_cpu_state_panel() {
     // Display all working registers (R0-R7) in hexadecimal format
     ImGui::Text("Registers:");
     for (int i = 0; i < 8; i++) {
-        // Get register from current bank
-        uint8 reg_index = cpu_state.current_bank * 8 + i;
-        ImGui::Text("R%d: 0x%02X", i, cpu_state.r[reg_index]);
+        // Get register from current bank: bank 0 = ram[0..7], bank 1 = ram[24..31]
+        uint8 reg_index = (cpu_state.current_bank ? 24 : 0) + i;
+        ImGui::Text("R%d: 0x%02X", i, cpu_state.ram[reg_index]);
         if (i < 7) {
             ImGui::SameLine();
         }
@@ -2222,14 +2222,17 @@ void ImGuiDebuggerUI::render_call_stack_panel() {
         // Create disassembler instance
         Disassembler disasm;
         
-        // Display stack frames (depth 0-7 for Intel 8048)
-        // Stack grows upward: sp=0 means empty, sp=1 means one item at stack[0]
-        for (int depth = 0; depth < cpu_state.sp && depth < 8; depth++) {
+        // Display stack frames
+        // Stack is in RAM[8..23], two bytes per entry. sp points to next free byte.
+        // Number of stack levels = (sp - 8) / 2
+        int stack_levels = (cpu_state.sp - 8) / 2;
+        for (int depth = 0; depth < stack_levels && depth < 8; depth++) {
             ImGui::TableNextRow();
             
-            // Get return address from stack
-            // Intel 8048 uses 12-bit addresses (0x000-0xFFF), mask to 12 bits
-            uint16 return_address = cpu_state.stack[depth] & 0x0FFF;
+            // Reconstruct 16-bit stack value from two RAM bytes
+            uint8 low = cpu_state.ram[8 + depth * 2];
+            uint8 high = cpu_state.ram[8 + depth * 2 + 1];
+            uint16 return_address = (((uint16)high & 0x0F) << 8) | low;
             
             // Column 1: Display depth (0-7 for Intel 8048)
             ImGui::TableSetColumnIndex(0);
@@ -2825,13 +2828,16 @@ void ImGuiDebuggerUI::handle_shortcuts() {
         // Step out logic: execute until RET instruction completes
         CPUState cpu_state = emulator_->get_cpu_state();
         
-        // If stack is empty, can't step out
-        if (cpu_state.sp == 0) {
+        // If stack is empty (sp == 8 means no entries), can't step out
+        if (cpu_state.sp <= 8) {
             // Already at top level, just step
             debugger_->step();
         } else {
-            // Get return address from stack
-            uint16 return_address = cpu_state.stack[cpu_state.sp - 1];
+            // Get return address from top stack entry (two bytes below sp)
+            // High byte is at sp-1, low byte at sp-2
+            uint8 high = cpu_state.ram[cpu_state.sp - 1];
+            uint8 low = cpu_state.ram[cpu_state.sp - 2];
+            uint16 return_address = (((uint16)high & 0x0F) << 8) | low;
             
             // Add temporary breakpoint at return address
             debugger_->add_breakpoint(return_address);
@@ -2955,8 +2961,8 @@ uint16 WatchExpression::evaluate(const CPUState& cpu, const MemoryState& memory)
             if (digit >= '0' && digit <= '7') {
                 uint8 reg_num = digit - '0';
                 // Use current bank to determine which register to read
-                uint8 bank_offset = cpu.current_bank * 8;
-                return cpu.r[bank_offset + reg_num];
+                uint8 bank_offset = cpu.current_bank ? 24 : 0;
+                return cpu.ram[bank_offset + reg_num];
             }
         }
         // Port 1

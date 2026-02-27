@@ -10,14 +10,20 @@ class MemorySystem;
 class InputHandler;
 
 // CPU state structure
+// Internal RAM layout (matches Intel 8048 / o2em):
+//   intRAM[0..7]   = Register bank 0 (R0-R7)
+//   intRAM[8..23]  = Stack (8 levels × 2 bytes each)
+//   intRAM[24..31] = Register bank 1 (R0'-R7')
+//   intRAM[32..63] = General purpose RAM
+// All registers, stack, and RAM share the same 64-byte array.
+// This is critical because game code can read/write stack entries via RAM addressing,
+// and register writes are visible to anything reading those RAM addresses.
 struct CPUState {
     uint16 pc;                  // Program counter (12-bit, 0x000-0xFFF)
     uint8 a;                    // Accumulator
     uint8 psw;                  // Program Status Word
-    uint8 r[16];                // Registers R0-R7 and R0'-R7'
-    uint8 ram[64];              // Internal RAM (64 bytes)
-    uint16 stack[8];            // 8-level stack
-    uint8 sp;                   // Stack pointer (0-7)
+    uint8 ram[64];              // Unified internal RAM (registers + stack + general RAM)
+    uint8 sp;                   // Stack pointer (8-23, byte index into ram[])
     uint8 port1;                // Port 1 state
     uint8 port2;                // Port 2 state
     uint8 timer;                // Timer/counter register
@@ -38,6 +44,10 @@ struct CPUState {
                                 // NOTE: F1 is NOT the same as Bank Select (BS)! They are independent.
     bool memory_bank;           // Memory bank flag (DBF): false=MB0 (0x000-0x7FF), true=MB1 (0x800-0xFFF)
                                 // Set by SEL MB0/MB1 instructions, affects JMP/CALL target addresses
+    bool memory_bank_saved;     // Saved memory bank flag (A11ff in o2em)
+                                // On interrupt entry, memory_bank is saved here and cleared to 0
+                                // On RETR, memory_bank is restored from this field
+                                // Reference: Intel 8048 spec - interrupts force A11=0
     
     // T1 pin state (for counter mode)
     // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section

@@ -221,9 +221,9 @@ bool Debugger::evaluate_condition(const std::string& condition, const CPUState& 
             var_value = cpu.sp;
         } else if (field.length() == 2 && field[0] == 'R' && field[1] >= '0' && field[1] <= '7') {
             int r = field[1] - '0';
-            // Account for current register bank (0 or 1)
-            int reg_index = r + (cpu.current_bank * 8);
-            var_value = cpu.r[reg_index];
+            // Account for current register bank: bank 0 = ram[0..7], bank 1 = ram[24..31]
+            int reg_index = r + (cpu.current_bank ? 24 : 0);
+            var_value = cpu.ram[reg_index];
         } else if (field == "ram" && array_index >= 0 && array_index < 64) {
             var_value = cpu.ram[array_index];
         } else {
@@ -323,9 +323,9 @@ std::string Debugger::dump_cpu_state() const {
     ss << " BS=" << ((cpu.psw & 0x10) ? "1" : "0") << "]\n";
     
     ss << "  Registers (Bank " << ((cpu.psw & 0x10) ? "1" : "0") << "):\n";
-    int bank_offset = (cpu.psw & 0x10) ? 8 : 0;
+    int bank_offset = (cpu.psw & 0x10) ? 24 : 0;
     for (int i = 0; i < 8; i++) {
-        ss << "    R" << i << ": 0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.r[bank_offset + i];
+        ss << "    R" << i << ": 0x" << std::hex << std::setw(2) << std::setfill('0') << (int)cpu.ram[bank_offset + i];
         if (i % 4 == 3) ss << "\n";
     }
     
@@ -476,26 +476,27 @@ void Debugger::log_instruction(uint64 current_cycles) {
                 (unsigned long long)cycles_to_log,
                 cpu.pc, byte0, byte1, cpu.a, cpu.psw, cpu.port1);
     } else {  // Full - include all registers from both banks
-        // Current bank registers (R0-R7)
-        uint8 r0 = cpu.r[cpu.current_bank * 8 + 0];
-        uint8 r1 = cpu.r[cpu.current_bank * 8 + 1];
-        uint8 r2 = cpu.r[cpu.current_bank * 8 + 2];
-        uint8 r3 = cpu.r[cpu.current_bank * 8 + 3];
-        uint8 r4 = cpu.r[cpu.current_bank * 8 + 4];
-        uint8 r5 = cpu.r[cpu.current_bank * 8 + 5];
-        uint8 r6 = cpu.r[cpu.current_bank * 8 + 6];
-        uint8 r7 = cpu.r[cpu.current_bank * 8 + 7];
+        // Current bank registers (R0-R7): bank 0 = ram[0..7], bank 1 = ram[24..31]
+        uint8 reg_base = cpu.current_bank ? 24 : 0;
+        uint8 r0 = cpu.ram[reg_base + 0];
+        uint8 r1 = cpu.ram[reg_base + 1];
+        uint8 r2 = cpu.ram[reg_base + 2];
+        uint8 r3 = cpu.ram[reg_base + 3];
+        uint8 r4 = cpu.ram[reg_base + 4];
+        uint8 r5 = cpu.ram[reg_base + 5];
+        uint8 r6 = cpu.ram[reg_base + 6];
+        uint8 r7 = cpu.ram[reg_base + 7];
         
         // Other bank registers (R0'-R7')
-        uint8 other_bank = 1 - cpu.current_bank;
-        uint8 r0p = cpu.r[other_bank * 8 + 0];
-        uint8 r1p = cpu.r[other_bank * 8 + 1];
-        uint8 r2p = cpu.r[other_bank * 8 + 2];
-        uint8 r3p = cpu.r[other_bank * 8 + 3];
-        uint8 r4p = cpu.r[other_bank * 8 + 4];
-        uint8 r5p = cpu.r[other_bank * 8 + 5];
-        uint8 r6p = cpu.r[other_bank * 8 + 6];
-        uint8 r7p = cpu.r[other_bank * 8 + 7];
+        uint8 other_base = cpu.current_bank ? 0 : 24;
+        uint8 r0p = cpu.ram[other_base + 0];
+        uint8 r1p = cpu.ram[other_base + 1];
+        uint8 r2p = cpu.ram[other_base + 2];
+        uint8 r3p = cpu.ram[other_base + 3];
+        uint8 r4p = cpu.ram[other_base + 4];
+        uint8 r5p = cpu.ram[other_base + 5];
+        uint8 r6p = cpu.ram[other_base + 6];
+        uint8 r7p = cpu.ram[other_base + 7];
         
         snprintf(buffer, sizeof(buffer),
                 "[F:%llu C:%llu] 0x%03x: %02x %02x | A=%02x PSW=%02x P1=%02x P2=%02x RB%d F1=%d | "

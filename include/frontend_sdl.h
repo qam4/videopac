@@ -3,6 +3,7 @@
 
 #include "frontend.h"
 #include "emulator.h"
+#include "input.h"
 #include "debugger.h"
 #include "debugger_ui.h"
 #include "ui/osd_renderer.h"  // Need full definition for OSDPosition enum
@@ -49,6 +50,7 @@ public:
     
     // Testing/debugging methods
     void schedule_key_press(VidKey key, int trigger_frame, int duration_frames);
+    void schedule_joystick_press(int joystick, Direction direction, int trigger_frame, int duration_frames);
     void set_disable_sdl_input(bool disable) { disable_sdl_input_ = disable; }
     void set_frame_limit(int frames) { frame_limit_ = frames; }
     
@@ -117,6 +119,21 @@ private:
     };
     std::vector<KeyPress> active_keys_;
     bool disable_sdl_input_;  // Flag to disable SDL input processing
+    
+    // Scheduled joystick presses (for testing/debugging)
+    struct ScheduledJoystick {
+        int joystick;
+        Direction direction;
+        int trigger_frame;
+        int duration;
+    };
+    struct ActiveJoystick {
+        int joystick;
+        Direction direction;
+        int frames_remaining;
+    };
+    std::vector<ScheduledJoystick> scheduled_joystick_;
+    std::vector<ActiveJoystick> active_joystick_;
     
     // Audio buffer
     std::vector<int16> audio_buffer_;

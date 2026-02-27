@@ -210,6 +210,12 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
+        // Schedule joystick presses
+        for (const auto& joy_press : scheduled_joystick) {
+            Direction dir = static_cast<Direction>(joy_press.direction);
+            frontend.schedule_joystick_press(joy_press.joystick, dir, joy_press.frame, joy_press.duration);
+        }
+        
         frontend.run();
         frontend.shutdown();
         return 0;

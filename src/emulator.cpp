@@ -332,31 +332,18 @@ const uint8* EmulatorCore::get_framebuffer() const {
 }
 
 void EmulatorCore::get_audio_buffer(int16* buffer, size_t samples) {
-    // Generate audio samples by running the VDC audio at the correct rate
-    // The VDC audio shift register needs to be advanced at its own clock rate
-    // which is independent of the video frame rate
-    
-    // Calculate how many VDC cycles per audio sample
-    // VDC runs at ~3.58 MHz, audio sample rate is typically 44100 Hz
-    // So we need ~81 VDC cycles per audio sample
-    float vdc_clock_hz = (config_.video_standard == VideoStandard::NTSC) ? 3579545.0f : 4433618.0f;
-    float cycles_per_sample = vdc_clock_hz / 44100.0f;  // Assuming 44.1kHz sample rate
-    
-    float cycle_accumulator = 0.0f;
-    
+    // IMPORTANT: Do NOT call vdc_.tick() here!
+    // The VDC audio shift register is already advanced at the correct rate
+    // during run_frame() via tick_one_cycle() -> update_audio().
+    // Calling vdc_.tick() here would advance beam_x, beam_y, total_cycles,
+    // and render pixels — corrupting VDC timing and causing SDL/headless
+    // trace divergence (the VBlank interrupt fires at wrong times).
+    //
+    // We just sample the current audio state for each requested sample.
+    // The audio quality is acceptable because the shift register changes
+    // slowly (~983Hz or ~3933Hz) relative to the 44.1kHz sample rate.
     for (size_t i = 0; i < samples; ++i) {
-        // Get current audio sample
         buffer[i] = vdc_.get_audio_sample();
-        
-        // Advance VDC audio state by the appropriate number of cycles
-        cycle_accumulator += cycles_per_sample;
-        int cycles_to_advance = static_cast<int>(cycle_accumulator);
-        cycle_accumulator -= cycles_to_advance;
-        
-        // Tick the VDC to advance audio state
-        if (cycles_to_advance > 0) {
-            vdc_.tick(static_cast<uint8>(std::min(cycles_to_advance, 255)));
-        }
     }
 }
 
