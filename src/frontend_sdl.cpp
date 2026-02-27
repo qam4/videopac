@@ -143,6 +143,8 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     emu_config.enable_profile = config_.enable_profile;
     emulator_ = std::make_unique<EmulatorCore>(emu_config);
     
+    // Set audio sample rate on VDC so it captures samples at the correct rate during run_frame()
+    emulator_->get_vdc().set_audio_sample_rate(config_.sample_rate);
     // Create save state manager (needs emulator and renderer)
     save_state_manager_ = std::make_unique<SaveStateManagerUI>(emulator_.get(), renderer_);
     

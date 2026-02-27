@@ -50,6 +50,8 @@ VDC::VDC(VideoStandard standard) {
     state_.video_standard = standard;
     extended_fb_mode_ = false;
     vdc_trace_enabled_ = false;
+    audio_sample_rate_ = 44100;
+    vdc_cycles_per_audio_sample_ = 0;  // Will be set in reset()
     calculate_timing();
     reset();
 }
@@ -90,6 +92,23 @@ void VDC::reset() {
     state_.audio_loop = false;
     state_.audio_noise = false;
     state_.audio_cycle_accumulator = 0;
+    
+    // Reset audio sample buffer
+    std::memset(state_.audio_sample_buffer, 0, sizeof(state_.audio_sample_buffer));
+    state_.audio_sample_write_pos = 0;
+    state_.audio_sample_count = 0;
+    state_.audio_sample_accumulator = 0;
+    
+    // Default audio sample rate (will be overridden by set_audio_sample_rate)
+    audio_sample_rate_ = 44100;
+    // Calculate VDC cycles per audio sample based on frame timing
+    // PAL: 70824 VDC cycles/frame at 50Hz, 44100/50 = 882 samples/frame → ~80.3 cycles/sample
+    // NTSC: 59605 VDC cycles/frame at 60Hz, 44100/60 = 735 samples/frame → ~81.1 cycles/sample
+    // We use fixed-point: multiply by 256 for fractional precision
+    uint32 vdc_cycles_per_frame = total_scanlines_ * 227;  // approximate
+    float frame_rate = (state_.video_standard == VideoStandard::PAL) ? 50.0f : 60.0f;
+    float samples_per_frame = audio_sample_rate_ / frame_rate;
+    vdc_cycles_per_audio_sample_ = static_cast<uint32>((vdc_cycles_per_frame / samples_per_frame) * 256.0f);
 }
 
 // Advance VDC by specified number of cycles
@@ -127,6 +146,9 @@ void VDC::tick_one_cycle() {
     
     // Update audio
     update_audio();
+    
+    // Capture audio sample at output sample rate
+    capture_audio_sample();
     
     // Update beam position registers based on latch bit
     // Reference: doc/o2doc.md section 4.14 - Bit 1: 1 = Follow Beam, 0 = Latched
@@ -559,6 +581,40 @@ int16 VDC::get_audio_sample() {
     int16 sample = bit ? (state_.audio_volume * 2184) : -(state_.audio_volume * 2184);
 
     return sample;
+}
+
+// Set audio output sample rate and recalculate timing
+void VDC::set_audio_sample_rate(uint32 sample_rate) {
+    audio_sample_rate_ = sample_rate;
+    uint32 vdc_cycles_per_frame = total_scanlines_ * 227;
+    float frame_rate = (state_.video_standard == VideoStandard::PAL) ? 50.0f : 60.0f;
+    float samples_per_frame = audio_sample_rate_ / frame_rate;
+    vdc_cycles_per_audio_sample_ = static_cast<uint32>((vdc_cycles_per_frame / samples_per_frame) * 256.0f);
+}
+
+// Reset audio sample buffer for new frame
+void VDC::reset_audio_sample_buffer() {
+    state_.audio_sample_write_pos = 0;
+    state_.audio_sample_count = 0;
+    state_.audio_sample_accumulator = 0;
+}
+
+// Capture audio sample into ring buffer at output sample rate
+// Uses fixed-point accumulator (8 fractional bits) for precise timing
+void VDC::capture_audio_sample() {
+    if (vdc_cycles_per_audio_sample_ == 0) return;
+    
+    state_.audio_sample_accumulator += 256;  // Add 1.0 in fixed-point
+    
+    while (state_.audio_sample_accumulator >= vdc_cycles_per_audio_sample_) {
+        state_.audio_sample_accumulator -= vdc_cycles_per_audio_sample_;
+        
+        if (state_.audio_sample_count < VDCState::AUDIO_BUFFER_SIZE) {
+            state_.audio_sample_buffer[state_.audio_sample_write_pos] = get_audio_sample();
+            state_.audio_sample_write_pos = (state_.audio_sample_write_pos + 1) % VDCState::AUDIO_BUFFER_SIZE;
+            state_.audio_sample_count++;
+        }
+    }
 }
 
 // Get complete VDC state

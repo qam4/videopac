@@ -1,6 +1,7 @@
 #include "emulator.h"
 #include "debugger.h"
 #include "savestate.h"
+#include <cstring>
 #include <iostream>
 #include <iomanip>
 #include <chrono>
@@ -94,6 +95,9 @@ void EmulatorCore::run_frame() {
     // Clear frame_complete flag at start of frame
     // The VDC will set it again when the frame completes
     vdc_.clear_frame_complete();
+    
+    // Reset audio sample buffer for this frame
+    vdc_.reset_audio_sample_buffer();
     
     // Track VDC cycles at start of frame for statistics
     uint64 frame_start_vdc_cycles = vdc_.get_total_cycles();
@@ -332,18 +336,24 @@ const uint8* EmulatorCore::get_framebuffer() const {
 }
 
 void EmulatorCore::get_audio_buffer(int16* buffer, size_t samples) {
-    // IMPORTANT: Do NOT call vdc_.tick() here!
-    // The VDC audio shift register is already advanced at the correct rate
-    // during run_frame() via tick_one_cycle() -> update_audio().
-    // Calling vdc_.tick() here would advance beam_x, beam_y, total_cycles,
-    // and render pixels — corrupting VDC timing and causing SDL/headless
-    // trace divergence (the VBlank interrupt fires at wrong times).
-    //
-    // We just sample the current audio state for each requested sample.
-    // The audio quality is acceptable because the shift register changes
-    // slowly (~983Hz or ~3933Hz) relative to the 44.1kHz sample rate.
+    // Read pre-captured audio samples from VDC's ring buffer.
+    // Samples were captured at the correct rate during run_frame() via
+    // tick_one_cycle() -> capture_audio_sample().
+    uint16 available = vdc_.get_audio_sample_count();
+    const int16* src = vdc_.get_audio_sample_buffer();
+    
+    if (available == 0) {
+        // No samples captured (e.g. first frame) - fill with silence
+        std::memset(buffer, 0, samples * sizeof(int16));
+        return;
+    }
+    
+    // Copy available samples, stretching or truncating to fit requested count
     for (size_t i = 0; i < samples; ++i) {
-        buffer[i] = vdc_.get_audio_sample();
+        // Map output sample index to source buffer index
+        size_t src_idx = (i * available) / samples;
+        if (src_idx >= available) src_idx = available - 1;
+        buffer[i] = src[src_idx];
     }
 }
 

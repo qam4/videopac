@@ -232,6 +232,15 @@ struct VDCState {
     bool audio_noise;                               // Noise mode (bit 4 of 0xAA)
     uint32 audio_cycle_accumulator;                 // Cycle accumulator for audio timing
     
+    // Audio sample ring buffer - filled during tick_one_cycle(), read by get_audio_buffer()
+    // Max samples per frame: 44100/50 = 882 (PAL), 44100/60 = 735 (NTSC)
+    // Use 1024 for headroom
+    static constexpr size_t AUDIO_BUFFER_SIZE = 1024;
+    int16 audio_sample_buffer[AUDIO_BUFFER_SIZE];   // Ring buffer of audio samples
+    uint16 audio_sample_write_pos;                  // Write position in ring buffer
+    uint16 audio_sample_count;                      // Number of samples written this frame
+    uint32 audio_sample_accumulator;                // Cycle accumulator for sample rate conversion
+    
     // Character ROM data (64 characters, 8 bytes each)
     // Reference: doc/o2doc.md Appendix C
     uint8 character_rom[64 * 8];                    // Character pattern ROM
@@ -272,6 +281,10 @@ public:
     
     // Audio
     int16 get_audio_sample();
+    void set_audio_sample_rate(uint32 sample_rate);  // Set output sample rate (e.g. 44100)
+    uint16 get_audio_sample_count() const { return state_.audio_sample_count; }
+    const int16* get_audio_sample_buffer() const { return state_.audio_sample_buffer; }
+    void reset_audio_sample_buffer();                // Reset write pos and count for new frame
     
     // State management
     VDCState get_state() const;
@@ -336,6 +349,11 @@ private:
     // Audio helpers
     void update_audio();
     void shift_audio_register();
+    void capture_audio_sample();                     // Capture sample into ring buffer at output sample rate
+    
+    // Audio output config
+    uint32 audio_sample_rate_;                       // Output sample rate (e.g. 44100)
+    uint32 vdc_cycles_per_audio_sample_;             // VDC cycles between audio samples (derived)
     
     // Timing helpers
     void calculate_timing();
