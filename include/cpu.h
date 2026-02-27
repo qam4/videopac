@@ -63,6 +63,9 @@ struct CPUState {
     // This means interrupts are sampled every cycle but only processed between instructions.
     bool timer_interrupt_pending;   // Timer interrupt pending (will be processed after current instruction)
     bool external_interrupt_pending; // External interrupt pending (will be processed after current instruction)
+    bool in_interrupt;              // Currently executing an interrupt handler (irq_ex in o2em)
+                                    // Set when interrupt fires, cleared by RETR
+                                    // Prevents nested interrupts and affects SEL MB1 behavior
 };
 
 // Intel 8048 CPU emulation

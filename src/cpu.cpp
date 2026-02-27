@@ -3,7 +3,6 @@
 #include "input.h"
 #include <cstring>
 #include <stdexcept>
-#include <iostream>
 
 namespace videopac {
 
@@ -85,7 +84,7 @@ void CPU::write_port(uint8 port, uint8 value) {
 }
 
 uint8 CPU::trigger_interrupt(uint16 vector) {
-    if (state_.interrupts_enabled) {
+    if (state_.interrupts_enabled && !state_.in_interrupt) {
         // Interrupt processing takes 2 machine cycles (same as CALL instruction)
         // Reference: doc/reference/mcs-48-assembly-language-manual.md
         // "subroutine calls and returns... require two cycles"
@@ -105,6 +104,11 @@ uint8 CPU::trigger_interrupt(uint16 vector) {
         // o2em: A11ff = A11; A11 = 0;
         state_.memory_bank_saved = state_.memory_bank;
         state_.memory_bank = false;
+        
+        // Mark that we're in an interrupt handler (prevents nesting)
+        // Reference: o2em cpu.c: irq_ex=1 (external) or irq_ex=2 (timer)
+        // Cleared by RETR instruction
+        state_.in_interrupt = true;
         
         state_.pc = vector;
         return 2;  // Interrupt consumed 2 cycles
@@ -1233,6 +1237,7 @@ uint8 CPU::execute_instruction() {
             state_.psw = (state_.psw & 0x0F) | ((stack_value >> 8) & 0xF0);  // Preserve bits 0-3, restore 4-7
             state_.current_bank = (state_.psw & 0x10) ? 1 : 0;  // Update register bank from restored BS (bit 4)
             state_.interrupts_enabled = true;  // RETR re-enables interrupts
+            state_.in_interrupt = false;         // No longer in interrupt handler (o2em: irq_ex=0)
             // Restore memory bank flag (A11) saved during interrupt entry
             // This is separate from the register bank (BS/PSW bit 4)
             state_.memory_bank = state_.memory_bank_saved;
@@ -1312,7 +1317,14 @@ uint8 CPU::execute_instruction() {
         // Selects the upper 2K of program memory (addresses 0x800-0xFFF).
         // Takes effect on the next jump or call instruction.
         case 0xF5:
-            state_.memory_bank = true;  // Set DBF to 1
+            // During interrupt handler, SEL MB1 modifies the SAVED bank flag
+            // so that when RETR restores it, the bank switch takes effect
+            // Reference: o2em cpu.c: if (irq_ex) A11ff = 0x800; else A11 = 0x800;
+            if (state_.in_interrupt) {
+                state_.memory_bank_saved = true;
+            } else {
+                state_.memory_bank = true;
+            }
             break;
             
         // SEL RB0 - Select register bank 0 (0xC5)
@@ -1481,11 +1493,22 @@ uint8 CPU::execute_instruction() {
     if (state_.interrupts_enabled) {
         // External interrupt has higher priority than timer interrupt
         if (state_.external_interrupt_pending) {
-            state_.external_interrupt_pending = false;
-            interrupt_cycles = trigger_interrupt(0x003);  // Returns 2 if fired, 0 if disabled
+            interrupt_cycles = trigger_interrupt(0x003);
+            if (interrupt_cycles > 0) {
+                state_.external_interrupt_pending = false;
+            }
+            // If trigger failed (in_interrupt=true), keep pending flag set.
+            // The external interrupt is set once per frame by handle_interrupts()
+            // and won't be re-set (vblank_interrupt_triggered_ prevents it),
+            // so we must preserve it until it can be delivered.
         } else if (state_.timer_interrupt_pending) {
+            // Timer interrupt pending flag is always cleared unconditionally.
+            // Timer interrupts are edge-triggered from counter/timer overflow,
+            // so the hardware will set the pending flag again on the next overflow.
+            // If we preserved it like the external interrupt, the timer handler
+            // would re-enter immediately after every RETR, starving external interrupts.
             state_.timer_interrupt_pending = false;
-            interrupt_cycles = trigger_interrupt(0x007);  // Returns 2 if fired, 0 if disabled
+            interrupt_cycles = trigger_interrupt(0x007);
         }
     }
     

@@ -394,23 +394,20 @@ Result<void> EmulatorCore::load_state(const std::string& path) {
 }
 
 void EmulatorCore::handle_interrupts() {
-    // Check for VBLANK interrupt (triggered ONCE at start of VBLANK)
-    // According to doc/o2doc.md and BIOS disassembly:
-    // - External interrupt vector is at 0x003 in BIOS
-    // - BIOS jumps to 0x402 in cartridge
-    // - Cartridge should jump to 0x009 in BIOS (VBlank handler)
-    
-    if (vdc_.is_vblank() && !vblank_interrupt_triggered_) {
-        // Trigger external interrupt (VBlank) to BIOS vector 0x003
-        cpu_.set_external_interrupt_pending(true);
-        vblank_interrupt_triggered_ = true;
+    // VBLANK interrupt: edge-triggered once per frame at the exact transition point
+    if (!vblank_interrupt_triggered_) {
+        uint16 beam_y = vdc_.get_beam_y();
+        uint16 vblank_start = (vdc_.get_video_standard() == VideoStandard::PAL) 
+            ? VideoTiming::PAL_VBLANK_START : VideoTiming::NTSC_VBLANK_START;
+        
+        if (beam_y >= vblank_start) {
+            cpu_.set_external_interrupt_pending(true);
+            vblank_interrupt_triggered_ = true;
+        }
     }
     
     // Note: Timer interrupt (vector 0x007) is handled in CPU::execute_instruction()
     // when the timer overflows. BIOS at 0x007 jumps to ROM at 0x404.
-    
-    // TODO: Add other external interrupts
-    // TODO: Add horizontal line interrupt handling (if enabled in VDC control register)
 }
 
 void EmulatorCore::check_debugger_breakpoint() {
