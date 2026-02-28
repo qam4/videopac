@@ -11,8 +11,10 @@ namespace fs = std::filesystem;
 class FileBrowserTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Initialize SDL for testing
-        SDL_Init(SDL_INIT_VIDEO);
+        // Initialize SDL for testing — skip on headless CI (no display)
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+            GTEST_SKIP() << "SDL_Init failed (no display): " << SDL_GetError();
+        }
         
         // Create a window and renderer for testing
         window_ = SDL_CreateWindow("Test", 0, 0, 640, 480, SDL_WINDOW_HIDDEN);

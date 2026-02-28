@@ -103,16 +103,11 @@ void EmulatorCore::run_frame() {
     uint64 frame_start_vdc_cycles = vdc_.get_total_cycles();
     
     // Diagnostic counters (only if profiling enabled)
-    static uint64 total_cpu_calls = 0;
-    static uint64 total_vdc_calls = 0;
     static uint64 frame_counter = 0;
     uint64 cpu_calls_this_frame = 0;
     uint64 vdc_calls_this_frame = 0;
     
     // Timing measurements (in microseconds, only if profiling enabled)
-    static uint64 total_cpu_time = 0;
-    static uint64 total_vdc_time = 0;
-    static uint64 total_overhead_time = 0;
     uint64 cpu_time_this_frame = 0;
     uint64 vdc_time_this_frame = 0;
     uint64 overhead_time_this_frame = 0;
@@ -283,11 +278,6 @@ void EmulatorCore::run_frame() {
     
     // Update diagnostics
     if (profiling) {
-        total_cpu_calls += cpu_calls_this_frame;
-        total_vdc_calls += vdc_calls_this_frame;
-        total_cpu_time += cpu_time_this_frame;
-        total_vdc_time += vdc_time_this_frame;
-        total_overhead_time += overhead_time_this_frame;
         frame_counter++;
         
         // Print diagnostics every 60 frames

@@ -5,9 +5,9 @@
 class OSDRendererTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Initialize SDL for testing
+        // Initialize SDL for testing — skip on headless CI (no display)
         if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-            FAIL() << "Failed to initialize SDL: " << SDL_GetError();
+            GTEST_SKIP() << "SDL_Init failed (no display): " << SDL_GetError();
         }
 
         // Create a window and renderer for testing
