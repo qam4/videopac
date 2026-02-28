@@ -26,9 +26,42 @@ French 8-bit home computer (1984). Personal connection — owned one.
 - Libretro core, debugger, CI/CD, save states, SDL frontend all carry over
 
 ### Resources
-- DCMOTO emulator and documentation
-- MO5 technical manual
-- French retro computing forums
+- **Reference emulator**: [DCMO5](https://github.com/pulkomandy/dcmo5) (GPLv3) — same role as o2em was for videopac
+- **Libretro reference**: [lr-theodore](https://github.com/Music-Maniacs/theodore) — existing Thomson MO/TO libretro core (based on DCMO5)
+- **MESS/MAME driver**: [MO5 driver notes](https://mine.perso.lip6.fr/mess/mo5.html.en) — detailed memory map, I/O, video constraints, cassette format
+- **Hardware wiki**: [Pulkomandy's "DON'T PANIC"](http://pulkomandy.tk/wiki/doku.php?id=documentations:hardware:mo5) — hardware docs aimed at demoscene coders
+- **6809 CPU reference**: Darren Atkinson's "Motorola 6809 and Hitachi 6309 Programming Reference" — complete opcode tables, addressing modes, cycle counts
+- **6809 CPU datasheet**: Motorola MC6809E datasheet (the E variant is what the MO5 uses — externally clocked)
+- **Dragon/CoCo docs**: [6809.org.uk](https://www.6809.org.uk/dragon/hardware.shtml) — Dragon 32 uses same CPU, good 6809 hardware details
+- **MO5 BIOS**: 16KB ROM (4KB monitor + 12KB BASIC 1.0) — needed to boot, not freely distributable
+
+### Video details (EFGJ03L gate array)
+- NOT a standard MC6847 — Thomson custom gate array
+- 320×200 bitmap, 16 fixed colors
+- "forme/fond" (shape/background): each 8-pixel block has a foreground+background color pair
+- Video RAM: 8KB pixel data (0x0000-0x1FFF) + 8KB color data (0x2000-0x3FFF)
+- No sprites, no text mode, no scrolling hardware — all software-rendered
+- Simpler than the 8245 VDC (no collision detection, no character ROM, no grid system)
+
+### MO5 memory map
+- 0x0000-0x1FFF: Video RAM (pixel data, 8KB)
+- 0x2000-0x3FFF: Video RAM (color attributes, 8KB)
+- 0x4000-0x5FFF: User RAM (8KB)
+- 0x6000-0x9FFF: User RAM (16KB) or cartridge
+- 0xA000-0xA7FF: I/O space (PIA 6821, gate array registers)
+- 0xA800-0xBFFF: Reserved
+- 0xC000-0xEFFF: BASIC ROM (12KB)
+- 0xF000-0xFFFF: Monitor ROM (4KB, includes reset/interrupt vectors)
+
+### Development milestones
+1. Get 6809 CPU passing instruction tests (many test ROMs available — CoCo/Dragon community)
+2. Implement memory map + PIA (6821) for basic I/O
+3. Implement video gate array (bitmap rendering)
+4. Boot MO5 BIOS to BASIC prompt — first real milestone
+5. Cassette loading (K7 format)
+6. Keyboard input
+7. Light pen emulation (the crayon optique)
+8. Libretro core + Android
 
 ---
 
