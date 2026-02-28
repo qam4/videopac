@@ -99,7 +99,6 @@ private:
     OSDRenderer::OSDPosition fps_position_;  // Configurable FPS display position
     bool audio_muted_;
     bool turbo_mode_;
-    float normal_speed_;  // Normal emulation speed multiplier (1.0 = 100%)
     
     // Fullscreen state
     bool is_fullscreen_;

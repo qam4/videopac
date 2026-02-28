@@ -39,7 +39,6 @@ SDLFrontend::SDLFrontend()
     , fps_position_(OSDRenderer::OSDPosition::TopRight)  // Default position
     , audio_muted_(false)
     , turbo_mode_(false)
-    , normal_speed_(1.0f)
     , is_fullscreen_(false)
     , windowed_width_(0)
     , windowed_height_(0)
