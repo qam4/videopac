@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [mainline]
+  pull_request:
+    branches: [mainline]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: Linux
+            cmake_args: >-
+              -DCMAKE_BUILD_TYPE=Release
+              -DENABLE_SDL=ON
+            install_deps: |
+              sudo apt-get update -q
+              sudo apt-get install -y -q libsdl2-dev
+
+          - os: macos-13
+            name: macOS
+            cmake_args: >-
+              -DCMAKE_BUILD_TYPE=Release
+              -DENABLE_SDL=ON
+            install_deps: |
+              brew install sdl2
+
+          - os: windows-2022
+            name: Windows (MSVC)
+            cmake_args: >-
+              -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+              -DENABLE_SDL=ON
+            install_deps: |
+              vcpkg install sdl2:x64-windows
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: ${{ matrix.install_deps }}
+
+      - name: Configure
+        run: cmake -S . -B build ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure --no-tests=error -C Release -j 2
