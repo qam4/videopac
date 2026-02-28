@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 #include "ui/save_state_manager.h"
 #include "emulator.h"
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <filesystem>
 #include <fstream>
 #include <cstdio>

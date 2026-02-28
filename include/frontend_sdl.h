@@ -8,7 +8,7 @@
 #include "debugger_ui.h"
 #include "ui/osd_renderer.h"  // Need full definition for OSDPosition enum
 #include "ui/imgui_debugger_ui.h"
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <memory>
 #include <vector>
 

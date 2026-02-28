@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 #include <ctime>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 namespace videopac {
     class EmulatorCore;

@@ -6,7 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 // Forward declarations
 struct ImGuiContext;

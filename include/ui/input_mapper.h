@@ -1,7 +1,7 @@
 #ifndef INPUT_MAPPER_H
 #define INPUT_MAPPER_H
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <string>
 #include <map>
 #include <vector>
