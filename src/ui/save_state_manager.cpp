@@ -144,14 +144,12 @@ std::vector<SaveStateInfo> SaveStateManagerUI::list_states(const std::string& ro
         if (fs::exists(info.filename)) {
             info.exists = true;
             
-            // Get file modification time
-            try {
-                auto ftime = fs::last_write_time(info.filename);
-                auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                    ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
-                );
-                info.timestamp = std::chrono::system_clock::to_time_t(sctp);
-            } catch (const fs::filesystem_error&) {
+            // Get file modification time via stat() for portability
+            // (C++17 file_time_type -> system_clock conversion is unreliable)
+            struct stat st;
+            if (stat(info.filename.c_str(), &st) == 0) {
+                info.timestamp = st.st_mtime;
+            } else {
                 info.timestamp = 0;
             }
         } else {
