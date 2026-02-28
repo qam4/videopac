@@ -1,4 +1,6 @@
 #include "ui/zip_handler.h"
+
+#ifdef HAVE_MINIZ
 #include <miniz.h>
 #include <cstring>
 #include <cstdlib>
@@ -212,3 +214,20 @@ void ZIPHandler::cleanup_temp_files() {
         temp_dir_.clear();
     }
 }
+
+#else // !HAVE_MINIZ — stub implementations
+
+ZIPHandler::ZIPHandler() : zip_archive_(nullptr), is_open_(false) {}
+ZIPHandler::~ZIPHandler() {}
+bool ZIPHandler::open(const std::string&) { return false; }
+void ZIPHandler::close() {}
+std::vector<std::string> ZIPHandler::get_rom_files() const { return {}; }
+std::string ZIPHandler::extract_file(const std::string&) { return ""; }
+std::vector<std::string> ZIPHandler::extract_all_roms() { return {}; }
+void ZIPHandler::cleanup_temp_files() {}
+std::string ZIPHandler::get_temp_directory() const { return ""; }
+bool ZIPHandler::is_rom_file(const std::string&) const { return false; }
+std::string ZIPHandler::create_temp_directory() { return ""; }
+bool ZIPHandler::extract_to_path(const std::string&, const std::string&) { return false; }
+
+#endif // HAVE_MINIZ

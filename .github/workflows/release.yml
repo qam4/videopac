@@ -18,7 +18,7 @@ jobs:
             cmake_args: -DCMAKE_BUILD_TYPE=Release -DENABLE_SDL=ON -DBUILD_TOOLS=OFF
             package: cd install && zip -r ../videopac-linux-x64.zip .
 
-          - os: macos-13
+          - os: macos-latest
             arch: macos-x64
             install_deps: brew install sdl2
             cmake_args: -DCMAKE_BUILD_TYPE=Release -DENABLE_SDL=ON -DBUILD_TOOLS=OFF

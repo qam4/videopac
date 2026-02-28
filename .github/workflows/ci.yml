@@ -22,7 +22,7 @@ jobs:
               sudo apt-get update -q
               sudo apt-get install -y -q libsdl2-dev
 
-          - os: macos-13
+          - os: macos-latest
             name: macOS
             cmake_args: >-
               -DCMAKE_BUILD_TYPE=Release
