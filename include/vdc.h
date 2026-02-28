@@ -213,7 +213,16 @@ struct VDCState {
     
     // Collision detection state
     // Reference: doc/o2doc.md section 4.8, doc/8245.md lines 480-500
-    uint8 collision_state;                          // Current collision bits (register 0xA2)
+    // Hardware behavior (Intel 8245 datasheet, "Control and Status" section):
+    // - Enable Overlap register (write 0xA2): masks which objects participate in detection
+    //   "When a bit is '0' the overlap of that object with any other object will not
+    //    set the bits for the other objects in the Overlap Status register."
+    // - Overlap Status register (read 0xA2): accumulates coincidences as they occur
+    //   "This register is reset when read." — NOT when written.
+    // Our cycle-accurate architecture applies the enable mask at detection time
+    // (matching the datasheet), unlike o2em which filters at read time (works for
+    // o2em because it renders entire frames at once before CPU gets control).
+    uint8 collision_state;                          // Accumulated overlap status bits (register 0xA2 read)
     bool collision_detected;                        // Collision occurred this frame
     
     // Display enable state

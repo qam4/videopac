@@ -284,11 +284,14 @@ void VDC::write_register(uint8 address, uint8 value) {
         }
             
         case VDCRegisters::COLLISION:
-            // Collision register - writing sets which objects to track
-            // Clear collision state when new enable mask is written
-            // Reference: doc/o2doc.md section 4.8
-            state_.collision_state = 0;
-            state_.collision_detected = false;
+            // Collision register - writing sets which objects to track for next read.
+            // Reference: doc/o2doc.md section 4.8, doc/8245.md lines 500-520
+            // IMPORTANT: Do NOT clear collision_state on write!
+            // O2em reference: ext_write() just stores VDCwrite[adr] = dat.
+            // clear_collision() is ONLY called from the READ handler (ext_read case 0xA2).
+            // Games like Killer Bees may write new enable masks mid-frame to check
+            // different collision pairs; clearing here would lose accumulated data.
+            // The enable mask is applied at READ time, not at detection time.
             break;
             
         case VDCRegisters::SOUND0:
