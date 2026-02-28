@@ -110,6 +110,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_source_files_properties(${IMGUI_SOURCES} PROPERTIES
         COMPILE_FLAGS "-Wno-error=strict-aliasing"
     )
+    # stb_image_write.h uses sprintf, deprecated on macOS Xcode 16.4+
+    set_source_files_properties(src/ui/save_state_manager.cpp PROPERTIES
+        COMPILE_FLAGS "-Wno-error=deprecated-declarations"
+    )
 endif()
 
 # Standalone executable
