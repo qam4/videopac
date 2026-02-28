@@ -86,7 +86,7 @@ void OSDRenderer::render_fps(float fps, OSDPosition position) {
     }
 
     // Calculate position
-    int x, y;
+    int x = 0, y = 0;
     calculate_position(position, text_width, text_height, &x, &y);
 
     // Render semi-transparent background box for better visibility
@@ -119,7 +119,7 @@ void OSDRenderer::render_notification(const std::string& message, OSDPosition po
     }
 
     // Calculate position
-    int x, y;
+    int x = 0, y = 0;
     calculate_position(position, text_width, text_height, &x, &y);
 
     // Render background box for better visibility
@@ -154,7 +154,7 @@ void OSDRenderer::render_status_indicator(const std::string& icon, OSDPosition p
     }
 
     // Calculate position
-    int x, y;
+    int x = 0, y = 0;
     calculate_position(position, text_width, text_height, &x, &y);
 
     // Render with yellow color for status indicators

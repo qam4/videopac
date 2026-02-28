@@ -11,7 +11,7 @@ namespace videopac {
 EmulatorCore::EmulatorCore(const Configuration& config)
     : config_(config), vdc_(config.video_standard), master_clock_(config.video_standard),
       debugger_(nullptr), running_(false), paused_(false), frame_count_(0), 
-      prev_vdc_cycles_(0), vblank_interrupt_triggered_(false), prev_scanline_(0) {
+      vblank_interrupt_triggered_(false), prev_scanline_(0) {
     
     // Connect components
     cpu_.set_memory_system(&memory_);
