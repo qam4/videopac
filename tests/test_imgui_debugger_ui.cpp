@@ -119,38 +119,38 @@ TEST_F(ImGuiDebuggerUITest, LoadStateMissingFileUsesDefaults) {
 // Test load_state() handles corrupted JSON gracefully
 TEST_F(ImGuiDebuggerUITest, LoadStateCorruptedJsonUsesDefaults) {
     // Create a corrupted JSON file
-    std::ofstream file(state_file_);
-    ASSERT_TRUE(file.is_open()) << "Cannot write to temp directory";
-    file << "{ this is not valid json }";
-    file.close();
+    {
+        std::ofstream file(state_file_);
+        ASSERT_TRUE(file.is_open()) << "Cannot write to temp directory";
+        file << "{ this is not valid json }";
+        file.flush();
+    }
     
-    // Verify file was created and is readable
-    std::ifstream check_file(state_file_);
-    EXPECT_TRUE(check_file.good()) << "Corrupted state file should exist";
-    check_file.close();
+    // Verify file was created
+    EXPECT_TRUE(std::filesystem::exists(state_file_)) << "Corrupted state file should exist";
 }
 
 // Test load_state() round-trip with valid JSON
 TEST_F(ImGuiDebuggerUITest, LoadStateRoundTrip) {
     // Create a valid JSON state file manually
-    std::ofstream file(state_file_);
-    ASSERT_TRUE(file.is_open()) << "Cannot write to temp directory";
-    file << "{\n"
-         << "  \"breakpoints\": [{\"address\":1234,\"condition\":\"A==0xFF\","
-         << "\"enabled\":true,\"has_condition\":true,\"condition_only\":false}],\n"
-         << "  \"watch_expressions\": [{\"type\":\"memory\","
-         << "\"expression\":\"0x1234\",\"label\":\"Test Label\"}],\n"
-         << "  \"display_mode\": \"overlay\",\n"
-         << "  \"panel_visibility\": {\"cpu_state\":true,\"memory\":false,"
-         << "\"vdc_registers\":true,\"breakpoints\":true,\"disassembly\":true,"
-         << "\"call_stack\":false,\"watch\":true,\"controls\":true}\n"
-         << "}\n";
-    file.close();
+    {
+        std::ofstream file(state_file_);
+        ASSERT_TRUE(file.is_open()) << "Cannot write to temp directory";
+        file << "{\n"
+             << "  \"breakpoints\": [{\"address\":1234,\"condition\":\"A==0xFF\","
+             << "\"enabled\":true,\"has_condition\":true,\"condition_only\":false}],\n"
+             << "  \"watch_expressions\": [{\"type\":\"memory\","
+             << "\"expression\":\"0x1234\",\"label\":\"Test Label\"}],\n"
+             << "  \"display_mode\": \"overlay\",\n"
+             << "  \"panel_visibility\": {\"cpu_state\":true,\"memory\":false,"
+             << "\"vdc_registers\":true,\"breakpoints\":true,\"disassembly\":true,"
+             << "\"call_stack\":false,\"watch\":true,\"controls\":true}\n"
+             << "}\n";
+        file.flush();
+    }
     
-    // Verify file was created and is readable
-    std::ifstream check_file(state_file_);
-    EXPECT_TRUE(check_file.good()) << "State file should exist";
-    check_file.close();
+    // Verify file was created
+    EXPECT_TRUE(std::filesystem::exists(state_file_)) << "State file should exist";
     
     // Full round-trip requires SDL setup - see task 19.1
     SUCCEED() << "Round-trip test requires SDL window initialization";
