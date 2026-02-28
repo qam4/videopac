@@ -6,8 +6,9 @@
 2. Extract `videopac_libretro.so`
 3. In RetroArch, go to **Load Core → Install or Restore a Core** and select the `.so` file
    - Or manually copy it to RetroArch's `cores/` directory
-4. (Optional) Copy `videopac_libretro.info` next to the `.so` — this provides
-   display name and BIOS info in the RetroArch UI, but isn't required to run
+4. Copy `videopac_libretro.info` to RetroArch's `info/` directory, then delete
+   `core_info.cache` in that folder and restart RetroArch. This lets RetroArch
+   recognize `.bin` and `.rom` files when browsing content.
 5. Place the BIOS file in RetroArch's `system/` directory (any of these filenames work):
    - `o2rom.bin` (preferred)
    - `bios_O2rom.bin`
