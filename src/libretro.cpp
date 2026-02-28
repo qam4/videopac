@@ -17,6 +17,7 @@ static retro_audio_sample_t audio_sample_cb;
 static retro_audio_sample_batch_t audio_batch_cb;
 static retro_input_poll_t input_poll_cb;
 static retro_input_state_t input_state_cb;
+static retro_log_printf_t log_cb;
 
 // Emulator instance
 static videopac::EmulatorCore* emulator = nullptr;
@@ -52,8 +53,10 @@ static bool load_bios_file() {
     const char* sys_dir = nullptr;
     if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys_dir) && sys_dir) {
         system_directory = sys_dir;
+        if (log_cb) log_cb(RETRO_LOG_INFO, "[videopac] System directory: %s\n", sys_dir);
     } else {
         system_directory = ".";
+        if (log_cb) log_cb(RETRO_LOG_WARN, "[videopac] No system directory, using CWD\n");
     }
 
     // Try common BIOS filenames
@@ -77,6 +80,7 @@ static bool load_bios_file() {
                 if (fread(bios_data.data(), 1, size, f) == static_cast<size_t>(size)) {
                     fclose(f);
                     bios_loaded = true;
+                    if (log_cb) log_cb(RETRO_LOG_INFO, "[videopac] BIOS loaded: %s (%ld bytes)\n", path.c_str(), size);
                     return true;
                 }
             }
@@ -84,6 +88,7 @@ static bool load_bios_file() {
         }
     }
 
+    if (log_cb) log_cb(RETRO_LOG_ERROR, "[videopac] BIOS not found in %s\n", system_directory.c_str());
     return false;
 }
 
@@ -190,6 +195,11 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info* info) {
 RETRO_API void retro_set_environment(retro_environment_t cb) {
     environ_cb = cb;
 
+    // Get log interface
+    struct retro_log_callback logging;
+    if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging))
+        log_cb = logging.log;
+
     // Set core options
     cb(RETRO_ENVIRONMENT_SET_VARIABLES, core_options);
 
@@ -263,8 +273,13 @@ RETRO_API void retro_run(void) {
 }
 
 RETRO_API bool retro_load_game(const struct retro_game_info* game) {
-    if (!game || !game->data || game->size == 0)
+    if (!game || !game->data || game->size == 0) {
+        if (log_cb) log_cb(RETRO_LOG_ERROR, "[videopac] No game data provided\n");
         return false;
+    }
+
+    if (log_cb) log_cb(RETRO_LOG_INFO, "[videopac] Loading ROM: %s (%zu bytes)\n",
+                        game->path ? game->path : "(buffer)", game->size);
 
     check_variables();
 
@@ -275,12 +290,14 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
 
     // Load BIOS
     if (!load_bios_file()) {
+        if (log_cb) log_cb(RETRO_LOG_ERROR, "[videopac] Failed to load BIOS — cannot start\n");
         delete emulator;
         emulator = nullptr;
         return false;
     }
     auto bios_result = emulator->load_bios(bios_data.data(), bios_data.size());
     if (!bios_result.is_ok()) {
+        if (log_cb) log_cb(RETRO_LOG_ERROR, "[videopac] BIOS rejected: %s\n", bios_result.error.c_str());
         delete emulator;
         emulator = nullptr;
         return false;
@@ -290,11 +307,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
     auto rom_result = emulator->load_rom(
         static_cast<const videopac::uint8*>(game->data), game->size);
     if (!rom_result.is_ok()) {
+        if (log_cb) log_cb(RETRO_LOG_ERROR, "[videopac] ROM rejected: %s\n", rom_result.error.c_str());
         delete emulator;
         emulator = nullptr;
         return false;
     }
 
+    if (log_cb) log_cb(RETRO_LOG_INFO, "[videopac] Game loaded successfully\n");
     return true;
 }
 
@@ -368,6 +387,20 @@ RETRO_API bool retro_unserialize(const void* data, size_t size) {
     emulator->get_memory().set_state(mem);
 
     return true;
+}
+
+// --- Cheats (not supported) ---
+
+RETRO_API void retro_cheat_reset(void) {}
+RETRO_API void retro_cheat_set(unsigned index, bool enabled, const char* code) {
+    (void)index; (void)enabled; (void)code;
+}
+
+// --- Load game special (not supported) ---
+
+RETRO_API bool retro_load_game_special(unsigned game_type, const struct retro_game_info* info, size_t num_info) {
+    (void)game_type; (void)info; (void)num_info;
+    return false;
 }
 
 // --- Memory access (for RetroArch cheat/RAM watch) ---

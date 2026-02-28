@@ -69,6 +69,21 @@ extern "C" {
 #define RETRO_ENVIRONMENT_SET_VARIABLES         16
 #define RETRO_ENVIRONMENT_GET_VARIABLE          15
 #define RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE   17
+#define RETRO_ENVIRONMENT_GET_LOG_INTERFACE     27
+
+// Log levels
+enum retro_log_level {
+    RETRO_LOG_DEBUG = 0,
+    RETRO_LOG_INFO,
+    RETRO_LOG_WARN,
+    RETRO_LOG_ERROR
+};
+
+typedef void (*retro_log_printf_t)(enum retro_log_level level, const char* fmt, ...);
+
+struct retro_log_callback {
+    retro_log_printf_t log;
+};
 
 // Structures
 struct retro_system_info {
@@ -140,8 +155,11 @@ RETRO_API size_t retro_serialize_size(void);
 RETRO_API bool retro_serialize(void* data, size_t size);
 RETRO_API bool retro_unserialize(const void* data, size_t size);
 RETRO_API bool retro_load_game(const struct retro_game_info* game);
+RETRO_API bool retro_load_game_special(unsigned game_type, const struct retro_game_info* info, size_t num_info);
 RETRO_API void retro_unload_game(void);
 RETRO_API unsigned retro_get_region(void);
+RETRO_API void retro_cheat_reset(void);
+RETRO_API void retro_cheat_set(unsigned index, bool enabled, const char* code);
 RETRO_API void* retro_get_memory_data(unsigned id);
 RETRO_API size_t retro_get_memory_size(unsigned id);
 
