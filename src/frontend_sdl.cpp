@@ -948,10 +948,9 @@ void SDLFrontend::process_input() {
             // Generate filename with timestamp
             auto now = std::chrono::system_clock::now();
             auto time_t = std::chrono::system_clock::to_time_t(now);
-            std::tm tm;
-            localtime_s(&tm, &time_t);
+            std::tm* tm = std::localtime(&time_t);
             char filename[64];
-            std::strftime(filename, sizeof(filename), "screenshot_%Y%m%d_%H%M%S.ppm", &tm);
+            std::strftime(filename, sizeof(filename), "screenshot_%Y%m%d_%H%M%S.ppm", tm);
             save_screenshot(filename);
             continue;
         }

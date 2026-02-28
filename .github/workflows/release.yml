@@ -15,13 +15,13 @@ jobs:
             install_deps: |
               sudo apt-get update -q
               sudo apt-get install -y -q libsdl2-dev
-            cmake_args: -DCMAKE_BUILD_TYPE=Release -DENABLE_SDL=ON
+            cmake_args: -DCMAKE_BUILD_TYPE=Release -DENABLE_SDL=ON -DBUILD_TOOLS=OFF
             package: cd install && zip -r ../videopac-linux-x64.zip .
 
           - os: macos-13
             arch: macos-x64
             install_deps: brew install sdl2
-            cmake_args: -DCMAKE_BUILD_TYPE=Release -DENABLE_SDL=ON
+            cmake_args: -DCMAKE_BUILD_TYPE=Release -DENABLE_SDL=ON -DBUILD_TOOLS=OFF
             package: cd install && zip -r ../videopac-macos-x64.zip .
 
           - os: windows-2022

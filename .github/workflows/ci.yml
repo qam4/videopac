@@ -17,6 +17,7 @@ jobs:
             cmake_args: >-
               -DCMAKE_BUILD_TYPE=Release
               -DENABLE_SDL=ON
+              -DBUILD_TOOLS=OFF
             install_deps: |
               sudo apt-get update -q
               sudo apt-get install -y -q libsdl2-dev
@@ -26,6 +27,7 @@ jobs:
             cmake_args: >-
               -DCMAKE_BUILD_TYPE=Release
               -DENABLE_SDL=ON
+              -DBUILD_TOOLS=OFF
             install_deps: |
               brew install sdl2
 
