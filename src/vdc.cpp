@@ -82,6 +82,7 @@ void VDC::reset() {
     // Reset display state
     state_.display_enabled = false;
     state_.grid_enabled = false;
+    state_.latched_color = 0;
     
     // Reset audio state
     state_.audio_shift_register = 0;
@@ -206,6 +207,22 @@ void VDC::end_scanline() {
     // Reset horizontal counter for next scanline
     state_.beam_x = 0;
     
+    // Latch color register for the new scanline
+    // Hardware context: The 8245 datasheet (page 14) calls register 0xA3 the
+    // "Color Latch" — a write-only register that controls background and grid color.
+    // The chip generates R,G,B,L signals on-the-fly as the beam scans (no framebuffer).
+    //
+    // On real hardware, mid-scanline color writes would affect remaining pixels on
+    // that scanline. However, games like Killer Bees time their color writes to land
+    // near the end of the visible area (beam_x ~131-154), intending them to take
+    // effect on the next scanline. On a CRT, the few pixels of color bleeding at
+    // the transition boundary would be invisible due to natural signal blurring.
+    //
+    // We latch the color at scanline boundaries to produce clean transitions that
+    // match the visual intent of the software and what a CRT would display.
+    // Reference: Intel 8245 datasheet "Color Latch" (page 14)
+    state_.latched_color = state_.registers[VDCRegisters::COLOR];
+    
     // Advance to next scanline
     state_.beam_y++;
     
@@ -224,7 +241,8 @@ void VDC::write_register(uint8 address, uint8 value) {
     if (vdc_trace_enabled_) {
         std::ostringstream trace;
         trace << "[VDC] write_register(0x" << std::hex << std::setw(2) << std::setfill('0') 
-              << (int)address << ", 0x" << (int)value << ")";
+              << (int)address << ", 0x" << (int)value << ")"
+              << " beam=(" << std::dec << state_.beam_x << "," << state_.beam_y << ")";
         
         // Add register name for important registers
         if (address == VDCRegisters::CONTROL) {
@@ -420,10 +438,12 @@ void VDC::render_current_pixel() {
     // Reference: Requirements 12.1, 12.2, 12.3, 12.4
     
     // Start with background color
-    // Background color formula (see types.h for details)
-    // Formula: (color & 0x38) >> 3 | (color & 0x80 ? 0 : 8)
-    // Bits 3-5: BGR components, Bit 7: inverted luminance (0=bright, 1=dark)
-    uint8 color_reg = state_.registers[VDCRegisters::COLOR];
+    // Use latched color register (snapped at scanline boundary) to prevent
+    // mid-scanline color bleeding. The 8245 "Color Latch" (datasheet p.14)
+    // feeds the output logic directly, but games time color writes to land
+    // near HBLANK. On a CRT the few bleeding pixels would be invisible;
+    // latching at scanline boundaries matches the intended visual result.
+    uint8 color_reg = state_.latched_color;
     uint8 bg_color = ((color_reg & 0x38) >> 3) | (color_reg & 0x80 ? 0 : 8);
     uint8 pixel_color = bg_color;
     

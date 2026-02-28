@@ -49,8 +49,7 @@ TEST(VDCTest, SpriteRendering) {
     // Sprite uses LSB-first bit order, so bit 0 (0x80 & 0x01 = 0) is leftmost pixel = no pixel at x=50
     // First pixel is at x=57 (bit 7 of pattern 0x80)
     // Note: With new coordinate mapping, scanline 50 maps to framebuffer y=50
-    // TODO: Investigate why sprite color is 8 instead of expected 14 after timing changes
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 57], 8);  // Currently rendering as background color
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 57], 14);  // Sprite color: BGR 3 → palette 14
 }
 
 // Test double-size sprite
@@ -78,9 +77,8 @@ TEST(VDCTest, DoubleSizeSprite) {
     // BGR color 3 (0b011 = Blue+Green) → RGB via formula (see types.h): ((3&2)|((3&1)<<2)|((3&4)>>2))+8 = 14
     const uint8* fb = vdc.get_framebuffer();
     // Note: With new coordinate mapping, scanline 50 maps to framebuffer y=50
-    // TODO: Investigate why sprite color is 8 instead of expected 14 after timing changes
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 8);  // Currently rendering as background color
-    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 65], 8);  // Currently rendering as background color
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 50], 14);  // Sprite color: BGR 3 → palette 14
+    EXPECT_EQ(fb[50 * FRAMEBUFFER_WIDTH + 65], 14);  // Sprite color: BGR 3 → palette 14
 }
 
 // Test grid rendering in different modes
@@ -251,13 +249,23 @@ TEST(VDCTest, VBlankTiming) {
     VDC vdc(VideoStandard::NTSC);
     vdc.reset();
     
-    // Not in VBLANK at start (scanline 0, beam_x < 183)
+    // At reset: scanline 0, beam_x=0
+    // Per hardware timing (odyssey2_timing.txt): Vblank goes low at cycle 365
+    // of scanline 107h/00h, i.e. beam_x >= 183 on scanline 0.
+    // So at beam_x=0 on scanline 0, we are still in VBlank.
+    EXPECT_TRUE(vdc.is_vblank());
+    
+    // Advance past beam_x=183 on scanline 0 — VBlank should clear
+    for (int i = 0; i < 184; i++) {
+        vdc.tick(1);
+    }
     EXPECT_FALSE(vdc.is_vblank());
     
-    // Advance to VBLANK start scanline (240)
-    advance_to_scanline(vdc, 240);
+    // Advance to VBLANK start scanline (242 = F2h)
+    vdc.end_scanline();  // finish scanline 0
+    advance_to_scanline(vdc, 241);  // advance from scanline 1 to 242
     
-    // At start of scanline 240, beam_x=0, so not yet in VBlank
+    // At start of scanline 242, beam_x=0, not yet in VBlank
     EXPECT_FALSE(vdc.is_vblank());
     
     // Advance to beam_x >= 183 where VBlank transitions

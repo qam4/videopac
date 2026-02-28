@@ -221,6 +221,13 @@ struct VDCState {
     bool display_enabled;                           // Display enable (bit 5 of 0xA0)
     bool grid_enabled;                              // Grid enable (bit 3 of 0xA0)
     
+    // Latched color register - snapped at scanline boundaries
+    // The 8245 "Color Latch" (datasheet p.14) feeds the R,G,B,L output logic.
+    // Games time color writes to land near HBLANK; on a CRT the few bleeding
+    // pixels at the transition would be invisible. Latching at scanline
+    // boundaries produces clean transitions matching the intended visual result.
+    uint8 latched_color;                            // Color register value for current scanline
+    
     // Audio state (24-bit shift register system)
     // Reference: doc/o2doc.md section 4.10, doc/8245.md lines 380-420
     uint32 audio_shift_register;                    // 24-bit shift register (registers 0xA7-0xA9)

@@ -104,8 +104,8 @@ def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
     
     cmd = [
         exe_path,
-        "--press-key", "1", "100",
-        "--press-key", "1", "200",
+        "--press-key", "2", "100",
+        "--press-key", "2", "200",
         "--press-joystick", "2", "0", "280", "50",
         "--frames", "400",
         "--debug",
@@ -128,18 +128,15 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args):
     
     setup_screenshots_dir()
     
-    # Test mode - Course de Voitures: press 1 (select game), 1 (select level), joystick UP (start)
-    # Run 330 frames, screenshot every frame from 280 onward to see if game starts
+    # Killer Bees: press 1 to select game, run enough frames to see raster effect
     cmd = [
         exe_path,
         "--headless",
         "--screenshot", "1",
-        "--frames", "40",
-        "--press-key", "1", "5",
-        "--press-key", "1", "10",
-        "--press-joystick", "2", "0", "20", "50",
-        "--region", "france",
+        "--frames", "10",
+        "--press-key", "1", "3",
         "--trace",
+        "--vdc-trace",
         "--bios", bios_path,
         rom_path
     ]
@@ -216,14 +213,15 @@ Examples:
         "rom",
         nargs="?",
         # default="roms/Satellite Attack (1981)(Philips)(EU).bin",
-        default="roms/Course de Voitures + Autodrome + Cryptogramme (1980)(Philips)(FR).bin",
-        # default="roms/Killer Bees (1983)(Philips)(US).bin",
+        # default="roms/Football Electronique + Hockey Electronique (1981)(Philips)(FR).bin",
+        # default="roms/Course de Voitures + Autodrome + Cryptogramme (1980)(Philips)(FR).bin",
+        default="roms/Killer Bees (1983)(Philips)(US).bin",
         help="Path to ROM file"
     )
     
     parser.add_argument(
         "--bios",
-        default="roms/Philips C52 BIOS (19xx)(Philips)(FR).bin",
+        default="roms/BIOS/bios_O2rom.bin",
         help="Path to BIOS file (default: French C52 BIOS)"
     )
     
