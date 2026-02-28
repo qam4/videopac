@@ -37,20 +37,17 @@ public:
     std::string get_temp_directory() const;
 
 private:
-    // Check if a filename has a ROM extension (.bin, .rom)
-    bool is_rom_file(const std::string& filename) const;
-
-    // Get temporary directory path (uses system temp + unique subdirectory)
-    std::string create_temp_directory();
-
-    // Extract a file to a specific path
-    bool extract_to_path(const std::string& filename, const std::string& output_path);
-
+#ifdef HAVE_MINIZ
     void* zip_archive_;  // mz_zip_archive pointer (opaque to avoid including miniz.h here)
     std::string zip_path_;
     std::string temp_dir_;
     std::vector<std::string> temp_files_;  // Track extracted files for cleanup
     bool is_open_;
+
+    bool is_rom_file(const std::string& filename) const;
+    std::string create_temp_directory();
+    bool extract_to_path(const std::string& filename, const std::string& output_path);
+#endif
 };
 
 #endif // ZIP_HANDLER_H
