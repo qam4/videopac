@@ -1685,7 +1685,7 @@ void VDC::track_character_objects(int y, uint8* object_buffer, uint8 collision_e
             uint8 char_ptr_low = state_.registers[base_addr + char_offset + 2];
             uint8 char_attr = state_.registers[base_addr + char_offset + 3];
 
-            int char_x = quad_x + (sub_char * 8);
+            int char_x = quad_x + (sub_char * 16);  // Must match render_characters() spacing
             int char_y = quad_y;  // All sub-characters use the quad's Y position
 
             if (y < char_y || y >= char_y + 14) {
