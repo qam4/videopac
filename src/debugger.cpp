@@ -13,8 +13,7 @@ Debugger::Debugger(EmulatorCore* emulator)
     , state_(DebuggerState::Running)
     , trace_level_(TraceLevel::Off)
     , trace_limit_enabled_(true)  // Enable limit by default (for SDL mode)
-    , vdc_trace_enabled_(false)
-    , last_frame_time_(0) {
+    , vdc_trace_enabled_(false) {
     frame_stats_.total_cycles = 0;
     frame_stats_.frame_count = 0;
     frame_stats_.fps = 0.0;

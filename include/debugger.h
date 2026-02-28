@@ -121,7 +121,6 @@ private:
     bool vdc_trace_enabled_;
     std::vector<std::string> vdc_trace_log_;
     FrameStats frame_stats_;
-    uint64 last_frame_time_;
     
     // Helper functions
     bool evaluate_condition(const std::string& condition, const CPUState& cpu) const;
