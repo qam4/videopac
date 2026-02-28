@@ -138,45 +138,27 @@ TEST_F(ImGuiDebuggerUITest, LoadStateCorruptedJsonUsesDefaults) {
 TEST_F(ImGuiDebuggerUITest, LoadStateRoundTrip) {
     // Create a valid JSON state file manually
     std::ofstream file("debugger_state.json");
-    file << "{\n";
-    file << "  \"breakpoints\": [\n";
-    file << "    {\n";
-    file << "      \"address\": 1234,\n";
-    file << "      \"condition\": \"A==0xFF\",\n";
-    file << "      \"enabled\": true,\n";
-    file << "      \"has_condition\": true,\n";
-    file << "      \"condition_only\": false\n";
-    file << "    }\n";
-    file << "  ],\n";
-    file << "  \"watch_expressions\": [\n";
-    file << "    {\n";
-    file << "      \"type\": \"memory\",\n";
-    file << "      \"expression\": \"0x1234\",\n";
-    file << "      \"label\": \"Test Label\"\n";
-    file << "    }\n";
-    file << "  ],\n";
-    file << "  \"display_mode\": \"overlay\",\n";
-    file << "  \"panel_visibility\": {\n";
-    file << "    \"cpu_state\": true,\n";
-    file << "    \"memory\": false,\n";
-    file << "    \"vdc_registers\": true,\n";
-    file << "    \"breakpoints\": true,\n";
-    file << "    \"disassembly\": true,\n";
-    file << "    \"call_stack\": false,\n";
-    file << "    \"watch\": true,\n";
-    file << "    \"controls\": true\n";
-    file << "  }\n";
-    file << "}\n";
+    if (!file.is_open()) {
+        GTEST_SKIP() << "Cannot write to working directory";
+    }
+    file << "{\n"
+         << "  \"breakpoints\": [{\"address\":1234,\"condition\":\"A==0xFF\","
+         << "\"enabled\":true,\"has_condition\":true,\"condition_only\":false}],\n"
+         << "  \"watch_expressions\": [{\"type\":\"memory\","
+         << "\"expression\":\"0x1234\",\"label\":\"Test Label\"}],\n"
+         << "  \"display_mode\": \"overlay\",\n"
+         << "  \"panel_visibility\": {\"cpu_state\":true,\"memory\":false,"
+         << "\"vdc_registers\":true,\"breakpoints\":true,\"disassembly\":true,"
+         << "\"call_stack\":false,\"watch\":true,\"controls\":true}\n"
+         << "}\n";
     file.close();
     
-    // Verify file was created
+    // Verify file was created and is readable
     std::ifstream check_file("debugger_state.json");
     EXPECT_TRUE(check_file.good()) << "State file should exist";
     check_file.close();
     
-    // The actual test would create an ImGuiDebuggerUI, call load_state(),
-    // and verify the state was loaded correctly
-    // This requires full SDL setup - see task 19.1
+    // Full round-trip requires SDL setup - see task 19.1
     SUCCEED() << "Round-trip test requires SDL window initialization";
 }
 
