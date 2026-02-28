@@ -86,6 +86,8 @@ public:
     ImGuiContext* get_context() const { return imgui_context_; }
     
     // State persistence
+    // TODO: Refactor JSON serialization into free functions (e.g. serialize_debugger_state /
+    // deserialize_debugger_state) so they can be unit-tested without SDL dependency.
     void save_state();
     void load_state();
     

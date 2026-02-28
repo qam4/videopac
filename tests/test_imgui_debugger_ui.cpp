@@ -1,159 +1,49 @@
 #include <gtest/gtest.h>
 #include "ui/imgui_debugger_ui.h"
-#include "debugger.h"
-#include "emulator.h"
-#include <fstream>
-#include <string>
 #include <cstdio>
-#include <filesystem>
 
 using namespace videopac;
 
-static std::string get_temp_state_file() {
-    auto temp_dir = std::filesystem::temp_directory_path();
-    return (temp_dir / "debugger_state.json").string();
-}
+class ImGuiDebuggerUITest : public ::testing::Test {};
 
-// Helper function to read file contents
-std::string read_file(const char* filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        return "";
-    }
-    
-    std::string content;
-    std::string line;
-    while (std::getline(file, line)) {
-        content += line + "\n";
-    }
-    
-    return content;
-}
+// TODO: The following tests require SDL window initialization to create ImGuiDebuggerUI.
+// Refactor save_state()/load_state() JSON serialization into free functions so they
+// can be unit-tested without SDL. See also: include/ui/imgui_debugger_ui.h
 
-// Test fixture for ImGuiDebuggerUI tests
-class ImGuiDebuggerUITest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        state_file_ = get_temp_state_file();
-        std::remove(state_file_.c_str());
-    }
-    
-    void TearDown() override {
-        std::remove(state_file_.c_str());
-    }
-
-    std::string state_file_;
-};
-
-// Test save_state() creates a valid JSON file
 TEST_F(ImGuiDebuggerUITest, SaveStateCreatesFile) {
-    // Create configuration and emulator
-    Configuration config;
-    config.bios_path = "";  // Not needed for this test
-    EmulatorCore emulator(config);
-    Debugger debugger(&emulator);
-    
-    // Create ImGuiDebuggerUI (note: we can't fully initialize without SDL window)
-    // For this test, we'll just test the save_state() method directly
-    // In a real scenario, you'd need a proper SDL setup
-    
-    // For now, we'll verify the file is created by calling save_state()
-    // This is a minimal test - a full test would require SDL initialization
-    
-    // Note: This test is incomplete without proper SDL setup
-    // We'll mark it as a placeholder for now
-    SUCCEED() << "Test requires SDL window initialization - see task 19.1 for full integration tests";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
-// Test save_state() with breakpoints
 TEST_F(ImGuiDebuggerUITest, SaveStateWithBreakpoints) {
-    // This test would verify that breakpoints are correctly serialized
-    // Requires full SDL setup - placeholder for now
-    SUCCEED() << "Test requires SDL window initialization";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
-// Test save_state() with watch expressions
 TEST_F(ImGuiDebuggerUITest, SaveStateWithWatchExpressions) {
-    // This test would verify that watch expressions are correctly serialized
-    // Requires full SDL setup - placeholder for now
-    SUCCEED() << "Test requires SDL window initialization";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
-// Test save_state() with panel visibility
 TEST_F(ImGuiDebuggerUITest, SaveStateWithPanelVisibility) {
-    // This test would verify that panel visibility flags are correctly serialized
-    // Requires full SDL setup - placeholder for now
-    SUCCEED() << "Test requires SDL window initialization";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
-// Test save_state() with display mode
 TEST_F(ImGuiDebuggerUITest, SaveStateWithDisplayMode) {
-    // This test would verify that display mode is correctly serialized
-    // Requires full SDL setup - placeholder for now
-    SUCCEED() << "Test requires SDL window initialization";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
-// Test JSON escaping in save_state()
 TEST_F(ImGuiDebuggerUITest, SaveStateEscapesSpecialCharacters) {
-    // This test would verify that special characters in conditions and labels are properly escaped
-    // Requires full SDL setup - placeholder for now
-    SUCCEED() << "Test requires SDL window initialization";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
-// Test load_state() handles missing file gracefully
 TEST_F(ImGuiDebuggerUITest, LoadStateMissingFileUsesDefaults) {
-    // Ensure no state file exists
-    std::remove(state_file_.c_str());
-    
-    // Create configuration and emulator
-    Configuration config;
-    config.bios_path = "";
-    EmulatorCore emulator(config);
-    Debugger debugger(&emulator);
-    
-    // For now, verify file doesn't exist
-    std::ifstream file(state_file_);
-    EXPECT_FALSE(file.good()) << "State file should not exist";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
-// Test load_state() handles corrupted JSON gracefully
 TEST_F(ImGuiDebuggerUITest, LoadStateCorruptedJsonUsesDefaults) {
-    // Create a corrupted JSON file
-    {
-        std::ofstream file(state_file_);
-        ASSERT_TRUE(file.is_open()) << "Cannot write to temp directory";
-        file << "{ this is not valid json }";
-        file.flush();
-    }
-    
-    // Verify file was created
-    EXPECT_TRUE(std::filesystem::exists(state_file_)) << "Corrupted state file should exist";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
-// Test load_state() round-trip with valid JSON
 TEST_F(ImGuiDebuggerUITest, LoadStateRoundTrip) {
-    // Create a valid JSON state file manually
-    {
-        std::ofstream file(state_file_);
-        ASSERT_TRUE(file.is_open()) << "Cannot write to temp directory";
-        file << "{\n"
-             << "  \"breakpoints\": [{\"address\":1234,\"condition\":\"A==0xFF\","
-             << "\"enabled\":true,\"has_condition\":true,\"condition_only\":false}],\n"
-             << "  \"watch_expressions\": [{\"type\":\"memory\","
-             << "\"expression\":\"0x1234\",\"label\":\"Test Label\"}],\n"
-             << "  \"display_mode\": \"overlay\",\n"
-             << "  \"panel_visibility\": {\"cpu_state\":true,\"memory\":false,"
-             << "\"vdc_registers\":true,\"breakpoints\":true,\"disassembly\":true,"
-             << "\"call_stack\":false,\"watch\":true,\"controls\":true}\n"
-             << "}\n";
-        file.flush();
-    }
-    
-    // Verify file was created
-    EXPECT_TRUE(std::filesystem::exists(state_file_)) << "State file should exist";
-    
-    // Full round-trip requires SDL setup - see task 19.1
-    SUCCEED() << "Round-trip test requires SDL window initialization";
+    GTEST_SKIP() << "Requires SDL window initialization";
 }
 
 // Test memory address validation logic
@@ -195,7 +85,6 @@ TEST_F(ImGuiDebuggerUITest, ValidateMemoryAddressRange) {
 
 // Test memory address validation error messages
 TEST_F(ImGuiDebuggerUITest, MemoryAddressValidationErrorMessages) {
-    // Test that error messages are generated for invalid addresses
     struct TestCase {
         const char* input;
         bool should_parse;
