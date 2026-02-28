@@ -7,8 +7,9 @@
 class ConfigManagerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Create a temporary test config file
-        test_config_path_ = "test_config.ini";
+        // Create a temporary test config file path
+        auto temp_dir = std::filesystem::temp_directory_path();
+        test_config_path_ = (temp_dir / "test_config.ini").string();
     }
 
     void TearDown() override {

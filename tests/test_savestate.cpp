@@ -152,7 +152,7 @@ TEST(SaveStateTest, EmulatorIntegration) {
     uint16 pc_before = emulator.get_cpu().get_pc();
     
     // Save state
-    const std::string test_file = "test_emulator.sav";  // Use current directory on Windows
+    const std::string test_file = get_temp_file("test_emulator.sav");
     auto save_result = emulator.save_state(test_file);
     ASSERT_TRUE(save_result.is_ok()) << "Save failed: " << save_result.error;
     

@@ -5,8 +5,14 @@
 #include <fstream>
 #include <string>
 #include <cstdio>
+#include <filesystem>
 
 using namespace videopac;
+
+static std::string get_temp_state_file() {
+    auto temp_dir = std::filesystem::temp_directory_path();
+    return (temp_dir / "debugger_state.json").string();
+}
 
 // Helper function to read file contents
 std::string read_file(const char* filename) {
@@ -28,14 +34,15 @@ std::string read_file(const char* filename) {
 class ImGuiDebuggerUITest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Clean up any existing state file
-        std::remove("debugger_state.json");
+        state_file_ = get_temp_state_file();
+        std::remove(state_file_.c_str());
     }
     
     void TearDown() override {
-        // Clean up state file after test
-        std::remove("debugger_state.json");
+        std::remove(state_file_.c_str());
     }
+
+    std::string state_file_;
 };
 
 // Test save_state() creates a valid JSON file
@@ -96,7 +103,7 @@ TEST_F(ImGuiDebuggerUITest, SaveStateEscapesSpecialCharacters) {
 // Test load_state() handles missing file gracefully
 TEST_F(ImGuiDebuggerUITest, LoadStateMissingFileUsesDefaults) {
     // Ensure no state file exists
-    std::remove("debugger_state.json");
+    std::remove(state_file_.c_str());
     
     // Create configuration and emulator
     Configuration config;
@@ -104,43 +111,30 @@ TEST_F(ImGuiDebuggerUITest, LoadStateMissingFileUsesDefaults) {
     EmulatorCore emulator(config);
     Debugger debugger(&emulator);
     
-    // Note: We can't fully test without SDL, but we can verify the method doesn't crash
-    // when the file is missing. The actual ImGuiDebuggerUI would need SDL initialization.
-    
     // For now, verify file doesn't exist
-    std::ifstream file("debugger_state.json");
+    std::ifstream file(state_file_);
     EXPECT_FALSE(file.good()) << "State file should not exist";
 }
 
 // Test load_state() handles corrupted JSON gracefully
 TEST_F(ImGuiDebuggerUITest, LoadStateCorruptedJsonUsesDefaults) {
     // Create a corrupted JSON file
-    std::ofstream file("debugger_state.json");
+    std::ofstream file(state_file_);
+    ASSERT_TRUE(file.is_open()) << "Cannot write to temp directory";
     file << "{ this is not valid json }";
     file.close();
     
-    // Create configuration and emulator
-    Configuration config;
-    config.bios_path = "";
-    EmulatorCore emulator(config);
-    Debugger debugger(&emulator);
-    
-    // Note: We can't fully test without SDL, but we can verify the file exists
-    std::ifstream check_file("debugger_state.json");
+    // Verify file was created and is readable
+    std::ifstream check_file(state_file_);
     EXPECT_TRUE(check_file.good()) << "Corrupted state file should exist";
     check_file.close();
-    
-    // The actual test would verify that load_state() doesn't crash and uses defaults
-    // This requires full SDL setup - see task 19.1
 }
 
 // Test load_state() round-trip with valid JSON
 TEST_F(ImGuiDebuggerUITest, LoadStateRoundTrip) {
     // Create a valid JSON state file manually
-    std::ofstream file("debugger_state.json");
-    if (!file.is_open()) {
-        GTEST_SKIP() << "Cannot write to working directory";
-    }
+    std::ofstream file(state_file_);
+    ASSERT_TRUE(file.is_open()) << "Cannot write to temp directory";
     file << "{\n"
          << "  \"breakpoints\": [{\"address\":1234,\"condition\":\"A==0xFF\","
          << "\"enabled\":true,\"has_condition\":true,\"condition_only\":false}],\n"
@@ -154,7 +148,7 @@ TEST_F(ImGuiDebuggerUITest, LoadStateRoundTrip) {
     file.close();
     
     // Verify file was created and is readable
-    std::ifstream check_file("debugger_state.json");
+    std::ifstream check_file(state_file_);
     EXPECT_TRUE(check_file.good()) << "State file should exist";
     check_file.close();
     
