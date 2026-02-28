@@ -1,9 +1,384 @@
+// Videopac libretro core
+// Wraps EmulatorCore for use with RetroArch and other libretro frontends
+
+#include "libretro.h"
 #include "emulator.h"
-// #include "libretro.h"
+#include "savestate.h"
+#include "types.h"
+#include <cstring>
+#include <string>
+#include <vector>
+#include <cstdio>
 
-namespace videopac {
+// Callbacks
+static retro_environment_t environ_cb;
+static retro_video_refresh_t video_cb;
+static retro_audio_sample_t audio_sample_cb;
+static retro_audio_sample_batch_t audio_batch_cb;
+static retro_input_poll_t input_poll_cb;
+static retro_input_state_t input_state_cb;
 
-// TODO: Implement libretro core
-// This will be implemented in task 15
+// Emulator instance
+static videopac::EmulatorCore* emulator = nullptr;
+static videopac::VideoStandard video_standard = videopac::VideoStandard::NTSC;
 
-} // namespace videopac
+// Video buffer (XRGB8888)
+static uint32_t video_buffer[videopac::FRAMEBUFFER_WIDTH * videopac::FRAMEBUFFER_HEIGHT];
+
+// Audio buffer (stereo interleaved)
+static constexpr size_t AUDIO_SAMPLES_PER_FRAME_NTSC = 735;  // 44100/60
+static constexpr size_t AUDIO_SAMPLES_PER_FRAME_PAL = 882;   // 44100/50
+static int16_t audio_mono_buffer[1024];
+static int16_t audio_stereo_buffer[2048];
+
+// BIOS data
+static std::vector<uint8_t> bios_data;
+static bool bios_loaded = false;
+static std::string system_directory;
+
+// Core options
+static struct retro_variable core_options[] = {
+    { "videopac_region", "Region; NTSC|PAL" },
+    { "videopac_palette", "Palette; Standard|Videopac+" },
+    { nullptr, nullptr }
+};
+
+// --- Helper functions ---
+
+static bool load_bios_file() {
+    if (bios_loaded) return true;
+
+    // Try to find BIOS in system directory
+    const char* sys_dir = nullptr;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys_dir) && sys_dir) {
+        system_directory = sys_dir;
+    } else {
+        system_directory = ".";
+    }
+
+    // Try common BIOS filenames
+    const char* bios_names[] = {
+        "o2rom.bin", "bios_O2rom.bin", "odyssey2.bin",
+        "c52.bin", "bios_c52.bin",
+        "g7400.bin", "bios_g7400.bin",
+        "jopac.bin", "bios_jopac.bin",
+        nullptr
+    };
+
+    for (int i = 0; bios_names[i]; i++) {
+        std::string path = system_directory + "/" + bios_names[i];
+        FILE* f = fopen(path.c_str(), "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            long size = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            if (size > 0 && size <= 2048) {
+                bios_data.resize(size);
+                if (fread(bios_data.data(), 1, size, f) == static_cast<size_t>(size)) {
+                    fclose(f);
+                    bios_loaded = true;
+                    return true;
+                }
+            }
+            fclose(f);
+        }
+    }
+
+    return false;
+}
+
+static void check_variables() {
+    struct retro_variable var;
+
+    var.key = "videopac_region";
+    var.value = nullptr;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (strcmp(var.value, "PAL") == 0)
+            video_standard = videopac::VideoStandard::PAL;
+        else
+            video_standard = videopac::VideoStandard::NTSC;
+    }
+}
+
+static void convert_framebuffer() {
+    const videopac::uint8* fb = emulator->get_framebuffer();
+    if (!fb) return;
+
+    // Convert palette-indexed framebuffer to XRGB8888
+    for (int i = 0; i < videopac::FRAMEBUFFER_WIDTH * videopac::FRAMEBUFFER_HEIGHT; i++) {
+        uint8_t idx = fb[i] & 0x0F;
+        const videopac::Color& c = videopac::PALETTE_STANDARD[idx];
+        video_buffer[i] = (0xFF << 24) | (c.r << 16) | (c.g << 8) | c.b;
+    }
+}
+
+static void update_input() {
+    input_poll_cb();
+
+    videopac::InputState state = {};
+
+    // Player 1 joystick (port 0)
+    state.joystick1[0] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP);
+    state.joystick1[1] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN);
+    state.joystick1[2] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT);
+    state.joystick1[3] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    state.joystick1[4] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
+
+    // Player 2 joystick (port 1)
+    state.joystick2[0] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP);
+    state.joystick2[1] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN);
+    state.joystick2[2] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT);
+    state.joystick2[3] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    state.joystick2[4] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
+
+    // Keyboard: map common game keys to joypad buttons
+    // B = key 0 (select game), Y = key 1, X = key 2, L = key 3
+    // SELECT = space, START = enter
+    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B))
+        state.keyboard_matrix[0][0] = true;  // Key 0
+    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y))
+        state.keyboard_matrix[0][1] = true;  // Key 1
+    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X))
+        state.keyboard_matrix[0][2] = true;  // Key 2
+    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L))
+        state.keyboard_matrix[0][3] = true;  // Key 3
+    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT))
+        state.keyboard_matrix[1][4] = true;  // Space
+    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START))
+        state.keyboard_matrix[5][7] = true;  // Enter
+
+    emulator->set_input(state);
+}
+
+// --- libretro API implementation ---
+
+RETRO_API void retro_init(void) {
+    // Nothing to do here; emulator created in retro_load_game
+}
+
+RETRO_API void retro_deinit(void) {
+    delete emulator;
+    emulator = nullptr;
+    bios_data.clear();
+    bios_loaded = false;
+}
+
+RETRO_API unsigned retro_api_version(void) {
+    return RETRO_API_VERSION;
+}
+
+RETRO_API void retro_get_system_info(struct retro_system_info* info) {
+    memset(info, 0, sizeof(*info));
+    info->library_name = "videopac";
+    info->library_version = "0.1.0";
+    info->valid_extensions = "bin|rom|zip";
+    info->need_fullpath = false;
+    info->block_extract = false;
+}
+
+RETRO_API void retro_get_system_av_info(struct retro_system_av_info* info) {
+    memset(info, 0, sizeof(*info));
+    info->geometry.base_width = videopac::FRAMEBUFFER_WIDTH;
+    info->geometry.base_height = videopac::FRAMEBUFFER_HEIGHT;
+    info->geometry.max_width = videopac::FRAMEBUFFER_WIDTH;
+    info->geometry.max_height = videopac::FRAMEBUFFER_HEIGHT;
+    info->geometry.aspect_ratio = 4.0f / 3.0f;
+    info->timing.fps = (video_standard == videopac::VideoStandard::PAL) ? 50.0 : 60.0;
+    info->timing.sample_rate = 44100.0;
+}
+
+RETRO_API void retro_set_environment(retro_environment_t cb) {
+    environ_cb = cb;
+
+    // Set core options
+    cb(RETRO_ENVIRONMENT_SET_VARIABLES, core_options);
+
+    // Set pixel format
+    unsigned format = RETRO_PIXEL_FORMAT_XRGB8888;
+    cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format);
+
+    // Set input descriptors
+    static struct retro_input_descriptor desc[] = {
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "Fire" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Key 0 (Select)" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Key 1" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "Key 2" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "Key 3" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Space" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Enter" },
+        { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "P2 Up" },
+        { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "P2 Down" },
+        { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "P2 Left" },
+        { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "P2 Right" },
+        { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "P2 Fire" },
+        { 0, 0, 0, 0, nullptr }
+    };
+    cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, desc);
+}
+
+RETRO_API void retro_set_video_refresh(retro_video_refresh_t cb) { video_cb = cb; }
+RETRO_API void retro_set_audio_sample(retro_audio_sample_t cb) { audio_sample_cb = cb; }
+RETRO_API void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb) { audio_batch_cb = cb; }
+RETRO_API void retro_set_input_poll(retro_input_poll_t cb) { input_poll_cb = cb; }
+RETRO_API void retro_set_input_state(retro_input_state_t cb) { input_state_cb = cb; }
+RETRO_API void retro_set_controller_port_device(unsigned, unsigned) {}
+
+RETRO_API void retro_reset(void) {
+    if (emulator) emulator->reset();
+}
+
+RETRO_API void retro_run(void) {
+    // Check for option changes
+    bool updated = false;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) {
+        check_variables();
+    }
+
+    // Poll and apply input
+    update_input();
+
+    // Run one frame
+    emulator->run_frame();
+
+    // Video: convert palette framebuffer to XRGB8888
+    convert_framebuffer();
+    video_cb(video_buffer, videopac::FRAMEBUFFER_WIDTH, videopac::FRAMEBUFFER_HEIGHT,
+             videopac::FRAMEBUFFER_WIDTH * sizeof(uint32_t));
+
+    // Audio: get mono samples, convert to stereo, send batch
+    size_t samples = (video_standard == videopac::VideoStandard::PAL)
+                     ? AUDIO_SAMPLES_PER_FRAME_PAL
+                     : AUDIO_SAMPLES_PER_FRAME_NTSC;
+    emulator->get_audio_buffer(audio_mono_buffer, samples);
+
+    for (size_t i = 0; i < samples; i++) {
+        audio_stereo_buffer[i * 2]     = audio_mono_buffer[i];
+        audio_stereo_buffer[i * 2 + 1] = audio_mono_buffer[i];
+    }
+    audio_batch_cb(audio_stereo_buffer, samples);
+}
+
+RETRO_API bool retro_load_game(const struct retro_game_info* game) {
+    if (!game || !game->data || game->size == 0)
+        return false;
+
+    check_variables();
+
+    // Create emulator
+    videopac::Configuration config;
+    config.video_standard = video_standard;
+    emulator = new videopac::EmulatorCore(config);
+
+    // Load BIOS
+    if (!load_bios_file()) {
+        delete emulator;
+        emulator = nullptr;
+        return false;
+    }
+    auto bios_result = emulator->load_bios(bios_data.data(), bios_data.size());
+    if (!bios_result.is_ok()) {
+        delete emulator;
+        emulator = nullptr;
+        return false;
+    }
+
+    // Load ROM
+    auto rom_result = emulator->load_rom(
+        static_cast<const videopac::uint8*>(game->data), game->size);
+    if (!rom_result.is_ok()) {
+        delete emulator;
+        emulator = nullptr;
+        return false;
+    }
+
+    return true;
+}
+
+RETRO_API void retro_unload_game(void) {
+    delete emulator;
+    emulator = nullptr;
+}
+
+RETRO_API unsigned retro_get_region(void) {
+    return (video_standard == videopac::VideoStandard::PAL)
+           ? RETRO_REGION_PAL : RETRO_REGION_NTSC;
+}
+
+// --- Save states ---
+// SaveState contains non-trivial types (std::vector in MemoryState),
+// so we serialize component states individually into a flat buffer.
+
+struct LibretroSaveBuffer {
+    videopac::CPUState cpu;
+    videopac::VDCState vdc;
+    videopac::InputState input;
+    videopac::uint64 frame_count;
+    // Memory: fixed-size portions only (no cart_rom vector)
+    videopac::uint8 bios_rom[1024];
+    videopac::uint8 external_ram[128];
+    videopac::uint8 current_bank;
+    videopac::uint8 rom_size_kb;
+};
+
+RETRO_API size_t retro_serialize_size(void) {
+    return sizeof(LibretroSaveBuffer);
+}
+
+RETRO_API bool retro_serialize(void* data, size_t size) {
+    if (!emulator || size < sizeof(LibretroSaveBuffer))
+        return false;
+
+    LibretroSaveBuffer buf = {};
+    buf.cpu = emulator->get_cpu().get_state();
+    buf.vdc = emulator->get_vdc().get_state();
+    buf.input = emulator->get_input_handler().get_state();
+    buf.frame_count = emulator->get_frame_count();
+
+    auto mem = emulator->get_memory().get_state();
+    memcpy(buf.bios_rom, mem.bios_rom, sizeof(buf.bios_rom));
+    memcpy(buf.external_ram, mem.external_ram, sizeof(buf.external_ram));
+    buf.current_bank = mem.current_bank;
+    buf.rom_size_kb = mem.rom_size_kb;
+
+    memcpy(data, &buf, sizeof(buf));
+    return true;
+}
+
+RETRO_API bool retro_unserialize(const void* data, size_t size) {
+    if (!emulator || size < sizeof(LibretroSaveBuffer))
+        return false;
+
+    LibretroSaveBuffer buf;
+    memcpy(&buf, data, sizeof(buf));
+
+    emulator->get_cpu().set_state(buf.cpu);
+    emulator->get_vdc().set_state(buf.vdc);
+    emulator->get_input_handler().set_state(buf.input);
+
+    // Restore memory (preserve cart_rom from current load)
+    auto mem = emulator->get_memory().get_state();
+    memcpy(mem.bios_rom, buf.bios_rom, sizeof(buf.bios_rom));
+    memcpy(mem.external_ram, buf.external_ram, sizeof(buf.external_ram));
+    mem.current_bank = buf.current_bank;
+    mem.rom_size_kb = buf.rom_size_kb;
+    emulator->get_memory().set_state(mem);
+
+    return true;
+}
+
+// --- Memory access (for RetroArch cheat/RAM watch) ---
+
+RETRO_API void* retro_get_memory_data(unsigned id) {
+    (void)id;
+    // TODO: expose direct RAM pointer from MemorySystem for RetroArch RAM watch
+    return nullptr;
+}
+
+RETRO_API size_t retro_get_memory_size(unsigned id) {
+    (void)id;
+    return 0;
+}

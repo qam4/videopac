@@ -75,6 +75,8 @@ set(UI_SOURCES
 # Core emulator library
 add_library(videopac_core STATIC ${CORE_SOURCES})
 target_include_directories(videopac_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
+# Required for linking into shared libraries (libretro .so) on Linux
+set_target_properties(videopac_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Find miniz for ZIP support
 find_package(miniz CONFIG QUIET)
@@ -235,33 +237,60 @@ if(BUILD_LIBRETRO)
     )
     
     target_link_libraries(videopac_libretro videopac_core)
+    target_include_directories(videopac_libretro PRIVATE ${CMAKE_SOURCE_DIR}/include)
     
     # Libretro naming convention
     set_target_properties(videopac_libretro PROPERTIES
         PREFIX ""
         OUTPUT_NAME "videopac_libretro"
     )
+    
+    # Hide all symbols except retro_* on non-Windows
+    if(NOT WIN32)
+        target_compile_options(videopac_libretro PRIVATE -fvisibility=hidden)
+    endif()
+endif()
+
+# Install rules
+if(BUILD_STANDALONE AND TARGET videopac)
+    install(TARGETS videopac RUNTIME DESTINATION bin)
+    # Bundle SDL2.dll on Windows
+    if(WIN32 AND TARGET SDL2::SDL2)
+        install(FILES $<TARGET_FILE:SDL2::SDL2> DESTINATION bin)
+    endif()
+endif()
+if(BUILD_LIBRETRO AND TARGET videopac_libretro)
+    install(TARGETS videopac_libretro LIBRARY DESTINATION lib RUNTIME DESTINATION lib)
+    install(FILES ${CMAKE_SOURCE_DIR}/videopac_libretro.info DESTINATION lib)
 endif()
 
 # Testing
 if(BUILD_TESTS)
     enable_testing()
     
-    # Google Test
+    # Google Test (EXCLUDE_FROM_ALL to suppress install rules from release artifacts)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
         GIT_TAG release-1.12.1
     )
-    FetchContent_MakeAvailable(googletest)
+    FetchContent_GetProperties(googletest)
+    if(NOT googletest_POPULATED)
+        FetchContent_Populate(googletest)
+        add_subdirectory(${googletest_SOURCE_DIR} ${googletest_BINARY_DIR} EXCLUDE_FROM_ALL)
+    endif()
     
-    # RapidCheck
+    # RapidCheck (use add_subdirectory with EXCLUDE_FROM_ALL to suppress install rules)
     FetchContent_Declare(
         rapidcheck
         GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
         GIT_TAG master
     )
-    FetchContent_MakeAvailable(rapidcheck)
+    FetchContent_GetProperties(rapidcheck)
+    if(NOT rapidcheck_POPULATED)
+        FetchContent_Populate(rapidcheck)
+        add_subdirectory(${rapidcheck_SOURCE_DIR} ${rapidcheck_BINARY_DIR} EXCLUDE_FROM_ALL)
+    endif()
     
     # Test executable
     add_executable(videopac_tests
