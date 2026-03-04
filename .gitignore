@@ -61,3 +61,14 @@ screenshots/
 
 # ImGui user settings (window positions, sizes, etc.)
 imgui.ini
+
+# VKB preview bitmaps
+vkb_preview*.bmp
+
+# Debug/scratch files
+debugger_state.json
+sat_disasm.txt
+sat_full_disasm.txt
+
+# mypy cache
+.mypy_cache/

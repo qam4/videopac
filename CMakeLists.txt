@@ -55,6 +55,7 @@ set(CORE_SOURCES
     src/debugger.cpp
     src/debugger_ui.cpp
     src/frontend_headless.cpp
+    src/vkeyboard.cpp
 )
 
 # UI source files
@@ -234,6 +235,7 @@ endif()
 if(BUILD_LIBRETRO)
     add_library(videopac_libretro SHARED
         src/libretro.cpp
+        src/vkeyboard.cpp
     )
     
     target_link_libraries(videopac_libretro videopac_core)
@@ -315,6 +317,8 @@ if(BUILD_TESTS)
         tests/test_watch_expression.cpp
         tests/test_imgui_debugger_ui.cpp
         tests/property_tests.cpp
+        tests/test_vkeyboard.cpp
+        tests/property_tests_vkeyboard.cpp
         # Include UI sources for testing
         ${UI_SOURCES}
     )

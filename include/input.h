@@ -44,6 +44,9 @@ enum class VidKey : uint8 {
     // Row 5: -, *, /(numpad), =, Y, N, DEL(Clear), ENTER
     Minus = 0x50, Multiply = 0x51, Divide = 0x52, Equal = 0x53,
     KeyY = 0x54, KeyN = 0x55, Clear = 0x56, Enter = 0x57,
+
+    // Sentinel — not a real matrix key; triggers emulator reset
+    Reset = 0xFF,
 };
 
 // Input handler state

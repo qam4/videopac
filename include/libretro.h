@@ -27,6 +27,12 @@ extern "C" {
 #define RETRO_DEVICE_NONE     0
 #define RETRO_DEVICE_JOYPAD   1
 #define RETRO_DEVICE_KEYBOARD 3
+#define RETRO_DEVICE_POINTER  6
+
+// Pointer device IDs
+#define RETRO_DEVICE_ID_POINTER_X       0
+#define RETRO_DEVICE_ID_POINTER_Y       1
+#define RETRO_DEVICE_ID_POINTER_PRESSED 2
 
 // Joypad buttons
 #define RETRO_DEVICE_ID_JOYPAD_B      0

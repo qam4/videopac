@@ -5,10 +5,12 @@
 #include "emulator.h"
 #include "savestate.h"
 #include "types.h"
+#include "vkeyboard.h"
 #include <cstring>
 #include <string>
 #include <vector>
 #include <cstdio>
+#include <cstdlib>
 
 // Callbacks
 static retro_environment_t environ_cb;
@@ -37,10 +39,21 @@ static std::vector<uint8_t> bios_data;
 static bool bios_loaded = false;
 static std::string system_directory;
 
+// Virtual keyboard state
+static videopac::VirtualKeyboard vkb;
+static uint8_t vkb_transparency_pct = 25;
+static bool prev_select_pressed = false;
+static bool prev_y_pressed = false;
+
+// Joystick swap
+static bool swap_joysticks = false;
+
 // Core options
 static struct retro_variable core_options[] = {
     { "videopac_region", "Region; NTSC|PAL" },
     { "videopac_palette", "Palette; Standard|Videopac+" },
+    { "videopac_vkbd_transparency", "Virtual Keyboard Transparency; 25%|0%|50%|75%" },
+    { "videopac_swap_joysticks", "Swap Joysticks; disabled|enabled" },
     { nullptr, nullptr }
 };
 
@@ -103,6 +116,18 @@ static void check_variables() {
         else
             video_standard = videopac::VideoStandard::NTSC;
     }
+
+    var.key = "videopac_swap_joysticks";
+    var.value = nullptr;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        swap_joysticks = (strcmp(var.value, "enabled") == 0);
+    }
+
+    var.key = "videopac_vkbd_transparency";
+    var.value = nullptr;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        vkb_transparency_pct = static_cast<uint8_t>(atoi(var.value));
+    }
 }
 
 static void convert_framebuffer() {
@@ -122,38 +147,182 @@ static void update_input() {
 
     videopac::InputState state = {};
 
-    // Player 1 joystick (port 0)
-    state.joystick1[0] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP);
-    state.joystick1[1] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN);
-    state.joystick1[2] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT);
-    state.joystick1[3] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-    state.joystick1[4] = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
+    // Edge detection state for D-pad (VKB navigation)
+    static bool prev_up_pressed = false;
+    static bool prev_down_pressed = false;
+    static bool prev_left_pressed = false;
+    static bool prev_right_pressed = false;
 
-    // Player 2 joystick (port 1)
-    state.joystick2[0] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP);
-    state.joystick2[1] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN);
-    state.joystick2[2] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT);
-    state.joystick2[3] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-    state.joystick2[4] = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
+    // Read SELECT for VKB toggle (rising edge)
+    bool select_pressed = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT);
+    if (select_pressed && !prev_select_pressed) {
+        vkb.toggle_visible();
+    }
+    prev_select_pressed = select_pressed;
 
-    // Keyboard: map common game keys to joypad buttons
-    // B = key 0 (select game), Y = key 1, X = key 2, L = key 3
-    // SELECT = space, START = enter
-    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B))
-        state.keyboard_matrix[0][0] = true;  // Key 0
-    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y))
-        state.keyboard_matrix[0][1] = true;  // Key 1
-    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X))
-        state.keyboard_matrix[0][2] = true;  // Key 2
-    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L))
-        state.keyboard_matrix[0][3] = true;  // Key 3
-    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT))
-        state.keyboard_matrix[1][4] = true;  // Space
-    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START))
-        state.keyboard_matrix[5][7] = true;  // Enter
+    // Read D-pad and button states from port 0
+    bool up    = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP);
+    bool down  = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN);
+    bool left  = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT);
+    bool right = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    bool fire  = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
+    bool b_btn = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B);
+    bool y_btn = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y);
+
+    // Read port 1 joystick raw data
+    bool p1_up    = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP);
+    bool p1_down  = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN);
+    bool p1_left  = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT);
+    bool p1_right = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    bool p1_fire  = input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
+
+    if (vkb.is_visible()) {
+        // D-pad navigates VKB cursor (rising edge)
+        if (up && !prev_up_pressed)       vkb.move_cursor(videopac::Direction::Up);
+        if (down && !prev_down_pressed)    vkb.move_cursor(videopac::Direction::Down);
+        if (left && !prev_left_pressed)    vkb.move_cursor(videopac::Direction::Left);
+        if (right && !prev_right_pressed)  vkb.move_cursor(videopac::Direction::Right);
+
+        // B button activates/deactivates the current VKB key
+        videopac::VidKey vk = vkb.get_current_vidkey();
+        if (vk == videopac::VidKey::Reset) {
+            // RST key triggers emulator reset on B press
+            if (b_btn) {
+                if (emulator) emulator->reset();
+            }
+        } else {
+            uint8_t row = (static_cast<uint8_t>(vk) >> 4) & 0x07;
+            uint8_t col = static_cast<uint8_t>(vk) & 0x07;
+            if (b_btn) {
+                state.keyboard_matrix[row][col] = true;
+            }
+        }
+        // When released, matrix entry stays false (default)
+
+        // Y toggles VKB position (rising edge)
+        if (y_btn && !prev_y_pressed) {
+            vkb.toggle_position();
+        }
+
+        // Touch input via RETRO_DEVICE_POINTER
+        int16_t ptr_pressed = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
+        if (ptr_pressed) {
+            int16_t ptr_x = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
+            int16_t ptr_y = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+
+            // Translate from [-0x7FFF, 0x7FFF] to pixel coordinates
+            int pixel_x = (ptr_x + 0x7FFF) * videopac::FRAMEBUFFER_WIDTH / (2 * 0x7FFF);
+            int pixel_y = (ptr_y + 0x7FFF) * videopac::FRAMEBUFFER_HEIGHT / (2 * 0x7FFF);
+
+            // Clamp to valid framebuffer range
+            if (pixel_x < 0) pixel_x = 0;
+            if (pixel_x >= videopac::FRAMEBUFFER_WIDTH) pixel_x = videopac::FRAMEBUFFER_WIDTH - 1;
+            if (pixel_y < 0) pixel_y = 0;
+            if (pixel_y >= videopac::FRAMEBUFFER_HEIGHT) pixel_y = videopac::FRAMEBUFFER_HEIGHT - 1;
+
+            // Try hit test at both possible VKB positions (top and bottom)
+            // since position_bottom_ is private. Only one position will yield a valid hit.
+            int bottom_offset = videopac::FRAMEBUFFER_HEIGHT - videopac::VirtualKeyboard::VKB_HEIGHT;
+            int hit = vkb.hit_test(pixel_x, pixel_y - bottom_offset);
+            if (hit < 0) {
+                hit = vkb.hit_test(pixel_x, pixel_y);
+            }
+
+            if (hit >= 0) {
+                vkb.set_cursor(hit);  // Highlight touched key
+                videopac::VidKey touch_vk = vkb.get_vidkey_at(hit);
+                if (touch_vk == videopac::VidKey::Reset) {
+                    if (emulator) emulator->reset();
+                } else {
+                    uint8_t touch_row = (static_cast<uint8_t>(touch_vk) >> 4) & 0x07;
+                    uint8_t touch_col = static_cast<uint8_t>(touch_vk) & 0x07;
+                    state.keyboard_matrix[touch_row][touch_col] = true;
+                }
+            }
+        }
+
+        // Suppress D-pad from joystick1, B from keyboard_matrix[0][0], Y from keyboard_matrix[0][1]
+        // (D-pad not written to joystick1, B/Y not written to their normal keyboard mappings)
+
+        // Fire (A) still passes through to joystick (swap-aware)
+        // Port 1 data routes to the other joystick (swap-aware)
+        if (swap_joysticks) {
+            state.joystick2[4] = fire;
+            state.joystick1[0] = p1_up;
+            state.joystick1[1] = p1_down;
+            state.joystick1[2] = p1_left;
+            state.joystick1[3] = p1_right;
+            state.joystick1[4] = p1_fire;
+        } else {
+            state.joystick1[4] = fire;
+            state.joystick2[0] = p1_up;
+            state.joystick2[1] = p1_down;
+            state.joystick2[2] = p1_left;
+            state.joystick2[3] = p1_right;
+            state.joystick2[4] = p1_fire;
+        }
+
+        // Other keyboard mappings still pass through
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X))
+            state.keyboard_matrix[0][2] = true;  // Key 2
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L))
+            state.keyboard_matrix[0][3] = true;  // Key 3
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START))
+            state.keyboard_matrix[5][7] = true;  // Enter
+    } else {
+        // VKB hidden: pass all inputs through (swap-aware)
+        if (swap_joysticks) {
+            // Port 0 → joystick2, Port 1 → joystick1
+            state.joystick2[0] = up;
+            state.joystick2[1] = down;
+            state.joystick2[2] = left;
+            state.joystick2[3] = right;
+            state.joystick2[4] = fire;
+
+            state.joystick1[0] = p1_up;
+            state.joystick1[1] = p1_down;
+            state.joystick1[2] = p1_left;
+            state.joystick1[3] = p1_right;
+            state.joystick1[4] = p1_fire;
+        } else {
+            // Port 0 → joystick1, Port 1 → joystick2 (default)
+            state.joystick1[0] = up;
+            state.joystick1[1] = down;
+            state.joystick1[2] = left;
+            state.joystick1[3] = right;
+            state.joystick1[4] = fire;
+
+            state.joystick2[0] = p1_up;
+            state.joystick2[1] = p1_down;
+            state.joystick2[2] = p1_left;
+            state.joystick2[3] = p1_right;
+            state.joystick2[4] = p1_fire;
+        }
+
+        if (b_btn)
+            state.keyboard_matrix[0][0] = true;  // Key 0
+        if (y_btn)
+            state.keyboard_matrix[0][1] = true;  // Key 1
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X))
+            state.keyboard_matrix[0][2] = true;  // Key 2
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L))
+            state.keyboard_matrix[0][3] = true;  // Key 3
+        if (select_pressed)
+            state.keyboard_matrix[1][4] = true;  // Space
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START))
+            state.keyboard_matrix[5][7] = true;  // Enter
+    }
+
+    // Update prev states
+    prev_up_pressed = up;
+    prev_down_pressed = down;
+    prev_left_pressed = left;
+    prev_right_pressed = right;
+    prev_y_pressed = y_btn;
 
     emulator->set_input(state);
 }
+
 
 // --- libretro API implementation ---
 
@@ -175,7 +344,7 @@ RETRO_API unsigned retro_api_version(void) {
 RETRO_API void retro_get_system_info(struct retro_system_info* info) {
     memset(info, 0, sizeof(*info));
     info->library_name = "videopac";
-    info->library_version = "0.1.0";
+    info->library_version = "0.3.0";
     info->valid_extensions = "bin|rom|zip";
     info->need_fullpath = false;
     info->block_extract = false;
@@ -214,11 +383,11 @@ RETRO_API void retro_set_environment(retro_environment_t cb) {
         { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" },
         { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" },
         { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "Fire" },
-        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Key 0 (Select)" },
-        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Key 1" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "VKB Press / Key 0" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "VKB Position / Key 1" },
         { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "Key 2" },
         { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "Key 3" },
-        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Space" },
+        { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Toggle Virtual Keyboard" },
         { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Enter" },
         { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "P2 Up" },
         { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "P2 Down" },
@@ -256,6 +425,12 @@ RETRO_API void retro_run(void) {
 
     // Video: convert palette framebuffer to XRGB8888
     convert_framebuffer();
+
+    // Render VKB overlay if visible
+    if (vkb.is_visible()) {
+        vkb.render(video_buffer, videopac::FRAMEBUFFER_WIDTH, videopac::FRAMEBUFFER_HEIGHT, vkb_transparency_pct);
+    }
+
     video_cb(video_buffer, videopac::FRAMEBUFFER_WIDTH, videopac::FRAMEBUFFER_HEIGHT,
              videopac::FRAMEBUFFER_WIDTH * sizeof(uint32_t));
 
