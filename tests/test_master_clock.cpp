@@ -175,7 +175,6 @@ TEST_F(MasterClockTest, NTSCFullFrameVDCCycles) {
     const int EXPECTED_VDC_CYCLES = TICKS_PER_FRAME / 2;  // 60,015
     
     int vdc_count = 0;
-    int cpu_count = 0;
     
     for (int i = 0; i < TICKS_PER_FRAME; i++) {
         auto result = clock_ntsc->tick();
@@ -184,12 +183,10 @@ TEST_F(MasterClockTest, NTSCFullFrameVDCCycles) {
             vdc_count++;
         } else if (result == MasterClock::ExecuteNext::CPU) {
             clock_ntsc->cpu_executed();
-            cpu_count++;
         } else if (result == MasterClock::ExecuteNext::BOTH) {
             clock_ntsc->cpu_executed();
             clock_ntsc->vdc_executed();
             vdc_count++;
-            cpu_count++;
         }
     }
     
@@ -210,7 +207,6 @@ TEST_F(MasterClockTest, PALFullFrameVDCCycles) {
     const int EXPECTED_VDC_CYCLES = TICKS_PER_FRAME / 5;  // 71,006
     
     int vdc_count = 0;
-    int cpu_count = 0;
     
     for (int i = 0; i < TICKS_PER_FRAME; i++) {
         auto result = clock_pal->tick();
@@ -219,12 +215,10 @@ TEST_F(MasterClockTest, PALFullFrameVDCCycles) {
             vdc_count++;
         } else if (result == MasterClock::ExecuteNext::CPU) {
             clock_pal->cpu_executed();
-            cpu_count++;
         } else if (result == MasterClock::ExecuteNext::BOTH) {
             clock_pal->cpu_executed();
             clock_pal->vdc_executed();
             vdc_count++;
-            cpu_count++;
         }
     }
     
