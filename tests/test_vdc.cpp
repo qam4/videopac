@@ -269,7 +269,9 @@ TEST(VDCTest, VBlankTiming) {
     EXPECT_FALSE(vdc.is_vblank());
     
     // Advance to beam_x >= 183 where VBlank transitions
-    for (int i = 0; i < 183; i++) {
+    // Without master clock, tick_one_cycle() computes status THEN increments beam_x,
+    // so we need 184 ticks for status to reflect beam_x=183.
+    for (int i = 0; i < 184; i++) {
         vdc.tick(1);
     }
     

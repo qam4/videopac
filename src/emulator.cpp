@@ -10,14 +10,14 @@ namespace videopac {
 
 EmulatorCore::EmulatorCore(const Configuration& config)
     : config_(config), vdc_(config.video_standard), master_clock_(config.video_standard),
-      debugger_(nullptr), running_(false), paused_(false), frame_count_(0), 
-      vblank_interrupt_triggered_(false), prev_scanline_(0) {
+      debugger_(nullptr), running_(false), paused_(false), frame_count_(0) {
     
     // Connect components
     cpu_.set_memory_system(&memory_);
     cpu_.set_input_handler(&input_);
     memory_.set_vdc(&vdc_);
     memory_.set_cpu(&cpu_);  // Allow memory system to read Port 1 from CPU
+    vdc_.set_master_clock(&master_clock_);  // VDC queries master clock for beam position
 }
 
 Result<void> EmulatorCore::load_bios(const std::string& path) {
@@ -86,15 +86,13 @@ void EmulatorCore::run_frame() {
         return;
     }
     
-    // Reset VBlank interrupt flag at start of frame
-    vblank_interrupt_triggered_ = false;
-    
-    // Reset scanline tracking for counter mode
-    prev_scanline_ = 0;
+    // Reset VBlank flag in status register at start of frame
+    // (it will be latched again when vblank_rising_edge fires)
     
     // Clear frame_complete flag at start of frame
-    // The VDC will set it again when the frame completes
+    // The master clock will set it again when Y resets to 0
     vdc_.clear_frame_complete();
+    master_clock_.clear_frame_complete();
     
     // Reset audio sample buffer for this frame
     vdc_.reset_audio_sample_buffer();
@@ -129,7 +127,6 @@ void EmulatorCore::run_frame() {
         switch (next) {
             case MasterClock::ExecuteNext::BOTH: {
                 // Both CPU and VDC execute at this tick
-                // Execute CPU first, then VDC
                 auto cpu_start = profiling ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
                 
                 if (profiling) cpu_calls_this_frame++;
@@ -168,25 +165,11 @@ void EmulatorCore::run_frame() {
                 
                 if (profiling) vdc_calls_this_frame++;
                 
-                // Advance VDC by one cycle FIRST
+                // Advance VDC by one cycle
                 vdc_.tick_one_cycle();
                 
                 // Update CPU T1 pin with current VDC blanking state
-                // T1 = Hblank OR Vblank (counter increments on falling edges)
-                // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
                 cpu_.update_counter(vdc_.get_t1_state());
-                
-                // THEN check if we're at the end of a scanline (master clock wrapped to next scanline)
-                uint32 current_scanline = master_clock_.get_current_scanline();
-                if (current_scanline != prev_scanline_) {
-                    // Scanline boundary - tell VDC to wrap its counters
-                    vdc_.end_scanline();
-                    prev_scanline_ = current_scanline;
-                }
-                
-                // Check for interrupts AFTER VDC updates (so beam_y is current)
-                // Interrupt will be processed before next CPU instruction
-                handle_interrupts();
                 
                 // Notify master clock that VDC ticked
                 master_clock_.vdc_executed();
@@ -239,26 +222,12 @@ void EmulatorCore::run_frame() {
                 
                 if (profiling) vdc_calls_this_frame++;
                 
-                // Advance VDC by one cycle FIRST
+                // Advance VDC by one cycle
                 vdc_.tick_one_cycle();
                 
                 // Update CPU T1 pin with current VDC blanking state
-                // T1 = Hblank OR Vblank (counter increments on falling edges)
-                // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
                 cpu_.update_counter(vdc_.get_t1_state());
                 
-                // THEN check if we're at the end of a scanline (master clock wrapped to next scanline)
-                uint32 current_scanline = master_clock_.get_current_scanline();
-                if (current_scanline != prev_scanline_) {
-                    // Scanline boundary - tell VDC to wrap its counters
-                    vdc_.end_scanline();
-                    prev_scanline_ = current_scanline;
-                }
-                
-                // Check for interrupts AFTER VDC updates (so beam_y is current)
-                // Interrupt will be processed before next CPU instruction
-                handle_interrupts();
-        
                 // Notify master clock that VDC ticked
                 master_clock_.vdc_executed();
                 
@@ -270,10 +239,15 @@ void EmulatorCore::run_frame() {
             }
             
             case MasterClock::ExecuteNext::NONE:
-                // Neither CPU nor VDC ready at this tick
-                // Continue to next tick
                 break;
         }
+        
+        // Check for interrupts on EVERY tick, not just VDC ticks.
+        // The vblank_rising_edge is a master clock event that fires at tick 365
+        // of scanline 242. Since 455 is odd, the parity of master_tick_count
+        // at that point alternates each frame — so if we only check on VDC ticks
+        // (even master_tick_count for NTSC), we'd miss vblank on ~half the frames.
+        handle_interrupts();
     }
     
     // Update diagnostics
@@ -384,16 +358,15 @@ Result<void> EmulatorCore::load_state(const std::string& path) {
 }
 
 void EmulatorCore::handle_interrupts() {
-    // VBLANK interrupt: edge-triggered once per frame at the exact transition point
-    if (!vblank_interrupt_triggered_) {
-        uint16 beam_y = vdc_.get_beam_y();
-        uint16 vblank_start = (vdc_.get_video_standard() == VideoStandard::PAL) 
-            ? VideoTiming::PAL_VBLANK_START : VideoTiming::NTSC_VBLANK_START;
-        
-        if (beam_y >= vblank_start) {
-            cpu_.set_external_interrupt_pending(true);
-            vblank_interrupt_triggered_ = true;
-        }
+    // VBLANK interrupt: edge-triggered at the exact tick when vblank goes high.
+    // Hardware: /INT goes low and A1.3 goes high simultaneously at tick 365 of scanline F2h.
+    // Reference: doc/hardware/odyssey2_timing.txt Test 52
+    //
+    // The master clock tracks the vblank flip-flop and sets vblank_rising_edge()
+    // for exactly one tick when the transition occurs. No manual edge detection needed.
+    if (master_clock_.vblank_rising_edge()) {
+        cpu_.set_external_interrupt_pending(true);
+        vdc_.set_vblank_flag();  // Latch A1.3 high (cleared when CPU reads status register)
     }
     
     // Note: Timer interrupt (vector 0x007) is handled in CPU::execute_instruction()

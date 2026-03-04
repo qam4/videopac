@@ -376,7 +376,7 @@ void ImGuiDebuggerUI::save_state() {
 void ImGuiDebuggerUI::load_state() {
     try {
         // Read JSON from file
-        FILE* file = fopen("debugger_state.json", "r");
+        FILE* file = fopen("debugger_state.json", "rb");
         if (!file) {
             // Handle missing file gracefully (use defaults)
             // This is not an error - just means first run or file was deleted

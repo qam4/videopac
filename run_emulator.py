@@ -104,10 +104,10 @@ def run_sdl_mode(exe_path, bios_path, rom_path, extra_args):
     
     cmd = [
         exe_path,
-        "--press-key", "2", "100",
-        "--press-key", "2", "200",
-        "--press-joystick", "2", "0", "280", "50",
-        "--frames", "400",
+        # "--press-key", "2", "100",
+        # "--press-key", "2", "200",
+        # "--press-joystick", "2", "0", "280", "50",
+        # "--frames", "400",
         "--debug",
         "--region", "france",
         "--bios", bios_path,
@@ -133,10 +133,11 @@ def run_headless_mode(exe_path, bios_path, rom_path, extra_args):
         exe_path,
         "--headless",
         "--screenshot", "1",
-        "--frames", "10",
+        "--frames", "120",
         "--press-key", "1", "3",
         "--trace",
         "--vdc-trace",
+        "--region", "france",
         "--bios", bios_path,
         rom_path
     ]
@@ -221,8 +222,9 @@ Examples:
     
     parser.add_argument(
         "--bios",
-        default="roms/BIOS/bios_O2rom.bin",
-        help="Path to BIOS file (default: French C52 BIOS)"
+        # default="roms/BIOS/bios_O2rom.bin",
+        default="roms/BIOS/bios_c52.bin",  # French ROM
+        help="Path to BIOS file"
     )
     
     parser.add_argument(

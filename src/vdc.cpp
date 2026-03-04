@@ -1,4 +1,5 @@
 #include "vdc.h"
+#include "master_clock.h"
 #include <cstring>
 #include <iostream>
 #include <iomanip>
@@ -50,6 +51,8 @@ VDC::VDC(VideoStandard standard) {
     state_.video_standard = standard;
     extended_fb_mode_ = false;
     vdc_trace_enabled_ = false;
+    master_clock_ = nullptr;
+    latched_beam_y_ = 0;
     audio_sample_rate_ = 44100;
     vdc_cycles_per_audio_sample_ = 0;  // Will be set in reset()
     calculate_timing();
@@ -74,6 +77,7 @@ void VDC::reset() {
     state_.total_cycles = 0;
     state_.frame_number = 0;
     state_.frame_complete = false;
+    state_.prev_scanline = 0;
     
     // Reset collision state
     state_.collision_state = 0;
@@ -121,112 +125,100 @@ void VDC::tick(uint8 cycles) {
     }
 }
 
-// Advance VDC by exactly one clock cycle
-// Reference: Requirements 2.1, 2.3, 2.4
-// 
-// With the master clock implementation, the VDC increments beam_x on each tick.
-// The master clock calls end_scanline() when a scanline completes (after 455 master
-// ticks for NTSC, 1135 for PAL), which naturally produces varying VDC cycle counts
-// per scanline (227/228 alternating for NTSC, exactly 227 for PAL).
-// 
-// The VDC does NOT wrap beam_x internally - it relies on end_scanline() from the
-// master clock to provide the authoritative scanline boundary.
+// Advance VDC by exactly one clock cycle.
+// The master clock is the single source of truth for beam position.
+// VDC queries it for X, Y, and blanking signals.
 void VDC::tick_one_cycle() {
-    // Advance total cycles (for compatibility and debugging)
     state_.total_cycles++;
     
+    // Get current beam position from master clock
+    if (master_clock_) {
+        uint16 new_y = master_clock_->get_scanline();
+        uint8 new_x = master_clock_->get_beam_x();
+        
+        // Detect scanline transition for color latching
+        if (new_y != state_.prev_scanline) {
+            state_.latched_color = state_.registers[VDCRegisters::COLOR];
+            state_.prev_scanline = new_y;
+        }
+        
+        state_.beam_x = new_x;
+        state_.beam_y = new_y;
+    }
     
-    // Render pixel at current beam position BEFORE incrementing
-    // This fixes the off-by-one error that caused black bands and broken collision detection
+    // 1. Render pixel at current beam position
     render_current_pixel();
     
-    // Increment H-Counter (horizontal beam position in VDC cycles)
-    // This will be reset to 0 by end_scanline() when the master clock
-    // indicates a scanline boundary
-    state_.beam_x++;
+    // 2. Per-pixel collision detection (hardware does this as objects render)
+    if (state_.display_enabled) {
+        int bx = static_cast<int>(state_.beam_x);
+        int by = static_cast<int>(state_.beam_y);
+        int fb_x = bx - FramebufferMapping::FRAMEBUFFER_START_X;
+        int fb_y = by - FramebufferMapping::FRAMEBUFFER_START_Y;
+        if (fb_x >= 0 && fb_x < FRAMEBUFFER_WIDTH && fb_y >= 0 && fb_y < FRAMEBUFFER_HEIGHT) {
+            detect_collision_at_pixel(bx, by);
+        }
+    }
     
-    // Update audio
-    update_audio();
-    
-    // Capture audio sample at output sample rate
-    capture_audio_sample();
-    
-    // Update beam position registers based on latch bit
-    // Reference: doc/o2doc.md section 4.14 - Bit 1: 1 = Follow Beam, 0 = Latched
-    if (state_.registers[VDCRegisters::CONTROL] & ControlBits::LATCH_BEAM_POS) {
-        // When bit is SET, position follows beam (updates continuously)
+    // 3. Update beam position registers (for debugger display)
+    if (master_clock_ && (state_.registers[VDCRegisters::CONTROL] & ControlBits::LATCH_BEAM_POS)) {
         state_.registers[VDCRegisters::BEAM_X] = static_cast<uint8>(state_.beam_x);
         state_.registers[VDCRegisters::BEAM_Y] = static_cast<uint8>(state_.beam_y);
     }
-    // When bit is CLEAR, registers remain latched at their current value
     
-    // Update status register
+    // 4. Update status register
     uint8 status = 0;
     
-    // HBLANK status - active when beam_x >= visible width
-    if (state_.beam_x >= FRAMEBUFFER_WIDTH) {
+    if (is_hblank()) {
         status |= StatusBits::HBLANK;
     }
     
-    // VBLANK status
-    if (is_vblank()) {
-        status |= StatusBits::VBLANK;
-    }
-    
-    // Position strobe status
-    if (state_.registers[VDCRegisters::CONTROL] & ControlBits::LATCH_BEAM_POS) {
-        status &= ~StatusBits::POS_STROBE_STATUS;  // Latched
+    // VBLANK (A1.3) is a LATCHED flag — set by set_vblank_flag(), cleared on read.
+    // With master clock: emulator calls set_vblank_flag() at vblank rising edge.
+    // Without master clock (tests): derive from is_vblank() directly.
+    if (master_clock_) {
+        status |= (state_.registers[VDCRegisters::STATUS] & StatusBits::VBLANK);
     } else {
-        status |= StatusBits::POS_STROBE_STATUS;   // Following beam
+        if (is_vblank()) {
+            status |= StatusBits::VBLANK;
+        }
     }
     
-    // Preserve collision and sound status bits
+    if (state_.registers[VDCRegisters::CONTROL] & ControlBits::LATCH_BEAM_POS) {
+        status &= ~StatusBits::POS_STROBE_STATUS;
+    } else {
+        status |= StatusBits::POS_STROBE_STATUS;
+    }
+    
     status |= (state_.registers[VDCRegisters::STATUS] & (StatusBits::SOUND_NEEDS_SERVICE | 
                                                           StatusBits::EXT_OVERLAP | 
                                                           StatusBits::CHAR_OVERLAP));
     
     state_.registers[VDCRegisters::STATUS] = status;
+    
+    // 5. Audio
+    update_audio();
+    capture_audio_sample();
+    
+    // 6. Advance beam_x for tests without master clock
+    if (!master_clock_) {
+        state_.beam_x++;
+    }
 }
 
-// End of scanline - wrap counters for next scanline
-// Called by emulator when master clock transitions to a new scanline
-// This is the authoritative scanline boundary - the master clock determines
-// when scanlines end based on master tick count (455 ticks NTSC, 1135 PAL)
+// Legacy end_scanline() — only used by tests that don't have a master clock.
+// With the master clock architecture, scanline transitions are detected in tick_one_cycle()
+// by comparing current_scanline_ with prev_scanline_.
 void VDC::end_scanline() {
-    // Detect collisions for the scanline that just finished rendering
-    // Only check visible scanlines (hardware scanlines 24-263 for 240-line framebuffer)
-    constexpr int VISIBLE_START_Y = GridLayout::START_Y;  // 24
-    constexpr int VISIBLE_END_Y = VISIBLE_START_Y + FRAMEBUFFER_HEIGHT;  // 264
-    
-    if (state_.beam_y >= VISIBLE_START_Y && state_.beam_y < VISIBLE_END_Y) {
-        // Convert hardware scanline to framebuffer row
-        int y = static_cast<int>(state_.beam_y) - VISIBLE_START_Y;
-        detect_collisions(y);
-    }
-    
-    // Reset horizontal counter for next scanline
+    // Reset horizontal counter
     state_.beam_x = 0;
     
     // Latch color register for the new scanline
-    // Hardware context: The 8245 datasheet (page 14) calls register 0xA3 the
-    // "Color Latch" — a write-only register that controls background and grid color.
-    // The chip generates R,G,B,L signals on-the-fly as the beam scans (no framebuffer).
-    //
-    // On real hardware, mid-scanline color writes would affect remaining pixels on
-    // that scanline. However, games like Killer Bees time their color writes to land
-    // near the end of the visible area (beam_x ~131-154), intending them to take
-    // effect on the next scanline. On a CRT, the few pixels of color bleeding at
-    // the transition boundary would be invisible due to natural signal blurring.
-    //
-    // We latch the color at scanline boundaries to produce clean transitions that
-    // match the visual intent of the software and what a CRT would display.
-    // Reference: Intel 8245 datasheet "Color Latch" (page 14)
     state_.latched_color = state_.registers[VDCRegisters::COLOR];
     
     // Advance to next scanline
     state_.beam_y++;
     
-    // Check for end of frame
     if (state_.beam_y >= total_scanlines_) {
         state_.beam_y = 0;
         state_.frame_number++;
@@ -362,7 +354,22 @@ uint8 VDC::read_register(uint8 address) {
             break;
             
         default:
-            value = state_.registers[address];
+            // Handle beam position register reads with latching behavior
+            // Hardware: The X counter is a live value derived from the master clock.
+            // "When Xvalue is read, it latches Yvalue" — odyssey2_timing.txt
+            if (address == VDCRegisters::BEAM_X) {
+                if (master_clock_) {
+                    value = master_clock_->get_beam_x_at_cpu_read();
+                } else {
+                    value = state_.registers[address];
+                }
+                latched_beam_y_ = static_cast<uint8>(state_.beam_y);
+            } else if (address == VDCRegisters::BEAM_Y) {
+                // Reading Y returns the latched value (set when X was last read)
+                value = latched_beam_y_;
+            } else {
+                value = state_.registers[address];
+            }
             break;
     }
     
@@ -515,68 +522,43 @@ const uint8* VDC::get_extended_framebuffer() const {
     return &state_.extended_framebuffer[0][0];
 }
 
-// Check if in vertical blank period
-// Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
-// Reference: doc/hardware/odyssey2_timing.txt - Vblank transitions at master tick 365
-//
-// Hardware timing: Vblank transitions at master tick 365 (between master ticks 364-365)
-// VDC timing: Master ticks 364-365 correspond to VDC cycle 182 (365/2 = 182.5)
-//             Transition happens at END of VDC cycle 182
-//             At beam_x=183, Vblank has transitioned
-//
-// Implementation: Use beam_x >= BLANKING_START_X (183) for transition point
-bool VDC::is_vblank() const {
-    if (state_.beam_y == vblank_start_) {
-        // On vblank start scanline, Vblank goes high at beam_x = 183
-        return (state_.beam_x >= VideoTiming::BLANKING_START_X);
-    } else if (state_.beam_y == 0) {
-        // On scanline 0, Vblank goes low at beam_x = 183
-        return (state_.beam_x < VideoTiming::BLANKING_START_X);
-    } else if (state_.beam_y > vblank_start_) {
-        // Between vblank start and end of frame, Vblank is active
-        return true;
-    } else {
-        // Before vblank start, Vblank is inactive
-        return false;
+// Check if in horizontal blank period — delegates to master clock
+bool VDC::is_hblank() const {
+    if (master_clock_) {
+        return master_clock_->is_hblank();
     }
+    return (state_.beam_x >= VideoTiming::BLANKING_START_X);
 }
 
-// Get T1 pin state (for CPU counter mode)
-// T1 = !(Hblank OR Vblank) - T1 is HIGH during visible period, LOW during blanking
-// Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
-// "The Hblank and Vblank are OR'd together and connect to the T1 input on the 8048."
-//
-// Hardware timing (master ticks 0-454 per scanline):
-// - Hblank: tick > 365 && tick < 453 (active from tick 366-452)
-// - Vblank: transitions at tick 365 on scanlines vblank_start and 0
-//
-// VDC cycle timing (0-227 per scanline, VDC ticks every 2 master ticks):
-// - Master ticks 366-367 = VDC cycle 183
-// - Both Hblank and Vblank transition at beam_x = 183
-// - The 140ns gap (1 master tick) between them is not observable at VDC granularity
-//
-// T1 behavior:
-// - T1 is HIGH (1) during visible period (not blanking)
-// - T1 is LOW (0) during blanking (hblank or vblank)
-// - Counter increments on falling edge (visible → blanking transition)
-//
-// Note: VDC cycle granularity is sufficient because:
-// - CPU samples T1 every 20 master ticks (10 VDC cycles)
-// - VDC updates every 2 master ticks (1 VDC cycle)
-// - The 1 master tick gap is too small to observe
+// Check if in vertical blank period — delegates to master clock
+bool VDC::is_vblank() const {
+    if (master_clock_) {
+        return master_clock_->is_vblank();
+    }
+    // Fallback for tests without master clock
+    if (state_.beam_y == vblank_start_) {
+        return (state_.beam_x >= VideoTiming::BLANKING_START_X);
+    } else if (state_.beam_y == 0) {
+        return (state_.beam_x < VideoTiming::BLANKING_START_X);
+    } else if (state_.beam_y > vblank_start_) {
+        return true;
+    }
+    return false;
+}
+
+// T1 pin state — delegates to master clock
 bool VDC::get_t1_state() const {
-    // Hblank is active when beam_x >= BLANKING_START_X
-    bool hblank = (state_.beam_x >= VideoTiming::BLANKING_START_X);
-    
-    // Vblank uses same logic as is_vblank()
-    bool vblank = is_vblank();
-    
-    // T1 is inverted: HIGH during visible, LOW during blanking
-    return !(hblank || vblank);
+    if (master_clock_) {
+        return master_clock_->get_t1_state();
+    }
+    return !(is_hblank() || is_vblank());
 }
 
 // Check if frame just completed (beam wrapped to scanline 0)
 bool VDC::is_frame_complete() const {
+    if (master_clock_) {
+        return master_clock_->is_frame_complete();
+    }
     return state_.frame_complete;
 }
 
@@ -588,6 +570,103 @@ void VDC::clear_frame_complete() {
 // Get current frame number from total cycles
 uint64 VDC::get_frame_number() const {
     return state_.frame_number;
+}
+
+uint16 VDC::get_scanline() const {
+    if (master_clock_) {
+        return master_clock_->get_scanline();
+    }
+    return state_.beam_y;
+}
+
+uint16 VDC::get_beam_x() const {
+    if (master_clock_) {
+        return master_clock_->get_beam_x();
+    }
+    return state_.beam_x;
+}
+
+uint16 VDC::get_beam_y() const {
+    if (master_clock_) {
+        return master_clock_->get_scanline();
+    }
+    return state_.beam_y;
+}
+
+// Per-pixel collision detection
+// Hardware: "stores coincidences as they occur on screen" (8245 datasheet)
+void VDC::detect_collision_at_pixel(int x, int y) {
+    uint8 collision_enable = state_.registers[VDCRegisters::COLLISION];
+    if (collision_enable == 0) return;
+    
+    // Determine which objects are present at this pixel
+    uint8 objects_here = 0;
+    
+    // Check grid
+    if (state_.grid_enabled && is_grid_pixel_at(x, y)) {
+        // Simplified: mark as horizontal grid (most common case)
+        // A more precise implementation would distinguish h-grid vs v-grid
+        objects_here |= CollisionBits::HORIZ_GRID;
+    }
+    
+    // Check characters
+    uint8 char_color;
+    if (is_character_pixel_at(x, y, char_color)) {
+        objects_here |= CollisionBits::CHARACTERS;
+    }
+    
+    // Check sprites
+    for (int s = 0; s < 4; s++) {
+        uint8 base_addr = VDCRegisters::SPRITE0_Y + (s * 4);
+        uint8 sprite_y = state_.registers[base_addr + 0];
+        uint8 sprite_x = state_.registers[base_addr + 1];
+        uint8 sprite_color_attr = state_.registers[base_addr + 2];
+        
+        bool double_size = (sprite_color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
+        bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
+        bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
+        
+        int sprite_height = double_size ? 32 : 16;
+        if (y < sprite_y || y >= sprite_y + sprite_height) continue;
+        
+        int sprite_width = double_size ? 16 : 8;
+        int sprite_row = (y - sprite_y) / (double_size ? 4 : 2);
+        uint8 pattern = state_.registers[VDCRegisters::SPRITE0_PATTERN + (s * 8) + sprite_row];
+        
+        bool sprite_here = false;
+        for (int px = 0; px < sprite_width && !sprite_here; px++) {
+            int screen_x = sprite_x + px;
+            int screen_row = y - sprite_y;
+            bool is_even_row = (screen_row & 1) == 0;
+            if (shift_full) screen_x += 1;
+            else if (shift_even && is_even_row) screen_x += 1;
+            
+            if (screen_x != x) continue;
+            
+            int pattern_x = double_size ? (px / 2) : px;
+            if (pattern & (0x01 << pattern_x)) {
+                objects_here |= (1 << s);
+                sprite_here = true;
+            }
+        }
+    }
+    
+    if (objects_here == 0) return;
+    
+    // Need at least 2 objects for a collision
+    uint8 temp = objects_here;
+    int count = 0;
+    while (temp) { count += (temp & 1); temp >>= 1; }
+    if (count < 2) return;
+    
+    // For each enabled object present, report all OTHER objects present
+    for (int bit = 0; bit < 8; bit++) {
+        uint8 obj_bit = (1 << bit);
+        if ((collision_enable & obj_bit) && (objects_here & obj_bit)) {
+            state_.collision_state |= (objects_here & ~obj_bit);
+            state_.collision_detected = true;
+        }
+    }
 }
 
 // Get current audio sample

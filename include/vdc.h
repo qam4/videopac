@@ -5,6 +5,9 @@
 
 namespace videopac {
 
+// Forward declaration — VDC queries the master clock for beam position
+class MasterClock;
+
 // VDC Register addresses
 // Reference: doc/o2doc.md Appendix D, doc/8245.md lines 600-650
 namespace VDCRegisters {
@@ -42,224 +45,165 @@ namespace VDCRegisters {
     constexpr uint8 SPRITE3_PATTERN = 0x98;
     
     // Control and status registers
-    constexpr uint8 CONTROL = 0xA0;           // VDC control register
-    constexpr uint8 STATUS = 0xA1;            // VDC status register
-    constexpr uint8 COLLISION = 0xA2;         // Collision register
-    constexpr uint8 COLOR = 0xA3;             // Color register
-    constexpr uint8 BEAM_X = 0xA4;            // X beam position (horizontal)
-    constexpr uint8 BEAM_Y = 0xA5;            // Y beam position (vertical)
+    constexpr uint8 CONTROL = 0xA0;
+    constexpr uint8 STATUS = 0xA1;
+    constexpr uint8 COLLISION = 0xA2;
+    constexpr uint8 COLOR = 0xA3;
+    constexpr uint8 BEAM_X = 0xA4;
+    constexpr uint8 BEAM_Y = 0xA5;
     
     // Audio registers
-    constexpr uint8 SOUND0 = 0xA7;            // Sound shift register byte 0
-    constexpr uint8 SOUND1 = 0xA8;            // Sound shift register byte 1
-    constexpr uint8 SOUND2 = 0xA9;            // Sound shift register byte 2
-    constexpr uint8 SOUND_CONTROL = 0xAA;     // Sound control register
+    constexpr uint8 SOUND0 = 0xA7;
+    constexpr uint8 SOUND1 = 0xA8;
+    constexpr uint8 SOUND2 = 0xA9;
+    constexpr uint8 SOUND_CONTROL = 0xAA;
     
     // Grid registers
-    constexpr uint8 GRID_H_BASE = 0xC0;       // Horizontal grid lines 0-8 (0xC0-0xC8)
-    constexpr uint8 GRID_H9_BASE = 0xD0;      // Horizontal grid line 9 (0xD0-0xD8)
-    constexpr uint8 GRID_V_BASE = 0xE0;       // Vertical grid lines (0xE0-0xE9)
+    constexpr uint8 GRID_H_BASE = 0xC0;
+    constexpr uint8 GRID_H9_BASE = 0xD0;
+    constexpr uint8 GRID_V_BASE = 0xE0;
 }
 
 // Grid layout constants
-// Values derived from o2em implementation and hardware testing
-// Reference: o2em vdc.c, Intel 8245 datasheet
 namespace GridLayout {
-    constexpr int START_X = 8;           // Grid start position (both horizontal and vertical bars)
-    constexpr int START_Y = 24;          // Vertical start position (hardware specification)
-    constexpr int ROW_HEIGHT = 24;       // Each row spans 24 scanlines (3 line + 21 spacing)
-    constexpr int LINE_HEIGHT = 3;       // Grid lines are 3 scanlines thick
-    constexpr int COL_WIDTH = 16;        // Each column is 16 pixels wide (hardware resolution)
-    constexpr int HBAR_WIDTH = 18;       // Horizontal bars are 18 pixels wide
-    constexpr int VBAR_WIDTH_NORMAL = 2; // Vertical bars normal width
-    constexpr int VBAR_WIDTH_FILL = 16;  // Vertical bars fill mode width
+    constexpr int START_X = 8;
+    constexpr int START_Y = 24;
+    constexpr int ROW_HEIGHT = 24;
+    constexpr int LINE_HEIGHT = 3;
+    constexpr int COL_WIDTH = 16;
+    constexpr int HBAR_WIDTH = 18;
+    constexpr int VBAR_WIDTH_NORMAL = 2;
+    constexpr int VBAR_WIDTH_FILL = 16;
 }
 
 // Framebuffer mapping constants
-// Maps hardware beam coordinates to framebuffer coordinates
 namespace FramebufferMapping {
-    // Standard framebuffer (160x240)
-    constexpr int FRAMEBUFFER_START_X = 0;   // beam_x 0-159 maps to framebuffer x 0-159
-    constexpr int FRAMEBUFFER_START_Y = 0;   // beam_y 0-239 maps to framebuffer y 0-239
-    
-    // Extended framebuffer (240x250) - for debugging
-    constexpr int EXTENDED_FB_START_X = 0;   // beam_x 0-239 maps to extended fb x 0-239
-    constexpr int EXTENDED_FB_START_Y = 0;   // beam_y 0-249 maps to extended fb y 0-249
+    constexpr int FRAMEBUFFER_START_X = 0;
+    constexpr int FRAMEBUFFER_START_Y = 0;
+    constexpr int EXTENDED_FB_START_X = 0;
+    constexpr int EXTENDED_FB_START_Y = 0;
 }
 
 // Control register (0xA0) bit definitions
-// Reference: doc/o2doc.md section 4.6, doc/8245.md lines 440-470
 namespace ControlBits {
-    constexpr uint8 ENABLE_HBLANK_INT = 0x01;  // Bit 0: Enable horizontal interrupt
-    constexpr uint8 LATCH_BEAM_POS = 0x02;     // Bit 1: Latch beam position
-    constexpr uint8 ENABLE_SOUND_INT = 0x04;   // Bit 2: Enable sound interrupt
-    constexpr uint8 ENABLE_GRID = 0x08;        // Bit 3: Enable grid
-    constexpr uint8 ENABLE_EXT_OVERLAP = 0x10; // Bit 4: Enable external overlap (unused in O2)
-    constexpr uint8 ENABLE_DISPLAY = 0x20;     // Bit 5: Enable display
-    constexpr uint8 ENABLE_DOT_GRID = 0x40;    // Bit 6: Enable dot grid
-    constexpr uint8 ENABLE_FILL_MODE = 0x80;   // Bit 7: Enable fill mode
+    constexpr uint8 ENABLE_HBLANK_INT = 0x01;
+    constexpr uint8 LATCH_BEAM_POS = 0x02;
+    constexpr uint8 ENABLE_SOUND_INT = 0x04;
+    constexpr uint8 ENABLE_GRID = 0x08;
+    constexpr uint8 ENABLE_EXT_OVERLAP = 0x10;
+    constexpr uint8 ENABLE_DISPLAY = 0x20;
+    constexpr uint8 ENABLE_DOT_GRID = 0x40;
+    constexpr uint8 ENABLE_FILL_MODE = 0x80;
 }
 
 // Status register (0xA1) bit definitions
-// Reference: doc/o2doc.md section 4.7, doc/8245.md lines 480-500
 namespace StatusBits {
-    constexpr uint8 HBLANK = 0x01;             // Bit 0: Horizontal blank active
-    constexpr uint8 POS_STROBE_STATUS = 0x02;  // Bit 1: Position strobe status
-    constexpr uint8 SOUND_NEEDS_SERVICE = 0x04;// Bit 2: Sound register empty
-    constexpr uint8 VBLANK = 0x08;             // Bit 3: Vertical blank active
-    constexpr uint8 EXT_OVERLAP = 0x40;        // Bit 6: External chip overlap
-    constexpr uint8 CHAR_OVERLAP = 0x80;       // Bit 7: Character overlap
+    constexpr uint8 HBLANK = 0x01;
+    constexpr uint8 POS_STROBE_STATUS = 0x02;
+    constexpr uint8 SOUND_NEEDS_SERVICE = 0x04;
+    constexpr uint8 VBLANK = 0x08;
+    constexpr uint8 EXT_OVERLAP = 0x40;
+    constexpr uint8 CHAR_OVERLAP = 0x80;
 }
 
 // Collision register (0xA2) bit definitions
-// Reference: doc/o2doc.md section 4.8, doc/8245.md lines 500-520
 namespace CollisionBits {
-    constexpr uint8 SPRITE0 = 0x01;            // Bit 0: Sprite 0
-    constexpr uint8 SPRITE1 = 0x02;            // Bit 1: Sprite 1
-    constexpr uint8 SPRITE2 = 0x04;            // Bit 2: Sprite 2
-    constexpr uint8 SPRITE3 = 0x08;            // Bit 3: Sprite 3
-    constexpr uint8 VERT_GRID = 0x10;          // Bit 4: Vertical grid
-    constexpr uint8 HORIZ_GRID = 0x20;         // Bit 5: Horizontal grid and dots
-    constexpr uint8 EXT_COLLISION = 0x40;      // Bit 6: External collision (unused in O2)
-    constexpr uint8 CHARACTERS = 0x80;         // Bit 7: Characters
+    constexpr uint8 SPRITE0 = 0x01;
+    constexpr uint8 SPRITE1 = 0x02;
+    constexpr uint8 SPRITE2 = 0x04;
+    constexpr uint8 SPRITE3 = 0x08;
+    constexpr uint8 VERT_GRID = 0x10;
+    constexpr uint8 HORIZ_GRID = 0x20;
+    constexpr uint8 EXT_COLLISION = 0x40;
+    constexpr uint8 CHARACTERS = 0x80;
 }
 
 // Sprite color register (byte 2) bit definitions
-// Reference: doc/o2doc.md section 4.3.1
 namespace SpriteColorBits {
-    constexpr uint8 SHIFT_FULL = 0x01;         // Bit 0: Shift sprite 1 pixel right
-    constexpr uint8 SHIFT_EVEN = 0x02;         // Bit 1: Shift even rows 1 pixel right
-    constexpr uint8 DOUBLE_SIZE = 0x04;        // Bit 2: Double size sprite (16x16)
-    constexpr uint8 COLOR_MASK = 0x38;         // Bits 3-5: Sprite color (0-7)
+    constexpr uint8 SHIFT_FULL = 0x01;
+    constexpr uint8 SHIFT_EVEN = 0x02;
+    constexpr uint8 DOUBLE_SIZE = 0x04;
+    constexpr uint8 COLOR_MASK = 0x38;
     constexpr uint8 COLOR_SHIFT = 3;
 }
 
 // Sound control register (0xAA) bit definitions
-// Reference: doc/o2doc.md section 4.10, doc/8245.md lines 380-420
 namespace SoundControlBits {
-    constexpr uint8 VOLUME_MASK = 0x0F;        // Bits 0-3: Volume (0-15)
-    constexpr uint8 ENABLE_NOISE = 0x10;       // Bit 4: Enable noise generation
-    constexpr uint8 SHIFT_FREQ = 0x20;         // Bit 5: Shift frequency (0=983Hz, 1=3933Hz)
-    constexpr uint8 LOOP_MODE = 0x40;          // Bit 6: Loop mode
-    constexpr uint8 ENABLE_SOUND = 0x80;       // Bit 7: Enable sound
+    constexpr uint8 VOLUME_MASK = 0x0F;
+    constexpr uint8 ENABLE_NOISE = 0x10;
+    constexpr uint8 SHIFT_FREQ = 0x20;
+    constexpr uint8 LOOP_MODE = 0x40;
+    constexpr uint8 ENABLE_SOUND = 0x80;
 }
 
-// Audio frequencies (Hz)
-// Reference: doc/o2doc.md section 4.10, doc/8245.md lines 400-410
-constexpr uint16 AUDIO_FREQ_LOW = 983;         // Low shift frequency
-constexpr uint16 AUDIO_FREQ_HIGH = 3933;       // High shift frequency
+constexpr uint16 AUDIO_FREQ_LOW = 983;
+constexpr uint16 AUDIO_FREQ_HIGH = 3933;
 
 // Video timing constants
-// Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
-// 
-// IMPORTANT: VDC cycles per scanline are NOT fixed - they vary based on master clock phase.
-// The master clock (MasterClock class) determines when scanlines end and calls vdc.end_scanline().
-// 
-// Relationship to master clock:
-//   NTSC: 455 master ticks/scanline ÷ 2 = 227.5 VDC cycles/scanline (alternates 227/228)
-//   PAL:  1135 master ticks/scanline ÷ 5 = 227 VDC cycles/scanline (exact)
-// 
-// See include/master_clock.h for master clock timing details.
+// The master clock is the single source of truth for all timing.
+// These constants are kept for backward compatibility with tests.
 namespace VideoTiming {
-    // NTSC timing (60Hz)
     constexpr uint16 NTSC_SCANLINES = 262;
-    constexpr uint16 NTSC_VBLANK_START = 242;  // Hardware: scanline F2h (from odyssey2_timing.txt)
-    
-    // PAL timing (50Hz)
+    constexpr uint16 NTSC_VBLANK_START = 242;
     constexpr uint16 PAL_SCANLINES = 312;
     constexpr uint16 PAL_VBLANK_START = 284;
-    
-    // Blanking signal timing (from doc/hardware/odyssey2_timing.txt)
-    // Hardware uses master clock ticks (455 per scanline NTSC), VDC uses VDC cycles (227.5 per scanline)
-    // VDC ticks every 2 master ticks, so: master_tick / 2 = beam_x
-    //
-    // Hardware timing (master ticks):
-    // - Vblank transitions at master tick 365 (between ticks 364-365)
-    // - Hblank starts at master tick 366
-    //
-    // VDC cycle timing:
-    // - Master ticks 364-365 = VDC cycle 182 (365/2 = 182.5)
-    // - Master ticks 366-367 = VDC cycle 183
-    // - At beam_x=182: Vblank transition happens at END of cycle (master tick 365)
-    // - At beam_x=183: Vblank is low, Hblank is high (master tick 366)
-    //
-    // Therefore both signals transition at beam_x >= 183
-    constexpr uint16 BLANKING_START_X = 183;  // Both Vblank and Hblank transition here
+    // Blanking start in VDC X coordinates (master tick 366 / 2 = 183)
+    constexpr uint16 BLANKING_START_X = 183;
 }
 
 // VDC state structure
-// References: doc/o2doc.md (sections 4.0-4.14), doc/8245.md (lines 200-700)
 struct VDCState {
     // Memory-mapped registers (0x00-0xFF)
-    // Reference: doc/o2doc.md Appendix D, doc/8245.md lines 600-650
-    uint8 registers[256];                           // All VDC registers
+    uint8 registers[256];
     
     // Framebuffer output (160x200 pixels, palette indices 0-7)
-    // Reference: doc/o2doc.md section 4.0, doc/8245.md lines 1-30
     uint8 framebuffer[FRAMEBUFFER_HEIGHT][FRAMEBUFFER_WIDTH];
     
-    // Extended debug framebuffer (240x250 pixels, shows area beyond visible display)
-    // Only used when extended_fb_mode is enabled
+    // Extended debug framebuffer (240x250 pixels)
     uint8 extended_framebuffer[EXTENDED_FB_HEIGHT][EXTENDED_FB_WIDTH];
     
-    // Video timing state
-    // Reference: doc/o2doc.md section 4.11, doc/8245.md lines 520-560
-    uint16 beam_x;                                  // Horizontal beam position (0-227 for full scanline including HBLANK)
-    uint16 beam_y;                                  // Vertical beam position (0-261 NTSC, 0-311 PAL)
-    uint64 total_cycles;                            // Total VDC cycles since reset
-    uint64 frame_number;                            // Current frame number (increments when beam_y wraps to 0)
-    VideoStandard video_standard;                   // PAL or NTSC
-    bool frame_complete;                            // Frame just completed (beam wrapped to scanline 0)
+    // Video timing state — these are now CACHED copies of master clock state,
+    // kept for save/restore and debugger display. The master clock is authoritative.
+    uint16 beam_x;              // Cached X position (for debugger/savestate)
+    uint16 beam_y;              // Cached Y position (for debugger/savestate)
+    uint64 total_cycles;
+    uint64 frame_number;
+    VideoStandard video_standard;
+    bool frame_complete;
     
     // Collision detection state
-    // Reference: doc/o2doc.md section 4.8, doc/8245.md lines 480-500
-    // Hardware behavior (Intel 8245 datasheet, "Control and Status" section):
-    // - Enable Overlap register (write 0xA2): masks which objects participate in detection
-    //   "When a bit is '0' the overlap of that object with any other object will not
-    //    set the bits for the other objects in the Overlap Status register."
-    // - Overlap Status register (read 0xA2): accumulates coincidences as they occur
-    //   "This register is reset when read." — NOT when written.
-    // Our cycle-accurate architecture applies the enable mask at detection time
-    // (matching the datasheet), unlike o2em which filters at read time (works for
-    // o2em because it renders entire frames at once before CPU gets control).
-    uint8 collision_state;                          // Accumulated overlap status bits (register 0xA2 read)
-    bool collision_detected;                        // Collision occurred this frame
+    uint8 collision_state;
+    bool collision_detected;
     
     // Display enable state
-    // Reference: doc/o2doc.md section 4.6, doc/8245.md lines 440-470
-    bool display_enabled;                           // Display enable (bit 5 of 0xA0)
-    bool grid_enabled;                              // Grid enable (bit 3 of 0xA0)
+    bool display_enabled;
+    bool grid_enabled;
     
-    // Latched color register - snapped at scanline boundaries
-    // The 8245 "Color Latch" (datasheet p.14) feeds the R,G,B,L output logic.
-    // Games time color writes to land near HBLANK; on a CRT the few bleeding
-    // pixels at the transition would be invisible. Latching at scanline
-    // boundaries produces clean transitions matching the intended visual result.
-    uint8 latched_color;                            // Color register value for current scanline
+    // Latched color register
+    uint8 latched_color;
     
-    // Audio state (24-bit shift register system)
-    // Reference: doc/o2doc.md section 4.10, doc/8245.md lines 380-420
-    uint32 audio_shift_register;                    // 24-bit shift register (registers 0xA7-0xA9)
-    uint8 audio_shift_counter;                      // Shift counter (0-23)
-    uint16 audio_frequency;                         // Shift frequency (983Hz or 3933Hz)
-    uint8 audio_volume;                             // Volume (0-15, bits 0-3 of 0xAA)
-    bool audio_enabled;                             // Audio enable (bit 7 of 0xAA)
-    bool audio_loop;                                // Loop mode (bit 6 of 0xAA)
-    bool audio_noise;                               // Noise mode (bit 4 of 0xAA)
-    uint32 audio_cycle_accumulator;                 // Cycle accumulator for audio timing
+    // Previous scanline (for detecting scanline transitions in tick_one_cycle)
+    uint16 prev_scanline;
     
-    // Audio sample ring buffer - filled during tick_one_cycle(), read by get_audio_buffer()
-    // Max samples per frame: 44100/50 = 882 (PAL), 44100/60 = 735 (NTSC)
-    // Use 1024 for headroom
+    // Audio state
+    uint32 audio_shift_register;
+    uint8 audio_shift_counter;
+    uint16 audio_frequency;
+    uint8 audio_volume;
+    bool audio_enabled;
+    bool audio_loop;
+    bool audio_noise;
+    uint32 audio_cycle_accumulator;
+    
+    // Audio sample ring buffer
     static constexpr size_t AUDIO_BUFFER_SIZE = 1024;
-    int16 audio_sample_buffer[AUDIO_BUFFER_SIZE];   // Ring buffer of audio samples
-    uint16 audio_sample_write_pos;                  // Write position in ring buffer
-    uint16 audio_sample_count;                      // Number of samples written this frame
-    uint32 audio_sample_accumulator;                // Cycle accumulator for sample rate conversion
+    int16 audio_sample_buffer[AUDIO_BUFFER_SIZE];
+    uint16 audio_sample_write_pos;
+    uint16 audio_sample_count;
+    uint32 audio_sample_accumulator;
     
-    // Character ROM data (64 characters, 8 bytes each)
-    // Reference: doc/o2doc.md Appendix C
-    uint8 character_rom[64 * 8];                    // Character pattern ROM
+    // Character ROM data
+    uint8 character_rom[64 * 8];
 };
 
 // Intel 8245 VDC emulation
@@ -271,8 +215,7 @@ public:
     // Core interface
     void reset();
     void tick(uint8 cycles);
-    void tick_one_cycle();                          // Advance VDC by exactly 1 clock cycle
-    void end_scanline();                            // End of scanline - wrap H-counter and increment V-counter
+    void tick_one_cycle();
     
     // Register access
     void write_register(uint8 address, uint8 value);
@@ -280,84 +223,95 @@ public:
     
     // Rendering
     void render_scanline();
-    void render_current_pixel();                    // Render pixel at current beam position
+    void render_current_pixel();
     const uint8* get_framebuffer() const;
     
-    // Extended debug framebuffer (shows area beyond visible 160×200)
+    // Extended debug framebuffer
     void set_extended_framebuffer_mode(bool enabled);
     bool is_extended_framebuffer_mode() const { return extended_fb_mode_; }
     const uint8* get_extended_framebuffer() const;
     int get_extended_framebuffer_width() const { return EXTENDED_FB_WIDTH; }
     int get_extended_framebuffer_height() const { return EXTENDED_FB_HEIGHT; }
     
-    // Status queries
+    // Status queries — all delegate to master clock
+    bool is_hblank() const;
     bool is_vblank() const;
-    bool is_frame_complete() const;                 // Check if frame just completed (beam wrapped to scanline 0)
-    void clear_frame_complete();                    // Clear frame_complete flag (called at start of new frame)
+    bool is_frame_complete() const;
+    void clear_frame_complete();
     
     // Audio
     int16 get_audio_sample();
-    void set_audio_sample_rate(uint32 sample_rate);  // Set output sample rate (e.g. 44100)
+    void set_audio_sample_rate(uint32 sample_rate);
     uint16 get_audio_sample_count() const { return state_.audio_sample_count; }
     const int16* get_audio_sample_buffer() const { return state_.audio_sample_buffer; }
-    void reset_audio_sample_buffer();                // Reset write pos and count for new frame
+    void reset_audio_sample_buffer();
     
     // State management
     VDCState get_state() const;
     void set_state(const VDCState& state);
-    void get_character_rom(uint8* dest) const;     // Copy character ROM data (for debugger)
+    void get_character_rom(uint8* dest) const;
     
-    // Accessors
-    uint16 get_scanline() const { return state_.beam_y; }  // For backward compatibility
-    uint16 get_beam_x() const { return state_.beam_x; }
-    uint16 get_beam_y() const { return state_.beam_y; }
+    // Accessors — beam position comes from master clock
+    uint16 get_scanline() const;
+    uint16 get_beam_x() const;
+    uint16 get_beam_y() const;
     uint64 get_total_cycles() const { return state_.total_cycles; }
-    uint64 get_frame_number() const;                    // Calculate current frame number from total cycles
+    uint64 get_frame_number() const;
     VideoStandard get_video_standard() const { return state_.video_standard; }
     
-    // T1 pin output (for CPU counter mode)
-    // T1 = Hblank OR Vblank (active low)
-    // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
+    // Connect to master clock (must be called before first tick)
+    void set_master_clock(const MasterClock* clock) { master_clock_ = clock; }
+    
+    // Set VBLANK status flag (A1.3) — called by emulator at VBlank transition
+    void set_vblank_flag() { state_.registers[VDCRegisters::STATUS] |= StatusBits::VBLANK; }
+    
+    // T1 pin output — delegates to master clock
     bool get_t1_state() const;
     
-    // VDC trace (for debugging VDC register writes)
+    // VDC trace
     void enable_vdc_trace(bool enabled) { vdc_trace_enabled_ = enabled; }
     bool is_vdc_trace_enabled() const { return vdc_trace_enabled_; }
     std::string get_last_vdc_trace() const { return last_vdc_trace_; }
     void clear_last_vdc_trace() { last_vdc_trace_.clear(); }
 
+    // Legacy: end_scanline() for tests that don't use master clock
+    void end_scanline();
+
 private:
     VDCState state_;
-    
-    // Extended framebuffer mode flag
     bool extended_fb_mode_;
-    
-    // VDC trace
     bool vdc_trace_enabled_;
     std::string last_vdc_trace_;
     
-    // Timing (standard-specific)
-    uint32 total_scanlines_;      // Total scanlines per frame (262 NTSC, 312 PAL)
-    uint32 vblank_start_;         // Scanline where VBlank starts
+    // Master clock reference (single source of truth for beam position)
+    const MasterClock* master_clock_;
     
-    // Character ROM (64 characters, 8 bytes each for 8x7 patterns)
-    // Reference: doc/o2doc.md Appendix C, doc/8245.md lines 700-750
-    // Internal ROM patterns from Intel 8245 VDC chip
+    // Latched Y value (latched when X register is read)
+    uint8 latched_beam_y_;
+    
+    // Timing (standard-specific, for tests without master clock)
+    uint32 total_scanlines_;
+    uint32 vblank_start_;
+    
+    // Character ROM
     static const uint8 character_rom_[64 * 8];
     
-    // Rendering helpers
+    // Rendering helpers (scanline-based, for tests)
     void render_background(int y);
     void render_grid(int y);
     void render_characters(int y);
     void render_sprites(int y);
     void detect_collisions(int y);
     
-    // Per-pixel rendering helpers (for continuous rendering)
+    // Per-pixel rendering helpers
     bool is_grid_pixel_at(int x, int y) const;
     bool is_character_pixel_at(int x, int y, uint8& color) const;
     bool is_sprite_pixel_at(int x, int y, uint8& color) const;
     
-    // Collision tracking helpers
+    // Per-pixel collision detection
+    void detect_collision_at_pixel(int x, int y);
+    
+    // Collision tracking helpers (scanline-based, for tests)
     void track_grid_objects(int y, uint8* object_buffer, uint8 collision_enable);
     void track_character_objects(int y, uint8* object_buffer, uint8 collision_enable);
     void track_sprite_object(int y, int sprite_num, uint8* object_buffer, uint8 collision_enable);
@@ -365,13 +319,11 @@ private:
     // Audio helpers
     void update_audio();
     void shift_audio_register();
-    void capture_audio_sample();                     // Capture sample into ring buffer at output sample rate
+    void capture_audio_sample();
     
-    // Audio output config
-    uint32 audio_sample_rate_;                       // Output sample rate (e.g. 44100)
-    uint32 vdc_cycles_per_audio_sample_;             // VDC cycles between audio samples (derived)
+    uint32 audio_sample_rate_;
+    uint32 vdc_cycles_per_audio_sample_;
     
-    // Timing helpers
     void calculate_timing();
 };
 
