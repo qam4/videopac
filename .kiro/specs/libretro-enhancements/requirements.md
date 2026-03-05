@@ -148,3 +148,14 @@ This specification covers enhancements to the videopac libretro core (`src/libre
 3. THE Core SHALL register an Input_Descriptor for B on port 0 with the label "VKB Press / Key 0"
 4. THE Core SHALL register Input_Descriptors for all D-pad directions, A, X, L, and START on port 0 with their existing labels
 5. THE Core SHALL register Input_Descriptors for D-pad directions and A on port 1 with "P2" prefixed labels
+
+### Requirement 13: Physical Keyboard Passthrough
+
+**User Story:** As a player on a desktop platform, I want to use my physical keyboard to type on the Videopac keyboard so that I can play games without needing the virtual keyboard overlay.
+
+#### Acceptance Criteria
+
+1. THE Core SHALL read physical keyboard input using the libretro RETRO_DEVICE_KEYBOARD device type
+2. THE Core SHALL map physical keyboard keys 0-9, A-Z, Space, Enter, Backspace, Delete, and punctuation (+, -, *, /, =, .) to their corresponding VidKey matrix entries
+3. THE Core SHALL apply physical keyboard input in both VKB-visible and VKB-hidden modes
+4. THE Core SHALL map both Backspace and Delete to the Videopac CLR key

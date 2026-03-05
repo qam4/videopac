@@ -51,6 +51,15 @@ After pushing (when the user approves a push):
 4. Report the failure to the user with a root-cause summary
 5. Propose a fix — do not leave main broken
 
+# Version Sync Check
+
+When tagging a release (`git tag vX.Y.Z`):
+
+1. Read `videopac_libretro.info` and verify `display_version` matches the tag (without the `v` prefix)
+2. If they don't match, update `display_version` in the info file before tagging
+3. Amend the commit if needed, then create the tag on the amended commit
+4. This prevents the libretro info file from advertising a stale version
+
 # General Rules
 
 - Build preset is `dev-mingw` (not `dev`)

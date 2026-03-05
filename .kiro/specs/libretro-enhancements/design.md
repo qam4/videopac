@@ -343,8 +343,28 @@ firmware3_opt = "true"
 | Unknown transparency option value | Default to 25% in `check_variables()` |
 | Unknown swap option value | Default to disabled in `check_variables()` |
 | `RETRO_DEVICE_POINTER` not supported by frontend | `input_state_cb` returns 0 for unsupported devices; touch simply has no effect |
+| `RETRO_DEVICE_KEYBOARD` not supported by frontend | `input_state_cb` returns 0 for unsupported devices; physical keyboard has no effect |
 
 No new error codes or exceptions are introduced. The VKB module uses defensive clamping and returns sentinel values (-1) for out-of-bounds conditions.
+
+## Physical Keyboard Passthrough
+
+For desktop platforms, the core reads physical keyboard input via `RETRO_DEVICE_KEYBOARD` and maps it directly to the Videopac keyboard matrix. This runs in both VKB-visible and VKB-hidden modes, after all other input processing.
+
+### Key ID Constants
+
+The libretro keyboard API uses ASCII values for printable characters. The core defines `RETROK_*` constants in `libretro.h` for the subset needed by the Videopac keyboard (0-9, a-z, space, return, backspace, delete, and punctuation).
+
+### Mapping Table
+
+A static `KeyMapping` array maps each `RETROK_*` constant to a `(row, col)` pair in the Videopac keyboard matrix. The mapping covers all 49 Videopac keys. Both `RETROK_BACKSPACE` and `RETROK_DELETE` map to CLR (row 5, col 6).
+
+```cpp
+struct KeyMapping { unsigned retrok; uint8_t row; uint8_t col; };
+static const KeyMapping kb_map[] = { ... };  // ~40 entries
+```
+
+The passthrough loop runs unconditionally at the end of `update_input()`, OR-ing physical keyboard state into `state.keyboard_matrix` before calling `emulator->set_input(state)`.
 
 ## Testing Strategy
 

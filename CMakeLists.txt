@@ -229,6 +229,11 @@ if(BUILD_TOOLS)
         target_link_libraries(disasm_tool miniz::miniz)
         target_compile_definitions(disasm_tool PRIVATE HAVE_MINIZ)
     endif()
+
+    add_executable(smoke_test_roms
+        tools/smoke_test_roms.cpp
+    )
+    target_link_libraries(smoke_test_roms videopac_core)
 endif()
 
 # Libretro core
