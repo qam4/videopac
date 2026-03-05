@@ -152,6 +152,7 @@ static void update_input() {
     static bool prev_down_pressed = false;
     static bool prev_left_pressed = false;
     static bool prev_right_pressed = false;
+    static bool prev_reset_active = false;  // Edge detection for RST key
 
     // Read SELECT for VKB toggle (rising edge)
     bool select_pressed = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT);
@@ -184,12 +185,11 @@ static void update_input() {
         if (right && !prev_right_pressed)  vkb.move_cursor(videopac::Direction::Right);
 
         // B button activates/deactivates the current VKB key
+        bool reset_active = false;  // Track RST across both D-pad and touch paths
         videopac::VidKey vk = vkb.get_current_vidkey();
         if (vk == videopac::VidKey::Reset) {
-            // RST key triggers emulator reset on B press
-            if (b_btn) {
-                if (emulator) emulator->reset();
-            }
+            // RST key via D-pad+B
+            if (b_btn) reset_active = true;
         } else {
             uint8_t row = (static_cast<uint8_t>(vk) >> 4) & 0x07;
             uint8_t col = static_cast<uint8_t>(vk) & 0x07;
@@ -232,7 +232,7 @@ static void update_input() {
                 vkb.set_cursor(hit);  // Highlight touched key
                 videopac::VidKey touch_vk = vkb.get_vidkey_at(hit);
                 if (touch_vk == videopac::VidKey::Reset) {
-                    if (emulator) emulator->reset();
+                    reset_active = true;
                 } else {
                     uint8_t touch_row = (static_cast<uint8_t>(touch_vk) >> 4) & 0x07;
                     uint8_t touch_col = static_cast<uint8_t>(touch_vk) & 0x07;
@@ -240,6 +240,12 @@ static void update_input() {
                 }
             }
         }
+
+        // Fire reset on rising edge only (prevents repeated resets while held)
+        if (reset_active && !prev_reset_active) {
+            if (emulator) emulator->reset();
+        }
+        prev_reset_active = reset_active;
 
         // Suppress D-pad from joystick1, B from keyboard_matrix[0][0], Y from keyboard_matrix[0][1]
         // (D-pad not written to joystick1, B/Y not written to their normal keyboard mappings)
@@ -319,6 +325,37 @@ static void update_input() {
     prev_left_pressed = left;
     prev_right_pressed = right;
     prev_y_pressed = y_btn;
+
+    // Physical keyboard passthrough (PC keyboard → Videopac matrix)
+    // Works in both VKB-visible and VKB-hidden modes for desktop testing
+    struct KeyMapping { unsigned retrok; uint8_t row; uint8_t col; };
+    static const KeyMapping kb_map[] = {
+        // Row 0: digits 0-7
+        {RETROK_0, 0, 0}, {RETROK_1, 0, 1}, {RETROK_2, 0, 2}, {RETROK_3, 0, 3},
+        {RETROK_4, 0, 4}, {RETROK_5, 0, 5}, {RETROK_6, 0, 6}, {RETROK_7, 0, 7},
+        // Row 1: 8, 9, space, /, L, P
+        {RETROK_8, 1, 0}, {RETROK_9, 1, 1},
+        {RETROK_SPACE, 1, 4}, {RETROK_SLASH, 1, 5}, {RETROK_l, 1, 6}, {RETROK_p, 1, 7},
+        // Row 2: +, W, E, R, T, U, I, O
+        {RETROK_PLUS, 2, 0}, {RETROK_w, 2, 1}, {RETROK_e, 2, 2}, {RETROK_r, 2, 3},
+        {RETROK_t, 2, 4}, {RETROK_u, 2, 5}, {RETROK_i, 2, 6}, {RETROK_o, 2, 7},
+        // Row 3: Q, S, D, F, G, H, J, K
+        {RETROK_q, 3, 0}, {RETROK_s, 3, 1}, {RETROK_d, 3, 2}, {RETROK_f, 3, 3},
+        {RETROK_g, 3, 4}, {RETROK_h, 3, 5}, {RETROK_j, 3, 6}, {RETROK_k, 3, 7},
+        // Row 4: A, Z, X, C, V, B, M, .
+        {RETROK_a, 4, 0}, {RETROK_z, 4, 1}, {RETROK_x, 4, 2}, {RETROK_c, 4, 3},
+        {RETROK_v, 4, 4}, {RETROK_b, 4, 5}, {RETROK_m, 4, 6}, {RETROK_PERIOD, 4, 7},
+        // Row 5: -, *, /, =, Y, N, CLR, ENTER
+        {RETROK_MINUS, 5, 0}, {RETROK_ASTERISK, 5, 1}, {RETROK_EQUALS, 5, 3},
+        {RETROK_y, 5, 4}, {RETROK_n, 5, 5},
+        {RETROK_BACKSPACE, 5, 6}, {RETROK_DELETE, 5, 6},  // Both map to CLR
+        {RETROK_RETURN, 5, 7},
+    };
+    for (const auto& km : kb_map) {
+        if (input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, km.retrok)) {
+            state.keyboard_matrix[km.row][km.col] = true;
+        }
+    }
 
     emulator->set_input(state);
 }

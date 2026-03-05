@@ -34,6 +34,56 @@ extern "C" {
 #define RETRO_DEVICE_ID_POINTER_Y       1
 #define RETRO_DEVICE_ID_POINTER_PRESSED 2
 
+// Keyboard key IDs (subset needed for Videopac keyboard passthrough)
+// libretro uses ASCII values for printable characters
+#define RETROK_SPACE          32
+#define RETROK_PLUS           43
+#define RETROK_MINUS          45
+#define RETROK_PERIOD         46
+#define RETROK_SLASH          47
+#define RETROK_0              48
+#define RETROK_1              49
+#define RETROK_2              50
+#define RETROK_3              51
+#define RETROK_4              52
+#define RETROK_5              53
+#define RETROK_6              54
+#define RETROK_7              55
+#define RETROK_8              56
+#define RETROK_9              57
+#define RETROK_EQUALS         61
+#define RETROK_QUESTION       63
+#define RETROK_ASTERISK       42
+#define RETROK_a              97
+#define RETROK_b              98
+#define RETROK_c              99
+#define RETROK_d             100
+#define RETROK_e             101
+#define RETROK_f             102
+#define RETROK_g             103
+#define RETROK_h             104
+#define RETROK_i             105
+#define RETROK_j             106
+#define RETROK_k             107
+#define RETROK_l             108
+#define RETROK_m             109
+#define RETROK_n             110
+#define RETROK_o             111
+#define RETROK_p             112
+#define RETROK_q             113
+#define RETROK_r             114
+#define RETROK_s             115
+#define RETROK_t             116
+#define RETROK_u             117
+#define RETROK_v             118
+#define RETROK_w             119
+#define RETROK_x             120
+#define RETROK_y             121
+#define RETROK_z             122
+#define RETROK_RETURN        13
+#define RETROK_BACKSPACE      8
+#define RETROK_DELETE        127
+
 // Joypad buttons
 #define RETRO_DEVICE_ID_JOYPAD_B      0
 #define RETRO_DEVICE_ID_JOYPAD_Y      1
