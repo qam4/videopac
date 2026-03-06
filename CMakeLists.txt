@@ -324,6 +324,8 @@ if(BUILD_TESTS)
         tests/property_tests.cpp
         tests/test_vkeyboard.cpp
         tests/property_tests_vkeyboard.cpp
+        tests/test_audio.cpp
+        tests/property_tests_audio.cpp
         # Include UI sources for testing
         ${UI_SOURCES}
     )

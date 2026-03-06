@@ -53,7 +53,7 @@ VDC::VDC(VideoStandard standard) {
     vdc_trace_enabled_ = false;
     master_clock_ = nullptr;
     latched_beam_y_ = 0;
-    audio_sample_rate_ = 44100;
+    audio_sample_rate_ = 48000;
     vdc_cycles_per_audio_sample_ = 0;  // Will be set in reset()
     calculate_timing();
     reset();
@@ -104,8 +104,15 @@ void VDC::reset() {
     state_.audio_sample_count = 0;
     state_.audio_sample_accumulator = 0;
     
+    // Reset DC offset detection
+    state_.cycles_since_toggle = 0;
+    state_.previous_output_bit = 0;
+    
+    // Reset low-pass filter
+    state_.audio_filter_state = 0;
+    
     // Default audio sample rate (will be overridden by set_audio_sample_rate)
-    audio_sample_rate_ = 44100;
+    audio_sample_rate_ = 48000;
     // Calculate VDC cycles per audio sample based on frame timing
     // PAL: 70824 VDC cycles/frame at 50Hz, 44100/50 = 882 samples/frame → ~80.3 cycles/sample
     // NTSC: 59605 VDC cycles/frame at 60Hz, 44100/60 = 735 samples/frame → ~81.1 cycles/sample
@@ -291,6 +298,8 @@ void VDC::write_register(uint8 address, uint8 value) {
         case VDCRegisters::SOUND2:
             // Audio shift register bytes
             // Reference: doc/o2doc.md section 4.10, doc/8245.md lines 380-420
+            // Flush pending audio to capture samples at old shift register state
+            flush_audio_cycles();
             {
                 uint8 byte_index = address - VDCRegisters::SOUND0;
                 uint32 mask = 0xFF << (byte_index * 8);
@@ -302,6 +311,8 @@ void VDC::write_register(uint8 address, uint8 value) {
         case VDCRegisters::SOUND_CONTROL:
             // Audio control register
             // Reference: doc/o2doc.md section 4.10, doc/8245.md lines 380-420
+            // Flush pending audio to capture samples at old control state
+            flush_audio_cycles();
             state_.audio_enabled = (value & SoundControlBits::ENABLE_SOUND) != 0;
             state_.audio_loop = (value & SoundControlBits::LOOP_MODE) != 0;
             state_.audio_frequency = (value & SoundControlBits::SHIFT_FREQ) ? AUDIO_FREQ_HIGH : AUDIO_FREQ_LOW;
@@ -676,6 +687,11 @@ int16 VDC::get_audio_sample() {
         return 0;
     }
 
+    // DC offset elimination: output silence when shift register output is static
+    if (state_.cycles_since_toggle > 2000) {
+        return 0;
+    }
+
     // Get current bit from shift register (bit 0 is output)
     uint8 bit = state_.audio_shift_register & 1;
 
@@ -711,12 +727,27 @@ void VDC::capture_audio_sample() {
     while (state_.audio_sample_accumulator >= vdc_cycles_per_audio_sample_) {
         state_.audio_sample_accumulator -= vdc_cycles_per_audio_sample_;
         
+        int16 raw = get_audio_sample();
+        // Single-pole IIR low-pass filter (int32 intermediates to avoid overflow)
+        int32 filtered = static_cast<int32>(state_.audio_filter_state) +
+            (static_cast<int32>(raw) - static_cast<int32>(state_.audio_filter_state)) * 3 / 205;
+        state_.audio_filter_state = static_cast<int16>(filtered);
+        
         if (state_.audio_sample_count < VDCState::AUDIO_BUFFER_SIZE) {
-            state_.audio_sample_buffer[state_.audio_sample_write_pos] = get_audio_sample();
+            state_.audio_sample_buffer[state_.audio_sample_write_pos] = state_.audio_filter_state;
             state_.audio_sample_write_pos = (state_.audio_sample_write_pos + 1) % VDCState::AUDIO_BUFFER_SIZE;
             state_.audio_sample_count++;
         }
     }
+}
+
+// Flush pending audio cycles before a sound register write.
+// Forces capture of any pending fractional audio sample at the current
+// (old) shift register state before the register write changes it.
+// capture_audio_sample() uses a fixed-point accumulator — if it hasn't
+// reached the threshold for a new sample, this is effectively a no-op.
+void VDC::flush_audio_cycles() {
+    capture_audio_sample();
 }
 
 // Get complete VDC state
@@ -1301,6 +1332,9 @@ void VDC::update_audio() {
         return;
     }
 
+    // Increment DC offset toggle counter once per VDC cycle
+    state_.cycles_since_toggle++;
+
     // Calculate how many cycles have passed
     // Audio shift frequency determines how often we shift
     // 983Hz = shift every 1017us, 3933Hz = shift every 254us
@@ -1314,6 +1348,13 @@ void VDC::update_audio() {
     while (state_.audio_cycle_accumulator >= cycles_per_shift) {
         state_.audio_cycle_accumulator -= cycles_per_shift;
         shift_audio_register();
+
+        // Track output bit changes for DC offset detection
+        uint8 current_bit = state_.audio_shift_register & 1;
+        if (current_bit != state_.previous_output_bit) {
+            state_.cycles_since_toggle = 0;
+            state_.previous_output_bit = current_bit;
+        }
     }
 }
 

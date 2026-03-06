@@ -195,6 +195,13 @@ struct VDCState {
     bool audio_noise;
     uint32 audio_cycle_accumulator;
     
+    // DC offset detection
+    uint32 cycles_since_toggle;    // VDC cycles since shift register output bit last changed
+    uint8 previous_output_bit;     // Previous value of shift register bit 0
+    
+    // Low-pass filter
+    int16 audio_filter_state;      // Previous filtered sample (IIR state)
+    
     // Audio sample ring buffer
     static constexpr size_t AUDIO_BUFFER_SIZE = 1024;
     int16 audio_sample_buffer[AUDIO_BUFFER_SIZE];
@@ -320,6 +327,7 @@ private:
     void update_audio();
     void shift_audio_register();
     void capture_audio_sample();
+    void flush_audio_cycles();
     
     uint32 audio_sample_rate_;
     uint32 vdc_cycles_per_audio_sample_;

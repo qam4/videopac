@@ -426,6 +426,9 @@ bool SDLFrontend::init_audio() {
     // Allocate audio buffer (1 second worth of samples)
     audio_buffer_.resize(config_.sample_rate * 2);  // Stereo
     
+    // Cache performance counter frequency for precise frame pacing
+    perf_frequency_ = SDL_GetPerformanceFrequency();
+    
     // Set up audio specification
     SDL_AudioSpec desired_spec, obtained_spec;
     SDL_zero(desired_spec);
@@ -515,7 +518,7 @@ void SDLFrontend::run() {
         }
         
         while (running_) {
-            uint32 frame_start = SDL_GetTicks();
+            frame_start_counter_ = (frame_start_counter_ == 0) ? SDL_GetPerformanceCounter() : frame_start_counter_;
             
             // Check for scheduled key presses that should trigger this frame
             // Note: frame_count_ is the current frame, so check frame_count_ + 1 for next frame
@@ -614,25 +617,18 @@ void SDLFrontend::run() {
                 SDL_SetWindowTitle(window_, title);
             }
             
-            // Frame rate limiting to match video standard (60Hz NTSC / 50Hz PAL)
-            // Skip delay in turbo mode for maximum speed (Requirement 18.1)
+            // Precise frame pacing using performance counter
+            // Skip pacing in turbo mode for maximum speed (Requirement 18.1)
             if (!turbo_mode_) {
-                // Calculate precise target frame time
-                // NTSC: 16.666... ms per frame (60 FPS)
-                // PAL: 20.0 ms per frame (50 FPS)
-                float target_fps = (config_.video_standard == VideoStandard::NTSC) ? 60.0f : 50.0f;
-                float target_frame_time = 1000.0f / target_fps;  // milliseconds
+                uint64_t target_ticks = perf_frequency_ / ((config_.video_standard == VideoStandard::PAL) ? 50 : 60);
+                uint64_t frame_end = frame_start_counter_ + target_ticks;
                 
-                uint32 elapsed = SDL_GetTicks() - frame_start;
-                float elapsed_f = static_cast<float>(elapsed);
-                
-                if (elapsed_f < target_frame_time) {
-                    uint32 delay = static_cast<uint32>(target_frame_time - elapsed_f);
-                    if (delay > 0) {
-                        SDL_Delay(delay);
-                    }
+                // Spin-wait for sub-millisecond precision
+                while (SDL_GetPerformanceCounter() < frame_end) {
+                    // Busy wait for precise timing
                 }
             }
+            frame_start_counter_ = SDL_GetPerformanceCounter();
         }
     } catch (const std::exception& e) {
         std::cerr << "\n*** Exception caught in main loop: " << e.what() << std::endl;
@@ -909,6 +905,22 @@ void SDLFrontend::process_audio() {
         // Add to buffer (circular buffer)
         audio_buffer_[audio_write_pos_] = sample;
         audio_write_pos_ = (audio_write_pos_ + 1) % audio_buffer_.size();
+    }
+    
+    // Check for overflow: if more than 3 frames queued, skip ahead
+    int max_queued = 3 * samples_per_frame;
+    
+    // Calculate queued samples
+    size_t queued = (audio_write_pos_ >= audio_read_pos_) 
+        ? (audio_write_pos_ - audio_read_pos_)
+        : (audio_buffer_.size() - audio_read_pos_ + audio_write_pos_);
+    
+    if (queued > static_cast<size_t>(max_queued)) {
+        // Skip ahead to 1 frame worth
+        size_t target = static_cast<size_t>(samples_per_frame);
+        audio_read_pos_ = (audio_write_pos_ >= target) 
+            ? (audio_write_pos_ - target)
+            : (audio_buffer_.size() - target + audio_write_pos_);
     }
     
     SDL_UnlockAudioDevice(audio_device_);
@@ -1214,9 +1226,10 @@ void SDLFrontend::audio_callback(void* userdata, uint8* stream, int len) {
     for (int i = 0; i < samples; i++) {
         if (frontend->audio_read_pos_ != frontend->audio_write_pos_) {
             output[i] = frontend->audio_buffer_[frontend->audio_read_pos_];
+            frontend->last_audio_sample_ = output[i];  // Track for underrun
             frontend->audio_read_pos_ = (frontend->audio_read_pos_ + 1) % frontend->audio_buffer_.size();
         } else {
-            output[i] = 0;  // Silence if buffer is empty
+            output[i] = frontend->last_audio_sample_;  // Hold last sample on underrun
         }
     }
 }

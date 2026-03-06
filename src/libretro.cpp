@@ -29,8 +29,8 @@ static videopac::VideoStandard video_standard = videopac::VideoStandard::NTSC;
 static uint32_t video_buffer[videopac::FRAMEBUFFER_WIDTH * videopac::FRAMEBUFFER_HEIGHT];
 
 // Audio buffer (stereo interleaved)
-static constexpr size_t AUDIO_SAMPLES_PER_FRAME_NTSC = 735;  // 44100/60
-static constexpr size_t AUDIO_SAMPLES_PER_FRAME_PAL = 882;   // 44100/50
+static constexpr size_t AUDIO_SAMPLES_PER_FRAME_NTSC = 800;  // 48000/60
+static constexpr size_t AUDIO_SAMPLES_PER_FRAME_PAL = 960;   // 48000/50
 static int16_t audio_mono_buffer[1024];
 static int16_t audio_stereo_buffer[2048];
 
@@ -395,7 +395,7 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info* info) {
     info->geometry.max_height = videopac::FRAMEBUFFER_HEIGHT;
     info->geometry.aspect_ratio = 4.0f / 3.0f;
     info->timing.fps = (video_standard == videopac::VideoStandard::PAL) ? 50.0 : 60.0;
-    info->timing.sample_rate = 44100.0;
+    info->timing.sample_rate = 48000.0;
 }
 
 RETRO_API void retro_set_environment(retro_environment_t cb) {

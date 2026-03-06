@@ -68,7 +68,7 @@ struct FrontendConfig {
         , fullscreen(false)
         , headless(false)
         , aspect_ratio("4:3")       // Default to 4:3 (CRT aspect ratio)
-        , sample_rate(44100)
+        , sample_rate(48000)
         , audio_buffer_size(512)
         , master_volume(0.7f)
         , audio_enabled(true)

@@ -139,6 +139,13 @@ private:
     size_t audio_write_pos_;
     size_t audio_read_pos_;
     
+    // Precise frame pacing
+    uint64_t frame_start_counter_ = 0;
+    uint64_t perf_frequency_ = 0;
+    
+    // Underrun handling
+    int16 last_audio_sample_ = 0;
+    
     // Helper methods
     bool init_video();
     bool init_audio();
