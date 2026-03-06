@@ -66,6 +66,33 @@
         "CMAKE_C_COMPILER": "C:/msys64/mingw64/bin/gcc.exe",
         "CMAKE_CXX_COMPILER": "C:/msys64/mingw64/bin/g++.exe"
       }
+    },
+    {
+      "name": "flags-linux",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-D_FORTIFY_SOURCE=2 -O2 -Wall -Wextra -Wpedantic"
+      }
+    },
+    {
+      "name": "ci-linux",
+      "inherits": ["flags-linux", "ci-std", "cmake-pedantic"],
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ci-sanitize",
+      "inherits": ["ci-linux"],
+      "binaryDir": "${sourceDir}/build/sanitize",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Sanitize",
+        "CMAKE_CXX_FLAGS_SANITIZE": "-O2 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-common",
+        "CMAKE_EXE_LINKER_FLAGS_SANITIZE": "-fsanitize=address,undefined",
+        "CMAKE_SHARED_LINKER_FLAGS_SANITIZE": "-fsanitize=address,undefined"
+      }
     }
   ]
 }

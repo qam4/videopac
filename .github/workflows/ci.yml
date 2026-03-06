@@ -73,3 +73,24 @@ jobs:
         if: ${{ !matrix.skip_test }}
         working-directory: build
         run: ctest --output-on-failure --no-tests=error -C Release -j 2
+
+  sanitize:
+    name: Sanitize (ASan + UBSan)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libsdl2-dev ninja-build
+
+      - name: Configure
+        run: cmake --preset ci-sanitize -DENABLE_SDL=ON -DBUILD_TOOLS=OFF
+
+      - name: Build
+        run: cmake --build build/sanitize -j 2
+
+      - name: Test
+        working-directory: build/sanitize
+        run: ctest --output-on-failure --no-tests=error -j 2
