@@ -70,5 +70,6 @@ debugger_state.json
 sat_disasm.txt
 sat_full_disasm.txt
 
-# mypy cache
+# Python cache
+__pycache__/
 .mypy_cache/
