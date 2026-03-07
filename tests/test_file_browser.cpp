@@ -41,6 +41,9 @@ protected:
     }
     
     void TearDown() override {
+        // Guard against GTEST_SKIP() in SetUp — pointers are still nullptr
+        if (!file_browser_) return;
+
         delete file_browser_;
         delete text_renderer_;
         delete config_;
@@ -59,11 +62,11 @@ protected:
         file.close();
     }
     
-    SDL_Window* window_;
-    SDL_Renderer* renderer_;
-    ConfigManager* config_;
-    TextRenderer* text_renderer_;
-    FileBrowser* file_browser_;
+    SDL_Window* window_ = nullptr;
+    SDL_Renderer* renderer_ = nullptr;
+    ConfigManager* config_ = nullptr;
+    TextRenderer* text_renderer_ = nullptr;
+    FileBrowser* file_browser_ = nullptr;
     
     fs::path test_dir_;
     fs::path rom_dir_;

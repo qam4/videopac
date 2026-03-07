@@ -24,12 +24,13 @@ TEST(IntegrationTest, CPUExecutesInstructionSequence) {
     // ADD A,#0x20    ; Add 0x20 to accumulator (result: 0x30)
     // MOV R0,A       ; Move accumulator to R0
     // INC R0         ; Increment R0 (result: 0x31)
-    uint8 program[] = {
-        0x23, 0x10,    // MOV A,#0x10
-        0x03, 0x20,    // ADD A,#0x20
-        0xA8,          // MOV R0,A
-        0x18           // INC R0
-    };
+    uint8 program[1024] = {};
+    program[0] = 0x23;  // MOV A,#0x10
+    program[1] = 0x10;
+    program[2] = 0x03;  // ADD A,#0x20
+    program[3] = 0x20;
+    program[4] = 0xA8;  // MOV R0,A
+    program[5] = 0x18;  // INC R0
     
     memory.load_bios(program, 1024);
     cpu.reset();
