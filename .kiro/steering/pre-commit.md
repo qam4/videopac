@@ -53,12 +53,18 @@ After pushing (when the user approves a push):
 
 # Version Sync Check
 
-When tagging a release (`git tag vX.Y.Z`):
+At every push (not just at tagging time):
 
-1. Read `videopac_libretro.info` and verify `display_version` matches the tag (without the `v` prefix)
+1. Run `git describe --tags --abbrev=0` to find the latest tag
+2. Read `videopac_libretro.info` and verify `display_version` matches the latest tag (without the `v` prefix)
+3. If they don't match, update `display_version` in the info file and include it in the commit
+4. This prevents the libretro info file from drifting out of sync between releases
+
+When tagging a new release (`git tag vX.Y.Z`):
+
+1. Verify `display_version` matches the new tag (without the `v` prefix)
 2. If they don't match, update `display_version` in the info file before tagging
 3. Amend the commit if needed, then create the tag on the amended commit
-4. This prevents the libretro info file from advertising a stale version
 
 # General Rules
 
