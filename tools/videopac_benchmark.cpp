@@ -22,14 +22,46 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <string>
 #include <vector>
 
-namespace fs = std::filesystem;
+// Portable helpers replacing std::filesystem (GCC 7 compat)
+#ifdef _WIN32
+#include <io.h>
+#include <sys/stat.h>
+namespace compat {
+    inline bool file_exists(const std::string& path) {
+        struct _stat st;
+        return _stat(path.c_str(), &st) == 0;
+    }
+    inline bool remove_file(const std::string& path) {
+        return ::_unlink(path.c_str()) == 0;
+    }
+    inline std::string filename(const std::string& path) {
+        auto pos = path.find_last_of("/\\");
+        return (pos == std::string::npos) ? path : path.substr(pos + 1);
+    }
+}
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+namespace compat {
+    inline bool file_exists(const std::string& path) {
+        struct stat st;
+        return stat(path.c_str(), &st) == 0;
+    }
+    inline bool remove_file(const std::string& path) {
+        return ::unlink(path.c_str()) == 0;
+    }
+    inline std::string filename(const std::string& path) {
+        auto pos = path.find_last_of("/\\");
+        return (pos == std::string::npos) ? path : path.substr(pos + 1);
+    }
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Configuration & result structs
@@ -190,11 +222,11 @@ static int parse_args(int argc, char* argv[], BenchmarkConfig& config) {
     }
 
     // Validate files exist
-    if (!fs::exists(config.bios_path)) {
+    if (!compat::file_exists(config.bios_path)) {
         fprintf(stderr, "Error: BIOS file not found: %s\n", config.bios_path.c_str());
         return 2;
     }
-    if (!fs::exists(config.rom_path)) {
+    if (!compat::file_exists(config.rom_path)) {
         fprintf(stderr, "Error: ROM file not found: %s\n", config.rom_path.c_str());
         return 2;
     }
@@ -209,7 +241,7 @@ static int parse_args(int argc, char* argv[], BenchmarkConfig& config) {
         }
         test_file.close();
         // Remove the test file — we'll create it properly during the run
-        fs::remove(config.profile_output);
+        compat::remove_file(config.profile_output);
     }
 
     return 0;
@@ -368,7 +400,7 @@ static int run_benchmark(const BenchmarkConfig& config) {
     // -----------------------------------------------------------------------
     // Report to stdout
     // -----------------------------------------------------------------------
-    std::string rom_name = fs::path(config.rom_path).filename().string();
+    std::string rom_name = compat::filename(config.rom_path);
 
     printf("\nVideopac Benchmark\n");
     printf("==================\n");

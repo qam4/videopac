@@ -99,3 +99,132 @@ Based on profiling, the revised priority should be:
 - Consider inlining `is_hblank()`, `is_frame_complete()`, `get_t1_state()`,
   `get_beam_x()`, `vdc_executed()` into headers
 - VDC Tasks 4-6 are still valid but lower priority than originally estimated
+
+---
+
+## Linux Profiling (perf) — Post update_counter Inline
+
+### Test Configuration
+
+- ROM: Satellite Attack (1981)(Philips)(EU).bin
+- BIOS: Philips C52 BIOS (19xx)(Philips)(FR).bin
+- Frames: 3000 (warmup: 60)
+- Build: RelWithDebInfo (-O2 -g), GCC 7.3.1
+- Platform: Amazon Linux 2 (x86_64)
+- Profiler: perf record -g (37,254 samples)
+- Date: 2026-03-08
+
+### Linux Baseline Performance (Release -O2, no instrumentation)
+
+Stable across 3 runs (unlike Windows):
+
+| ROM | Frames | Run 1 FPS | Run 2 FPS | Run 3 FPS | Mean FPS |
+|-----|--------|-----------|-----------|-----------|----------|
+| Satellite Attack | 3000 | 414.8 | 421.1 | 421.0 | **419.0** |
+
+### perf Flat Profile (Satellite Attack, 3000 frames)
+
+| Function | Self % | Notes |
+|----------|--------|-------|
+| `VDC::is_character_pixel_at()` | 35.54% | **#1 hot path — per-pixel character lookup** |
+| `MasterClock::tick()` | 21.28% | Per-tick scheduling (modulo ops) |
+| `VDC::render_current_pixel()` | 12.23% | Per-pixel render orchestration |
+| `VDC::is_grid_pixel_at()` | 6.97% | Per-pixel grid lookup |
+| `VDC::tick_one_cycle()` | 6.91% | VDC main loop |
+| `EmulatorCore::run_frame()` | 3.67% | Frame orchestration + debugger checks |
+| `VDC::get_t1_state()` | 2.87% | VDC wrapper (not inlined) |
+| `VDC::is_frame_complete()` | 2.84% | VDC wrapper (not inlined) |
+| `VDC::is_hblank()` | 2.18% | VDC wrapper (not inlined) |
+| `VDC::capture_audio_sample()` | 1.70% | Audio sampling |
+| `EmulatorCore::handle_interrupts()` | 1.26% | Interrupt processing |
+| `CPU::execute_instruction()` | 0.64% | Instruction dispatch |
+
+### Key Findings (Linux perf vs Windows gprof)
+
+#### 1. CPU::update_counter() eliminated from profile
+
+Task 5 (inline to header) was effective. It was 48% on Windows gprof, now 0% on
+Linux perf. The function call overhead was the entire cost — the actual logic
+(edge detection + conditional increment) is negligible when inlined.
+
+#### 2. VDC character pixel lookup is the new #1 hot path (35.5%)
+
+`is_character_pixel_at()` was invisible in gprof (hidden inside `render_current_pixel`
+call tree). perf's sampling profiler correctly attributes self-time to this function.
+This is the inner loop that decodes character ROM data for every visible pixel.
+
+#### 3. MasterClock::tick() confirmed at ~21%
+
+Consistent with gprof's normalized ~20%. The modulo operations
+(`master_tick_count_ % vdc_tick_divisor_` and `% cpu_tick_divisor_`) are the
+likely bottleneck. Replacing with counter-based tracking would help.
+
+#### 4. VDC rendering dominates at ~62% combined
+
+| Category | Functions | Combined % |
+|----------|-----------|-----------|
+| VDC pixel rendering | is_character_pixel_at, render_current_pixel, is_grid_pixel_at | **54.7%** |
+| VDC tick + audio | tick_one_cycle, capture_audio_sample | **8.6%** |
+| VDC accessor wrappers | get_t1_state, is_frame_complete, is_hblank | **7.9%** |
+| **VDC total** | | **71.2%** |
+
+This matches the benchmark's own subsystem breakdown (VDC: 71%).
+
+#### 5. VDC accessor wrappers still ~8% (not inlined from VDC side)
+
+`MasterClock::is_hblank()` and `get_beam_x()` are already inline in the header,
+but the VDC wrapper methods (`VDC::is_hblank()`, `VDC::is_frame_complete()`,
+`VDC::get_t1_state()`) are still in `src/vdc.cpp`. These delegate to master_clock_
+but the compiler can't inline across TUs. Task 6.2 addresses this.
+
+### Revised Optimization Priority (Linux perf data)
+
+1. **VDC::is_character_pixel_at()** — 35.5%, optimize character ROM lookup
+2. **MasterClock::tick()** — 21.3%, eliminate modulo ops (Task 6.3)
+3. **VDC::render_current_pixel()** — 12.2%, reduce dispatch overhead
+4. **VDC accessor wrappers** — 7.9%, move to header (Task 6.2)
+5. **VDC::is_grid_pixel_at()** — 7.0%, optimize grid lookup
+6. **VDC::tick_one_cycle()** — 6.9%, collision skip + audio skip (Tasks 9, 10)
+7. **EmulatorCore::run_frame()** — 3.7%, debugger skip (Task 8)
+8. **VDC::capture_audio_sample()** — 1.7%, audio-disabled skip (Task 10)
+
+
+---
+
+## Optimization Results — MasterClock Countdown Counters
+
+### Change
+Replaced `master_tick_count_ % vdc_tick_divisor_` and `% cpu_tick_divisor_` modulo
+operations in `MasterClock::tick()` with decrementing countdown counters. The modulo
+expands to expensive `div` instructions on x86; countdown is `dec` + `jnz`.
+
+### Measurement (perf stat, 600 frames, 3 runs each)
+
+| Metric | Baseline (modulo) | Countdown | Change |
+|--------|-------------------|-----------|--------|
+| Cycles | 7.91B ± 0.01B | 7.43B ± 0.02B | **-6.1%** |
+| Instructions | 32.25B | 31.89B | **-1.1%** |
+| IPC | 4.08 | 4.30 | +5.4% |
+
+Instruction count is deterministic across runs (confirms emulation correctness).
+
+
+## Optimization Results — Character Pixel Early Reject
+
+### Change
+In `is_character_pixel_at()`, added quick Y-range reject using max character height
+(16 scanlines) before computing exact height. For single characters: check `y < char_y`
+and `y >= char_y + 16` before reading ptr/attr registers and computing height. For quad
+characters: check quad Y once and skip all 4 sub-characters if out of range. Also
+reordered X check before height calculation.
+
+### Cumulative Measurement (perf stat, 600 frames, 3 runs)
+
+| Metric | Baseline | + Countdown | + Char Early Reject | Total Change |
+|--------|----------|-------------|---------------------|-------------|
+| Cycles | 7.91B | 7.43B (-6%) | 6.38B | **-19.4%** |
+| Instructions | 32.25B | 31.89B (-1%) | 21.98B | **-31.9%** |
+| IPC | 4.08 | 4.30 | 3.45 | -15.4% |
+
+IPC dropped because the branch predictor has more work with the early-exit branches,
+but the massive instruction reduction (10B fewer) more than compensates.

@@ -8,11 +8,13 @@ MasterClock::MasterClock(VideoStandard standard)
     , scanline_tick_(0)
     , current_scanline_(0)
     , current_frame_(0)
-    , vblank_(true)           // Start in vblank (hardware powers up in vblank)
+    , vblank_(true)
     , vblank_rising_edge_(false)
     , frame_complete_(false)
     , vdc_cycle_count_(0)
     , cpu_cycles_remaining_(0)
+    , vdc_countdown_(0)
+    , cpu_countdown_(0)
     , ticks_per_scanline_(0)
     , y_increment_tick_(0)
     , hblank_start_tick_(0)
@@ -51,6 +53,10 @@ void MasterClock::calculate_timing() {
         vblank_start_line_ = PAL_VBLANK_START_LINE;
         vblank_end_line_ = total_scanlines_ - 1;
     }
+    
+    // Initialize countdown counters
+    vdc_countdown_ = vdc_tick_divisor_;
+    cpu_countdown_ = cpu_tick_divisor_;
 }
 
 MasterClock::ExecuteNext MasterClock::tick() {
@@ -103,25 +109,18 @@ MasterClock::ExecuteNext MasterClock::tick() {
         scanline_tick_ = 0;
     }
     
-    // ── Determine what executes ──
-    bool vdc_ready = (master_tick_count_ % vdc_tick_divisor_) == 0;
+    // ── Determine what executes (countdown counters instead of modulo) ──
+    bool vdc_ready = false;
+    if (--vdc_countdown_ == 0) {
+        vdc_countdown_ = vdc_tick_divisor_;
+        vdc_ready = true;
+    }
     
-    // CPU debt tracking: a 2-cycle instruction sets cpu_cycles_remaining_=1.
-    // On the next CPU tick slot, we decrement and the CPU is NOT ready (still paying debt).
-    // The CPU becomes ready on the tick slot AFTER the debt is fully paid.
-    //
-    // Example for a 2-cycle instruction (NTSC, cpu_tick every 20 master ticks):
-    //   Tick N:   cpu_ready=true, execute → cpu_cycles_remaining_=1
-    //   Tick N+1: decrement to 0, cpu_ready=false (debt just paid)
-    //   Tick N+2: remaining=0, cpu_ready=true → execute next instruction
-    //
-    // This gives 2 tick slots per 2-cycle instruction (40 master ticks NTSC).
-    bool cpu_tick = (master_tick_count_ % cpu_tick_divisor_) == 0;
     bool cpu_ready = false;
-    if (cpu_tick) {
+    if (--cpu_countdown_ == 0) {
+        cpu_countdown_ = cpu_tick_divisor_;
         if (cpu_cycles_remaining_ > 0) {
             cpu_cycles_remaining_--;
-            // Not ready — this slot is consumed by the multi-cycle instruction
         } else {
             cpu_ready = true;
         }
@@ -131,6 +130,22 @@ MasterClock::ExecuteNext MasterClock::tick() {
     if (cpu_ready) return ExecuteNext::CPU;
     if (vdc_ready) return ExecuteNext::VDC;
     return ExecuteNext::NONE;
+}
+
+uint8 MasterClock::get_beam_x() const {
+    // X register counts VDC pixel positions.
+    // NTSC (from odyssey2_timing.txt): Xvalue = (tick + ((tick > 412) ? 1 : 0)) >> 1
+    // PAL: same formula but in PAL master ticks. Convert to equivalent VDC cycle position.
+    // Since PAL_tick = NTSC_tick * 5/2, we can convert: equiv_ntsc_tick = PAL_tick * 2/5
+    // Then apply the NTSC formula. This gives the same X range (0-227) for both standards.
+    if (standard_ == VideoStandard::NTSC) {
+        return static_cast<uint8>((scanline_tick_ + ((scanline_tick_ > NTSC_Y_INCREMENT_TICK) ? 1 : 0)) >> 1);
+    } else {
+        // Convert PAL master tick to equivalent NTSC-scale tick for X calculation
+        // PAL tick 0-1134 maps to X 0-227 (same visible range as NTSC)
+        uint32 equiv_tick = (scanline_tick_ * 2 + 2) / 5;  // Round to nearest
+        return static_cast<uint8>((equiv_tick + ((equiv_tick > NTSC_Y_INCREMENT_TICK) ? 1 : 0)) >> 1);
+    }
 }
 
 uint8 MasterClock::get_beam_x_at_cpu_read() const {
@@ -149,6 +164,10 @@ uint8 MasterClock::get_beam_x_at_cpu_read() const {
     }
 }
 
+bool MasterClock::is_hblank() const {
+    return (scanline_tick_ > (hblank_start_tick_ - 1)) && (scanline_tick_ < hblank_end_tick_);
+}
+
 void MasterClock::cpu_executed(uint8 cycles) {
     cpu_cycles_remaining_ = cycles - 1;
 }
@@ -162,11 +181,13 @@ void MasterClock::reset() {
     scanline_tick_ = 0;
     current_scanline_ = 0;
     current_frame_ = 0;
-    vblank_ = true;  // Start in vblank
+    vblank_ = true;
     vblank_rising_edge_ = false;
     frame_complete_ = false;
     vdc_cycle_count_ = 0;
     cpu_cycles_remaining_ = 0;
+    vdc_countdown_ = vdc_tick_divisor_;
+    cpu_countdown_ = cpu_tick_divisor_;
 }
 
 } // namespace videopac

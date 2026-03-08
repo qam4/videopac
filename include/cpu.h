@@ -97,34 +97,7 @@ public:
     // Hardware: Simulates T1 pin pulse from VDC
     // Counter mode increments on T1 falling edges (T1 going from active to inactive)
     // Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
-    //
-    // PERFORMANCE: This function is called ~140K times per frame (once per VDC tick).
-    // Profiling showed it at ~48% of execution time due to function call overhead.
-    // Inlined here to eliminate that overhead.
-    inline void update_counter(bool t1_state) {
-        // Detect falling edge: T1 was HIGH (true) and is now LOW (false)
-        bool falling_edge = state_.t1_state && !t1_state;
-        
-        // Update state for next edge detection
-        state_.t1_state = t1_state;
-        
-        // Increment counter on falling edge if counter mode is enabled
-        if (state_.counter_on && falling_edge) {
-            uint8 old_timer = state_.timer;
-            state_.timer++;
-            
-            // Check for timer overflow (0xFF -> 0x00)
-            if (old_timer == 0xFF && state_.timer == 0x00) {
-                // Set timer flag
-                state_.timer_flag = true;
-                
-                // Timer overflowed - set pending interrupt flag if enabled
-                if (state_.timer_interrupts_enabled && state_.interrupts_enabled) {
-                    state_.timer_interrupt_pending = true;
-                }
-            }
-        }
-    }
+    void update_counter(bool t1_state);
     
     // State management
     CPUState get_state() const;

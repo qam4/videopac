@@ -62,16 +62,7 @@ public:
     // Xvalue = (tick + ((tick > 412) ? 1 : 0)) >> 1
     // Same formula for NTSC and PAL — both use 455 ticks per scanline.
     // Reference: odyssey2_timing.txt (NTSC verified, PAL assumed same mapping)
-    // PERFORMANCE: Called 183M times per 3000 frames (~1.4% of execution time).
-    // Inlined to eliminate function call overhead.
-    inline uint8 get_beam_x() const {
-        if (standard_ == VideoStandard::NTSC) {
-            return static_cast<uint8>((scanline_tick_ + ((scanline_tick_ > NTSC_Y_INCREMENT_TICK) ? 1 : 0)) >> 1);
-        } else {
-            uint32 equiv_tick = (scanline_tick_ * 2 + 2) / 5;
-            return static_cast<uint8>((equiv_tick + ((equiv_tick > NTSC_Y_INCREMENT_TICK) ? 1 : 0)) >> 1);
-        }
-    }
+    uint8 get_beam_x() const;
     
     // X register value at the point where CPU bus read samples data.
     // The 8048 MOVX RD strobe is active ~20 master ticks after instruction start.
@@ -81,11 +72,7 @@ public:
     
     // Hblank = (tick > 365) && (tick < 453)
     // Reference: odyssey2_timing.txt scanline timing table
-    // PERFORMANCE: Called 366M times per 3000 frames (~3% of execution time).
-    // Inlined to eliminate function call overhead.
-    inline bool is_hblank() const {
-        return (scanline_tick_ > (hblank_start_tick_ - 1)) && (scanline_tick_ < hblank_end_tick_);
-    }
+    bool is_hblank() const;
     
     // Vblank state — tracks the hardware flip-flop.
     // Goes high at tick 365 of scanline 242.
@@ -169,6 +156,10 @@ private:
     
     // CPU cycle debt tracking
     uint8 cpu_cycles_remaining_;
+    
+    // Countdown counters — replace modulo operations in tick()
+    uint32 vdc_countdown_;
+    uint32 cpu_countdown_;
     
     // Standard-specific constants (set in calculate_timing)
     uint32 ticks_per_scanline_;  // 455 NTSC, 1135 PAL
