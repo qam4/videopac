@@ -130,15 +130,27 @@ static void check_variables() {
     }
 }
 
+// Precomputed palette LUT (XRGB8888), built once at init
+static uint32_t palette_lut[16];
+static bool palette_lut_initialized = false;
+
+static void init_palette_lut() {
+    for (int i = 0; i < 16; i++) {
+        const videopac::Color& c = videopac::PALETTE_STANDARD[i];
+        palette_lut[i] = (0xFFu << 24) | (c.r << 16) | (c.g << 8) | c.b;
+    }
+    palette_lut_initialized = true;
+}
+
 static void convert_framebuffer() {
     const videopac::uint8* fb = emulator->get_framebuffer();
     if (!fb) return;
 
-    // Convert palette-indexed framebuffer to XRGB8888
+    if (!palette_lut_initialized) init_palette_lut();
+
+    // Convert palette-indexed framebuffer to XRGB8888 via LUT
     for (int i = 0; i < videopac::FRAMEBUFFER_WIDTH * videopac::FRAMEBUFFER_HEIGHT; i++) {
-        uint8_t idx = fb[i] & 0x0F;
-        const videopac::Color& c = videopac::PALETTE_STANDARD[idx];
-        video_buffer[i] = (0xFF << 24) | (c.r << 16) | (c.g << 8) | c.b;
+        video_buffer[i] = palette_lut[fb[i] & 0x0F];
     }
 }
 

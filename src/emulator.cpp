@@ -97,6 +97,46 @@ void EmulatorCore::run_frame() {
     // Reset audio sample buffer for this frame
     vdc_.reset_audio_sample_buffer();
     
+    // ── Fast path: no debugger, no profiling ──
+    // Eliminates all debugger checks, trace logging, and chrono calls
+    // from the inner loop (~119K iterations per NTSC frame).
+    if (!debugger_ && !config_.enable_profile) {
+        while (!vdc_.is_frame_complete()) {
+            MasterClock::ExecuteNext next = master_clock_.tick();
+            
+            switch (next) {
+                case MasterClock::ExecuteNext::BOTH: {
+                    uint8 cycles = cpu_.execute_instruction();
+                    master_clock_.cpu_executed(cycles);
+                    vdc_.tick_one_cycle();
+                    cpu_.update_counter(vdc_.get_t1_state());
+                    master_clock_.vdc_executed();
+                    break;
+                }
+                case MasterClock::ExecuteNext::CPU: {
+                    uint8 cycles = cpu_.execute_instruction();
+                    master_clock_.cpu_executed(cycles);
+                    break;
+                }
+                case MasterClock::ExecuteNext::VDC: {
+                    vdc_.tick_one_cycle();
+                    cpu_.update_counter(vdc_.get_t1_state());
+                    master_clock_.vdc_executed();
+                    break;
+                }
+                case MasterClock::ExecuteNext::NONE:
+                    break;
+            }
+            
+            handle_interrupts();
+        }
+        
+        frame_count_++;
+        return;
+    }
+    
+    // ── Slow path: debugger and/or profiling active ──
+    
     // Track VDC cycles at start of frame for statistics
     uint64 frame_start_vdc_cycles = vdc_.get_total_cycles();
     

@@ -203,9 +203,11 @@ void VDC::tick_one_cycle() {
     
     state_.registers[VDCRegisters::STATUS] = status;
     
-    // 5. Audio
-    update_audio();
-    capture_audio_sample();
+    // 5. Audio — skip entirely when sound is disabled
+    if (state_.audio_enabled) {
+        update_audio();
+        capture_audio_sample();
+    }
     
     // 6. Advance beam_x for tests without master clock
     if (!master_clock_) {

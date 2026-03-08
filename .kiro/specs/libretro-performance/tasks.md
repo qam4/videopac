@@ -97,13 +97,15 @@ same binary). Use FPS for user-facing reporting; use cycles for optimization dec
     - Result: 560M fewer cycles (-8.8% from task 5 baseline), IPC improved 3.45→3.85
     - _Requirements: 6.2_
 
-- [ ] 7. Checkpoint — Verify high-impact optimizations, re-profile
+- [x] 7. Checkpoint — Verify high-impact optimizations, re-profile
   - Build and run all tests
   - Re-run `perf stat` to measure cycle reduction from Tasks 4-6
   - Compare against baseline (7.91B cycles / 600 frames)
   - Re-run `perf record` + `perf report` to verify hot paths have shifted
   - Report FPS as secondary metric
-  - Ask the user if questions arise
+  - Post-task-6 profile showed accessor wrappers eliminated from top;
+    tick_one_cycle (20%), is_character_pixel_at (18%), render_current_pixel (13%),
+    run_frame (12%), is_sprite_pixel_at (9%), is_grid_pixel_at (8%) now dominate.
 
 - [ ] 8. Optimize VDC::render_current_pixel dispatch (perf: 12.2%)
   - [ ] 8.1 Reduce function call overhead in render_current_pixel
@@ -111,23 +113,28 @@ same binary). Use FPS for user-facing reporting; use cycles for optimization dec
     - Consider inlining the grid check (simple coordinate math)
     - _Requirements: 2.1, 2.3_
 
-- [ ] 9. Optimize emulator execution loop (perf: 3.7% run_frame)
-  - [ ] 9.1 Skip debugger checks when no debugger attached in `src/emulator.cpp`
-    - Guard `check_debugger_breakpoint()`, `log_instruction()`, `is_vdc_trace_enabled()` calls
+- [x] 9. Optimize emulator execution loop (perf: 12% run_frame after inlining)
+  - [x] 9.1 Skip debugger checks when no debugger attached in `src/emulator.cpp`
+    - Added fast path in run_frame() that bypasses all debugger/profiling code
     - _Requirements: 5.2_
-  - [ ] 9.2 Eliminate profiling overhead when disabled in `run_frame()`
-    - Separate fast path (no timing) from profiled path
+  - [x] 9.2 Eliminate profiling overhead when disabled in `run_frame()`
+    - Fast path has zero chrono calls, zero debugger null-checks, zero profiling branches
+    - Result: 160M fewer cycles (-2.7%), 387M fewer instructions, 132M fewer branches
     - _Requirements: 5.3, 10.3_
 
-- [ ] 10. Optimize VDC audio path (perf: 1.7% capture_audio_sample)
-  - [ ] 10.1 Add audio-disabled skip in `tick_one_cycle()`
+- [x] 10. Optimize VDC audio path (perf: 3.3% capture_audio_sample)
+  - [x] 10.1 Add audio-disabled skip in `tick_one_cycle()`
     - When sound control enable bit is 0, skip both `update_audio()` and `capture_audio_sample()`
+    - Safe: get_audio_buffer() returns silence when sample count is 0
+    - Result: 241M fewer cycles (-4.2%), 886M fewer instructions
     - _Requirements: 4.1, 4.2_
 
-- [ ] 11. Optimize framebuffer conversion in libretro core (perf: not visible per-tick)
-  - [ ] 11.1 Add precomputed palette LUT to `src/libretro.cpp`
+- [x] 11. Optimize framebuffer conversion in libretro core (perf: not visible per-tick)
+  - [x] 11.1 Add precomputed palette LUT to `src/libretro.cpp`
+    - 16-entry XRGB8888 lookup table, built once, one table lookup per pixel
     - _Requirements: 7.1_
-  - [ ] 11.2 Implement branchless mono-to-stereo conversion in `retro_run()`
+  - [x] 11.2 Mono-to-stereo conversion already branchless — no change needed
+    - Existing loop is a simple copy with no per-sample branching
     - _Requirements: 7.2_
 
 - [ ] 12. Checkpoint — Verify all optimizations preserve correctness
