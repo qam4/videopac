@@ -18,8 +18,8 @@ same binary). Use FPS for user-facing reporting; use cycles for optimization dec
 **Baseline (perf stat, Satellite Attack, 600 frames, ci-linux -O2):**
 - **7.91B cycles, 32.25B instructions, 4.08 IPC**
 
-**Current (after tasks 4-5):**
-- **6.38B cycles (-19.4%), 21.98B instructions (-31.9%), 3.45 IPC**
+**Current (after tasks 4-6):**
+- **5.82B cycles (-26.4%), 22.43B instructions (-30.4%), 3.85 IPC**
 
 ## Tasks
 
@@ -89,10 +89,12 @@ same binary). Use FPS for user-facing reporting; use cycles for optimization dec
     - Confirmed: no division or floating-point in hot path
     - _Requirements: 6.1_
 
-- [ ] 6. [HIGH IMPACT] Inline VDC accessor wrappers (perf: 7.9% combined)
-  - [ ] 6.1 Move VDC::is_frame_complete(), VDC::is_hblank(), VDC::get_t1_state(), VDC::get_beam_x() to header
-    - These are trivial one-line delegations to master_clock_ but called 183-366M times
-    - The compiler can't inline them across translation units from src/vdc.cpp
+- [x] 6. [HIGH IMPACT] Inline VDC accessor wrappers (perf: 7.9% combined)
+  - [x] 6.1 Move VDC::is_frame_complete(), VDC::is_hblank(), VDC::get_t1_state(), VDC::get_beam_x() to header
+    - Also moved: is_vblank(), get_scanline(), get_beam_y(), get_frame_number(), clear_frame_complete()
+    - Moved MasterClock::is_hblank() and MasterClock::get_beam_x() to header (required for cross-TU inlining)
+    - Replaced forward declaration of MasterClock in vdc.h with #include "master_clock.h"
+    - Result: 560M fewer cycles (-8.8% from task 5 baseline), IPC improved 3.45→3.85
     - _Requirements: 6.2_
 
 - [ ] 7. Checkpoint — Verify high-impact optimizations, re-profile

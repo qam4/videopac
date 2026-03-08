@@ -2,11 +2,9 @@
 #define VIDEOPAC_VDC_H
 
 #include "types.h"
+#include "master_clock.h"
 
 namespace videopac {
-
-// Forward declaration — VDC queries the master clock for beam position
-class MasterClock;
 
 // VDC Register addresses
 // Reference: doc/o2doc.md Appendix D, doc/8245.md lines 600-650
@@ -240,11 +238,25 @@ public:
     int get_extended_framebuffer_width() const { return EXTENDED_FB_WIDTH; }
     int get_extended_framebuffer_height() const { return EXTENDED_FB_HEIGHT; }
     
-    // Status queries — all delegate to master clock
-    bool is_hblank() const;
-    bool is_vblank() const;
-    bool is_frame_complete() const;
-    void clear_frame_complete();
+    // Status queries — inlined for performance, delegate to master clock
+    bool is_hblank() const {
+        if (master_clock_) return master_clock_->is_hblank();
+        return (state_.beam_x >= VideoTiming::BLANKING_START_X);
+    }
+    bool is_vblank() const {
+        if (master_clock_) return master_clock_->is_vblank();
+        if (state_.beam_y == vblank_start_) return (state_.beam_x >= VideoTiming::BLANKING_START_X);
+        else if (state_.beam_y == 0) return (state_.beam_x < VideoTiming::BLANKING_START_X);
+        else if (state_.beam_y > vblank_start_) return true;
+        return false;
+    }
+    bool is_frame_complete() const {
+        if (master_clock_) return master_clock_->is_frame_complete();
+        return state_.frame_complete;
+    }
+    void clear_frame_complete() {
+        state_.frame_complete = false;
+    }
     
     // Audio
     int16 get_audio_sample();
@@ -258,12 +270,21 @@ public:
     void set_state(const VDCState& state);
     void get_character_rom(uint8* dest) const;
     
-    // Accessors — beam position comes from master clock
-    uint16 get_scanline() const;
-    uint16 get_beam_x() const;
-    uint16 get_beam_y() const;
+    // Accessors — beam position comes from master clock (inlined for performance)
+    uint16 get_scanline() const {
+        if (master_clock_) return master_clock_->get_scanline();
+        return state_.beam_y;
+    }
+    uint16 get_beam_x() const {
+        if (master_clock_) return master_clock_->get_beam_x();
+        return state_.beam_x;
+    }
+    uint16 get_beam_y() const {
+        if (master_clock_) return master_clock_->get_scanline();
+        return state_.beam_y;
+    }
     uint64 get_total_cycles() const { return state_.total_cycles; }
-    uint64 get_frame_number() const;
+    uint64 get_frame_number() const { return state_.frame_number; }
     VideoStandard get_video_standard() const { return state_.video_standard; }
     
     // Connect to master clock (must be called before first tick)
@@ -272,8 +293,11 @@ public:
     // Set VBLANK status flag (A1.3) — called by emulator at VBlank transition
     void set_vblank_flag() { state_.registers[VDCRegisters::STATUS] |= StatusBits::VBLANK; }
     
-    // T1 pin output — delegates to master clock
-    bool get_t1_state() const;
+    // T1 pin output — delegates to master clock (inlined for performance)
+    bool get_t1_state() const {
+        if (master_clock_) return master_clock_->get_t1_state();
+        return !(is_hblank() || is_vblank());
+    }
     
     // VDC trace
     void enable_vdc_trace(bool enabled) { vdc_trace_enabled_ = enabled; }
