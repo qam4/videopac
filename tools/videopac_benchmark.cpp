@@ -27,6 +27,9 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <cmath>
+#include <cinttypes>
 
 // Portable helpers replacing std::filesystem (GCC 7 compat)
 #ifdef _WIN32
@@ -420,7 +423,7 @@ static int run_benchmark(const BenchmarkConfig& config) {
     printf("\n");
 
     // -----------------------------------------------------------------------
-    // CSV output (if requested)
+    // CSV output (if requested), otherwise summary stats when profiling
     // -----------------------------------------------------------------------
     if (!config.profile_output.empty()) {
         std::ofstream csv(config.profile_output);
@@ -439,6 +442,26 @@ static int run_benchmark(const BenchmarkConfig& config) {
             fprintf(stderr, "Warning: could not write profile output to %s\n",
                     config.profile_output.c_str());
         }
+    } else if (!frame_timings.empty()) {
+        // Summary statistics (min, max, mean, p95)
+        std::vector<uint64_t> totals;
+        totals.reserve(frame_timings.size());
+        uint64_t sum = 0;
+        for (const auto& ft : frame_timings) {
+            totals.push_back(ft.total_us);
+            sum += ft.total_us;
+        }
+        std::sort(totals.begin(), totals.end());
+        size_t n = totals.size();
+        size_t p95_idx = static_cast<size_t>(std::ceil(0.95 * n)) - 1;
+        if (p95_idx >= n) p95_idx = n - 1;
+
+        printf("\nProfiling Summary (%zu frames)\n", n);
+        printf("================================\n");
+        printf("Min frame:     %" PRIu64 " us\n", totals.front());
+        printf("Max frame:     %" PRIu64 " us\n", totals.back());
+        printf("Mean frame:    %" PRIu64 " us\n", sum / n);
+        printf("P95 frame:     %" PRIu64 " us\n", totals[p95_idx]);
     }
 
     // -----------------------------------------------------------------------
