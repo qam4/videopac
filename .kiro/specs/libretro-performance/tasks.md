@@ -18,8 +18,8 @@ same binary). Use FPS for user-facing reporting; use cycles for optimization dec
 **Baseline (perf stat, Satellite Attack, 600 frames, ci-linux -O2):**
 - **7.91B cycles, 32.25B instructions, 4.08 IPC**
 
-**Current (after tasks 4-6):**
-- **5.82B cycles (-26.4%), 22.43B instructions (-30.4%), 3.85 IPC**
+**Current (after tasks 4-11):**
+- **4.29B cycles (-45.8%), 16.64B instructions (-48.4%), 3.88 IPC**
 
 ## Tasks
 
@@ -107,11 +107,12 @@ same binary). Use FPS for user-facing reporting; use cycles for optimization dec
     tick_one_cycle (20%), is_character_pixel_at (18%), render_current_pixel (13%),
     run_frame (12%), is_sprite_pixel_at (9%), is_grid_pixel_at (8%) now dominate.
 
-- [ ] 8. Optimize VDC::render_current_pixel dispatch (perf: 12.2%)
-  - [ ] 8.1 Reduce function call overhead in render_current_pixel
-    - Currently calls is_grid_pixel_at (7%), is_character_pixel_at (35.5%), is_sprite_pixel_at
-    - Consider inlining the grid check (simple coordinate math)
-    - _Requirements: 2.1, 2.3_
+- [x] 8. Optimize VDC::render_current_pixel dispatch (perf: 13%)
+  - [x] 8.1 Skip rendering for pixels outside framebuffer bounds
+    - Early return when beam position is outside both normal and extended framebuffers
+    - Avoids all grid/character/sprite checks for ~36% of beam positions (hblank + vblank area)
+    - Result: 1.15B fewer cycles (-21.2%), 4.52B fewer instructions (-21.4%), FPS 442→565
+    - _Requirements: 2.1, 2.2, 2.3_
 
 - [x] 9. Optimize emulator execution loop (perf: 12% run_frame after inlining)
   - [x] 9.1 Skip debugger checks when no debugger attached in `src/emulator.cpp`

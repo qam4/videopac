@@ -456,24 +456,29 @@ void VDC::render_current_pixel() {
     int beam_x = static_cast<int>(state_.beam_x);
     int beam_y = static_cast<int>(state_.beam_y);
     
-    // Render in priority order (background to foreground)
-    // Priority: sprites (highest) > characters > grid > background (lowest)
-    // Reference: Requirements 12.1, 12.2, 12.3, 12.4
+    // Convert beam coordinates to framebuffer coordinates
+    int fb_x = beam_x - FramebufferMapping::FRAMEBUFFER_START_X;
+    int fb_y = beam_y - FramebufferMapping::FRAMEBUFFER_START_Y;
+    
+    // Skip rendering entirely for pixels outside both framebuffers
+    bool in_normal_fb = (fb_x >= 0 && fb_x < FRAMEBUFFER_WIDTH && fb_y >= 0 && fb_y < FRAMEBUFFER_HEIGHT);
+    bool in_extended_fb = false;
+    if (extended_fb_mode_) {
+        int ext_fb_x = beam_x - FramebufferMapping::EXTENDED_FB_START_X;
+        int ext_fb_y = beam_y - FramebufferMapping::EXTENDED_FB_START_Y;
+        in_extended_fb = (ext_fb_x >= 0 && ext_fb_x < EXTENDED_FB_WIDTH && 
+                          ext_fb_y >= 0 && ext_fb_y < EXTENDED_FB_HEIGHT);
+    }
+    if (!in_normal_fb && !in_extended_fb) {
+        return;
+    }
     
     // Start with background color
-    // Use latched color register (snapped at scanline boundary) to prevent
-    // mid-scanline color bleeding. The 8245 "Color Latch" (datasheet p.14)
-    // feeds the output logic directly, but games time color writes to land
-    // near HBLANK. On a CRT the few bleeding pixels would be invisible;
-    // latching at scanline boundaries matches the intended visual result.
     uint8 color_reg = state_.latched_color;
     uint8 bg_color = ((color_reg & 0x38) >> 3) | (color_reg & 0x80 ? 0 : 8);
     uint8 pixel_color = bg_color;
     
     // Check grid at this position (if enabled)
-    // Grid color formula (see types.h for details)
-    // Formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
-    // Bits 0-2: BGR components, Bit 6: luminance, Bit 7: inverted luminance
     if (state_.grid_enabled) {
         if (is_grid_pixel_at(beam_x, beam_y)) {
             uint8 grid_color = (color_reg & 0x07) | ((color_reg & 0x40) >> 3) | (color_reg & 0x80 ? 0 : 8);
@@ -482,39 +487,26 @@ void VDC::render_current_pixel() {
     }
     
     // Check characters at this position
-    // Character color formula (see types.h for details)
-    // Formula: ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8
-    // Reorders BGR bits to RGB and adds 8 for high-intensity palette
     uint8 char_color;
     if (is_character_pixel_at(beam_x, beam_y, char_color)) {
         pixel_color = char_color;
     }
     
     // Check sprites at this position (highest priority)
-    // Sprite color formula (see types.h for details)
-    // Formula: ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8
-    // Reorders BGR bits to RGB and adds 8 for high-intensity palette
     uint8 sprite_color;
     if (is_sprite_pixel_at(beam_x, beam_y, sprite_color)) {
         pixel_color = sprite_color;
     }
     
-    // Convert beam coordinates to framebuffer coordinates
-    int fb_x = beam_x - FramebufferMapping::FRAMEBUFFER_START_X;
-    int fb_y = beam_y - FramebufferMapping::FRAMEBUFFER_START_Y;
-    
-    // Write to normal framebuffer if within bounds
-    if (fb_x >= 0 && fb_x < FRAMEBUFFER_WIDTH && fb_y >= 0 && fb_y < FRAMEBUFFER_HEIGHT) {
+    // Write to normal framebuffer
+    if (in_normal_fb) {
         state_.framebuffer[fb_y][fb_x] = pixel_color;
     }
     
-    // Convert beam coordinates to extended framebuffer coordinates
-    int ext_fb_x = beam_x - FramebufferMapping::EXTENDED_FB_START_X;
-    int ext_fb_y = beam_y - FramebufferMapping::EXTENDED_FB_START_Y;
-    
-    // Write to extended framebuffer if enabled and within extended bounds
-    if (extended_fb_mode_ && ext_fb_x >= 0 && ext_fb_x < EXTENDED_FB_WIDTH && 
-        ext_fb_y >= 0 && ext_fb_y < EXTENDED_FB_HEIGHT) {
+    // Write to extended framebuffer if enabled
+    if (in_extended_fb) {
+        int ext_fb_x = beam_x - FramebufferMapping::EXTENDED_FB_START_X;
+        int ext_fb_y = beam_y - FramebufferMapping::EXTENDED_FB_START_Y;
         state_.extended_framebuffer[ext_fb_y][ext_fb_x] = pixel_color;
     }
 }

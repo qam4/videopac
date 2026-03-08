@@ -42,6 +42,9 @@ Makefile
 Testing/
 *.log
 
+# Monitoring output (kiro-monitor)
+output/
+
 # Save states
 *.state
 
