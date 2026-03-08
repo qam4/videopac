@@ -136,6 +136,26 @@ namespace SoundControlBits {
     constexpr uint8 ENABLE_SOUND = 0x80;
 }
 
+// Cached sprite bounding box data — rebuilt per frame to avoid
+// recomputing attributes on every pixel in the hot path.
+struct SpriteCacheEntry {
+    uint8_t y;
+    uint8_t x;
+    uint8_t color_attr;
+    bool double_size;
+    bool shift_even;
+    bool shift_full;
+    int height;       // 16 or 32
+    int width;        // 8 or 16
+};
+
+// Per-scanline sprite visibility mask — rebuilt at each scanline transition.
+// Avoids per-pixel Y-range checks and pattern lookups for invisible sprites.
+struct ScanlineSpriteMask {
+    bool visible[4];           // true if sprite Y range includes this scanline
+    uint8_t pattern[4];        // cached pattern byte for this scanline's sprite row
+};
+
 constexpr uint16 AUDIO_FREQ_LOW = 983;
 constexpr uint16 AUDIO_FREQ_HIGH = 3933;
 
@@ -302,6 +322,14 @@ private:
     
     // Character ROM
     static const uint8 character_rom_[64 * 8];
+    
+    // Sprite cache — rebuilt at frame start or when sprite registers change
+    SpriteCacheEntry sprite_cache_[4];
+    ScanlineSpriteMask scanline_mask_;
+    
+    // Sprite cache rebuild helpers
+    void rebuild_sprite_cache();
+    void rebuild_scanline_mask(uint16 scanline);
     
     // Rendering helpers (scanline-based, for tests)
     void render_background(int y);

@@ -1521,30 +1521,4 @@ uint8 CPU::execute_instruction() {
 // T1 = !(Hblank OR Vblank) - HIGH during visible, LOW during blanking
 // Counter increments on falling edge (T1 going from HIGH to LOW, i.e., visible → blanking)
 // Reference: Intel 8048 datasheet - T1 pin as event counter input
-// Reference: doc/hardware/odyssey2_timing.txt "T1 input caveat" section
-void CPU::update_counter(bool t1_state) {
-    // Detect falling edge: T1 was HIGH (true) and is now LOW (false)
-    bool falling_edge = state_.t1_state && !t1_state;
-    
-    // Update state for next edge detection
-    state_.t1_state = t1_state;
-    
-    // Increment counter on falling edge if counter mode is enabled
-    if (state_.counter_on && falling_edge) {
-        uint8 old_timer = state_.timer;
-        state_.timer++;
-        
-        // Check for timer overflow (0xFF -> 0x00)
-        if (old_timer == 0xFF && state_.timer == 0x00) {
-            // Set timer flag
-            state_.timer_flag = true;
-            
-            // Timer overflowed - set pending interrupt flag if enabled
-            if (state_.timer_interrupts_enabled && state_.interrupts_enabled) {
-                state_.timer_interrupt_pending = true;
-            }
-        }
-    }
-}
-
 } // namespace videopac

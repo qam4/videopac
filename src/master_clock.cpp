@@ -133,22 +133,6 @@ MasterClock::ExecuteNext MasterClock::tick() {
     return ExecuteNext::NONE;
 }
 
-uint8 MasterClock::get_beam_x() const {
-    // X register counts VDC pixel positions.
-    // NTSC (from odyssey2_timing.txt): Xvalue = (tick + ((tick > 412) ? 1 : 0)) >> 1
-    // PAL: same formula but in PAL master ticks. Convert to equivalent VDC cycle position.
-    // Since PAL_tick = NTSC_tick * 5/2, we can convert: equiv_ntsc_tick = PAL_tick * 2/5
-    // Then apply the NTSC formula. This gives the same X range (0-227) for both standards.
-    if (standard_ == VideoStandard::NTSC) {
-        return static_cast<uint8>((scanline_tick_ + ((scanline_tick_ > NTSC_Y_INCREMENT_TICK) ? 1 : 0)) >> 1);
-    } else {
-        // Convert PAL master tick to equivalent NTSC-scale tick for X calculation
-        // PAL tick 0-1134 maps to X 0-227 (same visible range as NTSC)
-        uint32 equiv_tick = (scanline_tick_ * 2 + 2) / 5;  // Round to nearest
-        return static_cast<uint8>((equiv_tick + ((equiv_tick > NTSC_Y_INCREMENT_TICK) ? 1 : 0)) >> 1);
-    }
-}
-
 uint8 MasterClock::get_beam_x_at_cpu_read() const {
     // The 8048 MOVX instruction takes 2 machine cycles; the RD strobe is
     // active during the second cycle. Offset in master ticks depends on standard.
@@ -163,10 +147,6 @@ uint8 MasterClock::get_beam_x_at_cpu_read() const {
         uint32 equiv_tick = (tick * 2 + 2) / 5;
         return static_cast<uint8>((equiv_tick + ((equiv_tick > NTSC_Y_INCREMENT_TICK) ? 1 : 0)) >> 1);
     }
-}
-
-bool MasterClock::is_hblank() const {
-    return (scanline_tick_ > (hblank_start_tick_ - 1)) && (scanline_tick_ < hblank_end_tick_);
 }
 
 void MasterClock::cpu_executed(uint8 cycles) {

@@ -234,6 +234,16 @@ if(BUILD_TOOLS)
         tools/smoke_test_roms.cpp
     )
     target_link_libraries(smoke_test_roms videopac_core)
+
+    add_executable(videopac_benchmark
+        tools/videopac_benchmark.cpp
+    )
+    target_link_libraries(videopac_benchmark videopac_core)
+
+    add_executable(quick_profile
+        tools/quick_profile.cpp
+    )
+    target_link_libraries(quick_profile videopac_core)
 endif()
 
 # Libretro core

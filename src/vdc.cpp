@@ -121,6 +121,10 @@ void VDC::reset() {
     float frame_rate = (state_.video_standard == VideoStandard::PAL) ? 50.0f : 60.0f;
     float samples_per_frame = audio_sample_rate_ / frame_rate;
     vdc_cycles_per_audio_sample_ = static_cast<uint32>((vdc_cycles_per_frame / samples_per_frame) * 256.0f);
+    
+    // Initialize sprite cache
+    rebuild_sprite_cache();
+    std::memset(&scanline_mask_, 0, sizeof(scanline_mask_));
 }
 
 // Advance VDC by specified number of cycles
@@ -146,6 +150,15 @@ void VDC::tick_one_cycle() {
         // Detect scanline transition for color latching
         if (new_y != state_.prev_scanline) {
             state_.latched_color = state_.registers[VDCRegisters::COLOR];
+            
+            // Rebuild scanline sprite mask for the new scanline
+            rebuild_scanline_mask(new_y);
+            
+            // Rebuild sprite cache at frame start (scanline 0)
+            if (new_y == 0 && state_.prev_scanline != 0) {
+                rebuild_sprite_cache();
+            }
+            
             state_.prev_scanline = new_y;
         }
         
@@ -157,7 +170,10 @@ void VDC::tick_one_cycle() {
     render_current_pixel();
     
     // 2. Per-pixel collision detection (hardware does this as objects render)
-    if (state_.display_enabled) {
+    // Skip entirely when collision enable register is zero — no collisions to track.
+    // This avoids bounds math, function call overhead, and object lookups on every pixel.
+    // Requirement 3.1
+    if (state_.display_enabled && state_.registers[VDCRegisters::COLLISION] != 0) {
         int bx = static_cast<int>(state_.beam_x);
         int by = static_cast<int>(state_.beam_y);
         int fb_x = bx - FramebufferMapping::FRAMEBUFFER_START_X;
@@ -226,10 +242,15 @@ void VDC::end_scanline() {
     // Advance to next scanline
     state_.beam_y++;
     
+    // Rebuild scanline sprite mask for the new scanline
+    rebuild_scanline_mask(state_.beam_y);
+    
     if (state_.beam_y >= total_scanlines_) {
         state_.beam_y = 0;
         state_.frame_number++;
         state_.frame_complete = true;
+        rebuild_sprite_cache();
+        rebuild_scanline_mask(0);
     }
 }
 
@@ -271,6 +292,19 @@ void VDC::write_register(uint8 address, uint8 value) {
     // VBlank handler (bank 3, address 0xC02).
     
     state_.registers[address] = value;
+    
+    // Rebuild sprite cache when sprite control registers (Y, X, color) are written
+    // Sprite registers: 0x00-0x0F (4 sprites × 4 bytes each, byte 3 is unused)
+    if (address <= VDCRegisters::SPRITE3_UNUSED) {
+        rebuild_sprite_cache();
+        // Also rebuild scanline mask since sprite bounds may have changed
+        rebuild_scanline_mask(state_.beam_y);
+    }
+    // Also rebuild scanline mask when sprite pattern registers change
+    // Pattern registers: 0x80-0x9F (4 sprites × 8 bytes each)
+    else if (address >= VDCRegisters::SPRITE0_PATTERN && address <= (VDCRegisters::SPRITE3_PATTERN + 7)) {
+        rebuild_scanline_mask(state_.beam_y);
+    }
     
     // Handle special registers that update internal state
     switch (address) {
@@ -409,6 +443,42 @@ uint8 VDC::read_register(uint8 address) {
     return value;
 }
 
+// Rebuild sprite cache from registers.
+// Called at frame start (clear_frame_complete) and when sprite registers are written.
+void VDC::rebuild_sprite_cache() {
+    for (int i = 0; i < 4; i++) {
+        uint8 base_addr = VDCRegisters::SPRITE0_Y + (i * 4);
+        uint8 color_attr = state_.registers[base_addr + 2];
+        
+        sprite_cache_[i].y = state_.registers[base_addr + 0];
+        sprite_cache_[i].x = state_.registers[base_addr + 1];
+        sprite_cache_[i].color_attr = color_attr;
+        sprite_cache_[i].double_size = (color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
+        sprite_cache_[i].shift_even = (color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
+        sprite_cache_[i].shift_full = (color_attr & SpriteColorBits::SHIFT_FULL) != 0;
+        sprite_cache_[i].height = sprite_cache_[i].double_size ? 32 : 16;
+        sprite_cache_[i].width = sprite_cache_[i].double_size ? 16 : 8;
+    }
+}
+
+// Rebuild scanline sprite mask for the given scanline.
+// Called at each scanline transition in tick_one_cycle().
+void VDC::rebuild_scanline_mask(uint16 scanline) {
+    int y = static_cast<int>(scanline);
+    for (int i = 0; i < 4; i++) {
+        const auto& sc = sprite_cache_[i];
+        if (y >= sc.y && y < sc.y + sc.height) {
+            scanline_mask_.visible[i] = true;
+            int sprite_row = (y - sc.y) / (sc.double_size ? 4 : 2);
+            uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (i * 8) + sprite_row;
+            scanline_mask_.pattern[i] = state_.registers[pattern_addr];
+        } else {
+            scanline_mask_.visible[i] = false;
+            scanline_mask_.pattern[i] = 0;
+        }
+    }
+}
+
 // Render current scanline to framebuffer
 // NOTE: This function is primarily used by tests. During normal emulation,
 // rendering happens per-pixel via render_current_pixel() called from tick_one_cycle().
@@ -443,7 +513,7 @@ void VDC::render_scanline() {
 }
 
 // Render pixel at current beam position
-// Reference: Requirements 2.1, 2.3, 2.6, 12.1-12.4
+// Reference: Requirements 2.1, 2.2, 2.3, 2.5, 12.1-12.4
 void VDC::render_current_pixel() {
     // Check if display is enabled
     if (!state_.display_enabled) {
@@ -453,6 +523,28 @@ void VDC::render_current_pixel() {
     // Use beam coordinates for rendering logic (hardware coordinates)
     int beam_x = static_cast<int>(state_.beam_x);
     int beam_y = static_cast<int>(state_.beam_y);
+    
+    // Fast-path bounds check: skip all grid/character/sprite checks when the
+    // beam is outside every writable framebuffer region. This avoids expensive
+    // per-pixel object lookups for the ~60% of VDC cycles that fall in blanking.
+    // Requirements 2.1, 2.2
+    int fb_x = beam_x - FramebufferMapping::FRAMEBUFFER_START_X;
+    int fb_y = beam_y - FramebufferMapping::FRAMEBUFFER_START_Y;
+    bool in_normal_fb = (fb_x >= 0 && fb_x < FRAMEBUFFER_WIDTH &&
+                         fb_y >= 0 && fb_y < FRAMEBUFFER_HEIGHT);
+    
+    bool in_extended_fb = false;
+    int ext_fb_x = 0, ext_fb_y = 0;
+    if (extended_fb_mode_) {
+        ext_fb_x = beam_x - FramebufferMapping::EXTENDED_FB_START_X;
+        ext_fb_y = beam_y - FramebufferMapping::EXTENDED_FB_START_Y;
+        in_extended_fb = (ext_fb_x >= 0 && ext_fb_x < EXTENDED_FB_WIDTH &&
+                          ext_fb_y >= 0 && ext_fb_y < EXTENDED_FB_HEIGHT);
+    }
+    
+    if (!in_normal_fb && !in_extended_fb) {
+        return;  // Beam outside all framebuffer bounds — nothing to render
+    }
     
     // Render in priority order (background to foreground)
     // Priority: sprites (highest) > characters > grid > background (lowest)
@@ -468,7 +560,7 @@ void VDC::render_current_pixel() {
     uint8 bg_color = ((color_reg & 0x38) >> 3) | (color_reg & 0x80 ? 0 : 8);
     uint8 pixel_color = bg_color;
     
-    // Check grid at this position (if enabled)
+    // Check grid at this position (skip when grid is disabled — Requirement 2.3)
     // Grid color formula (see types.h for details)
     // Formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
     // Bits 0-2: BGR components, Bit 6: luminance, Bit 7: inverted luminance
@@ -489,30 +581,23 @@ void VDC::render_current_pixel() {
     }
     
     // Check sprites at this position (highest priority)
-    // Sprite color formula (see types.h for details)
-    // Formula: ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8
-    // Reorders BGR bits to RGB and adds 8 for high-intensity palette
-    uint8 sprite_color;
-    if (is_sprite_pixel_at(beam_x, beam_y, sprite_color)) {
-        pixel_color = sprite_color;
+    // Skip entirely when no sprites are visible on the current scanline
+    // (scanline_mask_ is rebuilt at each scanline transition — Requirement 2.5)
+    if (scanline_mask_.visible[0] || scanline_mask_.visible[1] ||
+        scanline_mask_.visible[2] || scanline_mask_.visible[3]) {
+        uint8 sprite_color;
+        if (is_sprite_pixel_at(beam_x, beam_y, sprite_color)) {
+            pixel_color = sprite_color;
+        }
     }
     
-    // Convert beam coordinates to framebuffer coordinates
-    int fb_x = beam_x - FramebufferMapping::FRAMEBUFFER_START_X;
-    int fb_y = beam_y - FramebufferMapping::FRAMEBUFFER_START_Y;
-    
     // Write to normal framebuffer if within bounds
-    if (fb_x >= 0 && fb_x < FRAMEBUFFER_WIDTH && fb_y >= 0 && fb_y < FRAMEBUFFER_HEIGHT) {
+    if (in_normal_fb) {
         state_.framebuffer[fb_y][fb_x] = pixel_color;
     }
     
-    // Convert beam coordinates to extended framebuffer coordinates
-    int ext_fb_x = beam_x - FramebufferMapping::EXTENDED_FB_START_X;
-    int ext_fb_y = beam_y - FramebufferMapping::EXTENDED_FB_START_Y;
-    
     // Write to extended framebuffer if enabled and within extended bounds
-    if (extended_fb_mode_ && ext_fb_x >= 0 && ext_fb_x < EXTENDED_FB_WIDTH && 
-        ext_fb_y >= 0 && ext_fb_y < EXTENDED_FB_HEIGHT) {
+    if (in_extended_fb) {
         state_.extended_framebuffer[ext_fb_y][ext_fb_x] = pixel_color;
     }
 }
@@ -2178,7 +2263,10 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
 }
 
 // Per-pixel rendering helper: Check if sprite pixel exists at position
-// Reference: Requirements 12.3, 12.4
+// Reference: Requirements 2.4, 12.3, 12.4
+// Optimized: reads from sprite_cache_[] and scanline_mask_ instead of
+// decoding registers per pixel. The cache is rebuilt at frame start /
+// register write; the scanline mask is rebuilt at each scanline transition.
 bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
     if (!state_.display_enabled) {
         return false;
@@ -2187,71 +2275,42 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
     // Check all 4 sprites (in reverse order for proper priority)
     // Sprite 0 has highest priority, so check it last
     for (int sprite_num = 3; sprite_num >= 0; sprite_num--) {
-        uint8 base_addr = VDCRegisters::SPRITE0_Y + (sprite_num * 4);
-        uint8 sprite_y = state_.registers[base_addr + 0];
-        uint8 sprite_x = state_.registers[base_addr + 1];
-        uint8 sprite_color_attr = state_.registers[base_addr + 2];
-        
-        // Extract sprite attributes
-        uint8 sprite_color = (sprite_color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT;
-        bool double_size = (sprite_color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
-        bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
-        bool shift_full = (sprite_color_attr & SpriteColorBits::SHIFT_FULL) != 0;
-        
-        // Calculate sprite height and check if pixel is within sprite bounds
-        // Normal sprites: 8 pattern rows × 2 scanlines per row = 16 scanlines
-        // Double-size sprites: 8 pattern rows × 4 scanlines per row = 32 scanlines
-        // Reference: Verified in o2em source (doc/vdc.c lines 502-509)
-        int sprite_height = double_size ? 32 : 16;
-        if (y < sprite_y || y >= sprite_y + sprite_height) {
+        // Only check sprites visible on this scanline (Requirement 2.5)
+        if (!scanline_mask_.visible[sprite_num]) {
             continue;
         }
         
-        // Calculate which row of the sprite pattern to check
-        // Each pattern row spans multiple scanlines
-        int sprite_row = (y - sprite_y) / (double_size ? 4 : 2);
-        
-        // Get sprite pattern byte for this row
-        uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (sprite_num * 8) + sprite_row;
-        uint8 pattern = state_.registers[pattern_addr];
+        const auto& sc = sprite_cache_[sprite_num];
         
         // Calculate pixel position with horizontal shift
-        int pixel_x = x - sprite_x;
+        int pixel_x = x - sc.x;
         
         // Apply shift based on screen row, not pattern row
-        int screen_row = y - sprite_y;
+        int screen_row = y - sc.y;
         bool is_even_row = (screen_row & 1) == 0;
-        if (shift_full) {
+        if (sc.shift_full) {
             pixel_x -= 1;
-        } else if (shift_even && is_even_row) {
+        } else if (sc.shift_even && is_even_row) {
             pixel_x -= 1;
         }
         
-        // Check if pixel is within sprite width
-        int sprite_width = double_size ? 16 : 8;
-        if (pixel_x < 0 || pixel_x >= sprite_width) {
+        // Check if pixel is within sprite width (cached)
+        if (pixel_x < 0 || pixel_x >= sc.width) {
             continue;
         }
+        
+        // Use cached pattern byte from scanline mask instead of register lookup
+        uint8 pattern = scanline_mask_.pattern[sprite_num];
         
         // Get bit from pattern
         // IMPORTANT: Sprites use LSB-first bit order (bit 0 = leftmost, bit 7 = rightmost)
         // This is DIFFERENT from characters which use MSB-first order (bit 7 = leftmost)
-        // 
-        // This bit ordering difference is NOT documented in:
-        // - o2doc.md section 4.3.2 (only says "each bit controls one column")
-        // - Intel 8245 datasheet
-        // 
-        // Discovery process:
-        // 1. Bug observed: Cars in Course de Voitures faced wrong direction
-        // 2. Testing showed sprites were horizontally flipped with MSB-first order
-        // 3. Confirmed by examining o2em reference emulator (doc/vdc.c):
-        //    - Line 477: Characters use (d1 & 0x80) with left shift (MSB-first)
-        //    - Line 548: Sprites use (d1 & 0x01) with right shift (LSB-first)
-        int pattern_x = double_size ? (pixel_x / 2) : pixel_x;
+        int pattern_x = sc.double_size ? (pixel_x / 2) : pixel_x;
         bool pixel_on = (pattern & (0x01 << pattern_x)) != 0;
         
         if (pixel_on) {
             // Sprite color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity
+            uint8 sprite_color = (sc.color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT;
             color = ((sprite_color & 2) | ((sprite_color & 1) << 2) | ((sprite_color & 4) >> 2)) + 8;
             return true;
         }

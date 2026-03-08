@@ -93,6 +93,53 @@
         "CMAKE_EXE_LINKER_FLAGS_SANITIZE": "-fsanitize=address,undefined",
         "CMAKE_SHARED_LINKER_FLAGS_SANITIZE": "-fsanitize=address,undefined"
       }
+    },
+    {
+      "name": "profile-mingw",
+      "inherits": ["flags-mingw", "ci-std", "cmake-pedantic"],
+      "binaryDir": "${sourceDir}/build/profile-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-pg -no-pie -O2 -g -Wall -Wextra -Wpedantic",
+        "CMAKE_EXE_LINKER_FLAGS": "-pg -no-pie -static"
+      }
+    },
+    {
+      "name": "Release-LTO",
+      "displayName": "Release with Link-Time Optimization",
+      "description": "Enables -flto for cross-TU optimization of videopac_core and videopac_libretro.",
+      "inherits": ["flags-mingw", "ci-std", "cmake-pedantic"],
+      "binaryDir": "${sourceDir}/build/release-lto",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS": "-flto -O2 -Wall -Wextra -Wpedantic",
+        "CMAKE_EXE_LINKER_FLAGS": "-flto",
+        "CMAKE_SHARED_LINKER_FLAGS": "-flto"
+      }
+    },
+    {
+      "name": "pgo-generate",
+      "displayName": "PGO Instrumentation Build (Step 1 of 2)",
+      "description": "PGO workflow step 1: Build with -fprofile-generate, then run the benchmark to collect profile data. Profile data is written to build/pgo-profiles/. Next, rebuild with the pgo-use preset.",
+      "inherits": ["flags-mingw", "ci-std", "cmake-pedantic"],
+      "binaryDir": "${sourceDir}/build/pgo-generate",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS": "-fprofile-generate=${sourceDir}/build/pgo-profiles -O2 -Wall -Wextra -Wpedantic",
+        "CMAKE_EXE_LINKER_FLAGS": "-fprofile-generate=${sourceDir}/build/pgo-profiles"
+      }
+    },
+    {
+      "name": "pgo-use",
+      "displayName": "PGO Optimized Build (Step 2 of 2)",
+      "description": "PGO workflow step 2: Build with -fprofile-use to apply collected profile data from build/pgo-profiles/. Requires a prior pgo-generate build and benchmark run. Full PGO workflow: (1) cmake --preset pgo-generate && cmake --build build/pgo-generate, (2) ./build/pgo-generate/videopac_benchmark --bios <bios> <rom> --frames 6000, (3) cmake --preset pgo-use && cmake --build build/pgo-use.",
+      "inherits": ["flags-mingw", "ci-std", "cmake-pedantic"],
+      "binaryDir": "${sourceDir}/build/pgo-use",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS": "-fprofile-use=${sourceDir}/build/pgo-profiles -O2 -Wall -Wextra -Wpedantic",
+        "CMAKE_EXE_LINKER_FLAGS": "-fprofile-use=${sourceDir}/build/pgo-profiles"
+      }
     }
   ]
 }
