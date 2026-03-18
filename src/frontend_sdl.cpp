@@ -3,6 +3,7 @@
 #include "ui/text_renderer.h"
 #include "ui/menu_system.h"
 #include "ui/config_manager.h"
+#include "ui/input_mapper.h"
 #include "ui/file_browser.h"
 #include "ui/zip_handler.h"
 #include "ui/dialogs.h"
@@ -39,6 +40,7 @@ SDLFrontend::SDLFrontend()
     , fps_position_(OSDRenderer::OSDPosition::TopRight)  // Default position
     , audio_muted_(false)
     , turbo_mode_(false)
+    , swap_joysticks_(false)
     , is_fullscreen_(false)
     , windowed_width_(0)
     , windowed_height_(0)
@@ -115,6 +117,10 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     
     // Load audio mute state (Requirement 14.12)
     audio_muted_ = config_manager_->get_audio_muted();
+    
+    // Load input settings
+    swap_joysticks_ = config_manager_->get_swap_joysticks();
+    input_mapper_.load_from_config(*config_manager_);
     
     menu_system_ = std::make_unique<MenuSystem>(renderer_, text_renderer_.get());
     menu_system_->build_main_menu();
@@ -1064,41 +1070,26 @@ void SDLFrontend::handle_keyboard_event(const SDL_KeyboardEvent& event) {
         return;
     }
     
-    // Handle joystick keys (both press and release)
-    switch (event.keysym.sym) {
-        // Arrow keys + Space for joystick 2 (most games use this as primary)
-        case SDLK_UP:
-            emulator_->get_input_handler().set_joystick_state(1, Direction::Up, key_down);
-            return;
-        case SDLK_DOWN:
-            emulator_->get_input_handler().set_joystick_state(1, Direction::Down, key_down);
-            return;
-        case SDLK_LEFT:
-            emulator_->get_input_handler().set_joystick_state(1, Direction::Left, key_down);
-            return;
-        case SDLK_RIGHT:
-            emulator_->get_input_handler().set_joystick_state(1, Direction::Right, key_down);
-            return;
-        case SDLK_SPACE:
-            emulator_->get_input_handler().set_joystick_button(1, key_down);
-            return;
-            
-        // Numpad keys + Numpad 0 for joystick 1
-        case SDLK_KP_8:
-            emulator_->get_input_handler().set_joystick_state(0, Direction::Up, key_down);
-            return;
-        case SDLK_KP_5:
-            emulator_->get_input_handler().set_joystick_state(0, Direction::Down, key_down);
-            return;
-        case SDLK_KP_4:
-            emulator_->get_input_handler().set_joystick_state(0, Direction::Left, key_down);
-            return;
-        case SDLK_KP_6:
-            emulator_->get_input_handler().set_joystick_state(0, Direction::Right, key_down);
-            return;
-        case SDLK_KP_0:
-            emulator_->get_input_handler().set_joystick_button(0, key_down);
-            return;
+    // Handle joystick keys via InputMapper (both press and release)
+    int player;
+    Action joy_action;
+    if (is_joystick_key(event.keysym.sym, player, joy_action)) {
+        // Apply swap: player 0 maps to Videopac joystick index based on swap setting
+        int joy_index = swap_joysticks_ ? (1 - player) : player;
+        if (joy_action == Action::Button) {
+            emulator_->get_input_handler().set_joystick_button(joy_index, key_down);
+        } else {
+            Direction dir;
+            switch (joy_action) {
+                case Action::Up:    dir = Direction::Up; break;
+                case Action::Down:  dir = Direction::Down; break;
+                case Action::Left:  dir = Direction::Left; break;
+                case Action::Right: dir = Direction::Right; break;
+                default: return;
+            }
+            emulator_->get_input_handler().set_joystick_state(joy_index, dir, key_down);
+        }
+        return;
     }
     
     // Check for special keys (only on key down)
@@ -1290,6 +1281,20 @@ void SDLFrontend::dump_framebuffer(const std::string& filename) {
     }
 }
 
+bool SDLFrontend::is_joystick_key(SDL_Keycode key, int& player, Action& action) const {
+    for (int p = 0; p < 2; ++p) {
+        for (int a = 0; a < 5; ++a) {
+            Action act = static_cast<Action>(a);
+            if (input_mapper_.get_keyboard_mapping(p, act) == key) {
+                player = p;
+                action = act;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 VidKey SDLFrontend::map_sdl_key(SDL_Keycode key) {
     // Map SDL keys to Videopac keyboard matrix
     // Layout matches o2em vmachine.c key_map[6][8]
@@ -1307,7 +1312,7 @@ VidKey SDLFrontend::map_sdl_key(SDL_Keycode key) {
         // Row 1: 8, 9, SPACE, /, L, P
         case SDLK_8: return VidKey::Key8;
         case SDLK_9: return VidKey::Key9;
-        // Note: SDLK_SPACE is handled by joystick (fire button) so won't reach here
+        // Note: SDLK_SPACE may be handled by joystick mapping and won't reach here
         // SDLK_l and SDLK_p may be intercepted by special key handlers
         case SDLK_l: return VidKey::KeyL;
         
@@ -1629,6 +1634,18 @@ void SDLFrontend::handle_menu_action(videopac::MenuAction action) {
                 osd_renderer_->show_notification("Buffer: Large (Restart Required)", 3000);
             }
             // Update menu values to reflect change
+            menu_system_->update_menu_values(config_manager_.get());
+            break;
+        case MenuAction::SwapJoysticks:
+            swap_joysticks_ = !swap_joysticks_;
+            if (config_manager_) {
+                config_manager_->set_swap_joysticks(swap_joysticks_);
+                config_manager_->save();
+            }
+            if (osd_renderer_) {
+                std::string message = swap_joysticks_ ? "Joysticks: Swapped" : "Joysticks: Normal";
+                osd_renderer_->show_notification(message, 2000);
+            }
             menu_system_->update_menu_values(config_manager_.get());
             break;
         default:

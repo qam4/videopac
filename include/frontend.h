@@ -131,7 +131,10 @@ enum class MenuAction {
     ToggleMute,
     AudioBufferSmall,
     AudioBufferMedium,
-    AudioBufferLarge
+    AudioBufferLarge,
+    // Input Settings
+    InputSettings,
+    SwapJoysticks
 };
 
 // Abstract frontend interface

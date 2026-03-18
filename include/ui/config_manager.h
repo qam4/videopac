@@ -75,6 +75,9 @@ public:
     int get_joystick_device(int player) const;  // -1 for none
     void set_joystick_device(int player, int device_id);
 
+    bool get_swap_joysticks() const;
+    void set_swap_joysticks(bool swap);
+
     // OSD settings
     std::string get_fps_position() const;  // "top-left", "top-right", "bottom-left", "bottom-right"
     void set_fps_position(const std::string& position);

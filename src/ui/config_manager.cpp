@@ -302,6 +302,14 @@ void ConfigManager::set_joystick_device(int player, int device_id) {
     set_value_int("Input", key, device_id);
 }
 
+bool ConfigManager::get_swap_joysticks() const {
+    return get_value_bool("Input", "swap_joysticks", false);
+}
+
+void ConfigManager::set_swap_joysticks(bool swap) {
+    set_value_bool("Input", "swap_joysticks", swap);
+}
+
 // OSD settings
 std::string ConfigManager::get_fps_position() const {
     return get_value("OSD", "fps_position", "top-left");

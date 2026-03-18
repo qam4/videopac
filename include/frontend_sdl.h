@@ -8,6 +8,7 @@
 #include "debugger_ui.h"
 #include "ui/osd_renderer.h"  // Need full definition for OSDPosition enum
 #include "ui/imgui_debugger_ui.h"
+#include "ui/input_mapper.h"
 #include <SDL.h>
 #include <memory>
 #include <vector>
@@ -99,6 +100,7 @@ private:
     OSDRenderer::OSDPosition fps_position_;  // Configurable FPS display position
     bool audio_muted_;
     bool turbo_mode_;
+    bool swap_joysticks_;
     
     // Fullscreen state
     bool is_fullscreen_;
@@ -188,6 +190,8 @@ private:
     
     // Input mapping
     VidKey map_sdl_key(SDL_Keycode key);
+    InputMapper input_mapper_;
+    bool is_joystick_key(SDL_Keycode key, int& player, Action& action) const;
 };
 
 } // namespace videopac

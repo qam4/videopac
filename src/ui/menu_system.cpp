@@ -136,6 +136,12 @@ void MenuSystem::build_main_menu() {
     
     main_menu_.push_back(audio_settings_menu);
 
+    // Input Settings submenu
+    MenuItem input_settings_menu("Input Settings", videopac::MenuAction::InputSettings);
+    input_settings_menu.has_submenu = true;
+    input_settings_menu.submenu.push_back(MenuItem("Swap Joysticks", videopac::MenuAction::SwapJoysticks));
+    main_menu_.push_back(input_settings_menu);
+
     main_menu_.push_back(MenuItem("Display Info", MenuAction::DisplayInfo));
     main_menu_.push_back(MenuItem("Screenshot", MenuAction::Screenshot));
     main_menu_.push_back(MenuItem("Toggle FPS Display (F3)", MenuAction::ToggleFPS));
@@ -411,6 +417,14 @@ void MenuSystem::update_menu_values(ConfigManager* config_manager) {
                         size_str = std::to_string(buffer_size);
                     }
                     audio_item.value = size_str;
+                }
+            }
+        }
+        // Find Input Settings menu
+        if (item.action == videopac::MenuAction::InputSettings && item.has_submenu) {
+            for (auto& input_item : item.submenu) {
+                if (input_item.action == videopac::MenuAction::SwapJoysticks) {
+                    input_item.value = config_manager->get_swap_joysticks() ? "On" : "Off";
                 }
             }
         }
