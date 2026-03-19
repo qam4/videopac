@@ -210,6 +210,13 @@ TEST_F(ConfigManagerTest, SeparateRecentLists) {
 TEST_F(ConfigManagerTest, KeyboardMapping) {
     ConfigManager config;
     
+    // Test default mappings for player 0
+    EXPECT_EQ(config.get_keyboard_mapping(0, "up"), "Keypad 8");
+    EXPECT_EQ(config.get_keyboard_mapping(0, "down"), "Keypad 2");
+    EXPECT_EQ(config.get_keyboard_mapping(0, "left"), "Keypad 4");
+    EXPECT_EQ(config.get_keyboard_mapping(0, "right"), "Keypad 6");
+    EXPECT_EQ(config.get_keyboard_mapping(0, "button"), "Keypad 0");
+    
     // Test default mappings for player 1
     EXPECT_EQ(config.get_keyboard_mapping(1, "up"), "Up");
     EXPECT_EQ(config.get_keyboard_mapping(1, "down"), "Down");
@@ -217,16 +224,9 @@ TEST_F(ConfigManagerTest, KeyboardMapping) {
     EXPECT_EQ(config.get_keyboard_mapping(1, "right"), "Right");
     EXPECT_EQ(config.get_keyboard_mapping(1, "button"), "Space");
     
-    // Test default mappings for player 2
-    EXPECT_EQ(config.get_keyboard_mapping(2, "up"), "W");
-    EXPECT_EQ(config.get_keyboard_mapping(2, "down"), "S");
-    EXPECT_EQ(config.get_keyboard_mapping(2, "left"), "A");
-    EXPECT_EQ(config.get_keyboard_mapping(2, "right"), "D");
-    EXPECT_EQ(config.get_keyboard_mapping(2, "button"), "LShift");
-    
     // Test custom mapping
-    config.set_keyboard_mapping(1, "up", "I");
-    EXPECT_EQ(config.get_keyboard_mapping(1, "up"), "I");
+    config.set_keyboard_mapping(0, "up", "I");
+    EXPECT_EQ(config.get_keyboard_mapping(0, "up"), "I");
 }
 
 // Test joystick device assignment

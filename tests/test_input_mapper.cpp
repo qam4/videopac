@@ -25,19 +25,19 @@ protected:
 
 // Test default keyboard mappings
 TEST_F(InputMapperTest, DefaultKeyboardMappings) {
-    // Player 1 should have arrow keys + space
-    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Up), SDLK_UP);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Down), SDLK_DOWN);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Left), SDLK_LEFT);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Right), SDLK_RIGHT);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Button), SDLK_SPACE);
+    // Player 1 should have numpad keys
+    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Up), SDLK_KP_8);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Down), SDLK_KP_2);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Left), SDLK_KP_4);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Right), SDLK_KP_6);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Button), SDLK_KP_0);
     
-    // Player 2 should have WASD + left shift
-    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Up), SDLK_w);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Down), SDLK_s);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Left), SDLK_a);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Right), SDLK_d);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Button), SDLK_LSHIFT);
+    // Player 2 should have arrow keys + right ctrl
+    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Up), SDLK_UP);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Down), SDLK_DOWN);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Left), SDLK_LEFT);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Right), SDLK_RIGHT);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Button), SDLK_SPACE);
 }
 
 // Test keyboard mapping changes
@@ -47,8 +47,8 @@ TEST_F(InputMapperTest, SetKeyboardMapping) {
     EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Up), SDLK_i);
     
     // Other mappings should remain unchanged
-    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Down), SDLK_DOWN);
-    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Left), SDLK_LEFT);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Down), SDLK_KP_2);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(0, Action::Left), SDLK_KP_4);
 }
 
 // Test joystick mapping
@@ -175,7 +175,7 @@ TEST_F(InputMapperTest, MultiplePlayersIndependent) {
     mapper_->set_player_device(0, InputDevice::Joystick0);
     
     // Player 2 should still have defaults
-    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Up), SDLK_w);
+    EXPECT_EQ(mapper_->get_keyboard_mapping(1, Action::Up), SDLK_UP);
     EXPECT_EQ(mapper_->get_player_device(1), InputDevice::Keyboard);
     
     // Change Player 2 mappings

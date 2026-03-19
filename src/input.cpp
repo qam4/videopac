@@ -85,7 +85,8 @@ uint8 InputHandler::read_joystick(uint8 select_bits) {
     // o2em mapping: si==1 → joystick1 (left), else → joystick2 (right)
     
     uint8 joy_select = select_bits & 0x07;
-    bool* joy = (joy_select == 1) ? state_.joystick1 : state_.joystick2;
+    // P22=1 (value 4) selects left joystick (joystick1), P20-P22=0 selects right (joystick2)
+    bool* joy = (joy_select == 4) ? state_.joystick1 : state_.joystick2;
     
     uint8 result = 0xFF;
     

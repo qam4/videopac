@@ -270,18 +270,18 @@ std::string ConfigManager::get_keyboard_mapping(int player, const std::string& a
     std::string key = "player" + std::to_string(player) + "_" + action;
     
     // Default mappings
-    if (player == 1) {
+    if (player == 0) {
+        if (action == "up") return get_value("Input", key, "Keypad 8");
+        if (action == "down") return get_value("Input", key, "Keypad 2");
+        if (action == "left") return get_value("Input", key, "Keypad 4");
+        if (action == "right") return get_value("Input", key, "Keypad 6");
+        if (action == "button") return get_value("Input", key, "Keypad 0");
+    } else if (player == 1) {
         if (action == "up") return get_value("Input", key, "Up");
         if (action == "down") return get_value("Input", key, "Down");
         if (action == "left") return get_value("Input", key, "Left");
         if (action == "right") return get_value("Input", key, "Right");
         if (action == "button") return get_value("Input", key, "Space");
-    } else if (player == 2) {
-        if (action == "up") return get_value("Input", key, "W");
-        if (action == "down") return get_value("Input", key, "S");
-        if (action == "left") return get_value("Input", key, "A");
-        if (action == "right") return get_value("Input", key, "D");
-        if (action == "button") return get_value("Input", key, "LShift");
     }
     
     return get_value("Input", key, "");

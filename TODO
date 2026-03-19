@@ -11,3 +11,6 @@ Code that exists but is never called from main code paths.
 - [ ] Remove or wire up MessageDialog — instantiated, never shown
 - [ ] Remove ProgressDialog and ConfirmDialog — defined, never instantiated
 - [ ] Remove unused OSD render methods (render_notification, render_fps, render_status_indicator)
+
+## UI features
+- [ ] Add input remapping GUI — currently keyboard/joystick mappings can only be changed by editing config.ini manually

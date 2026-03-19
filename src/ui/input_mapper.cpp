@@ -17,19 +17,19 @@ InputMapper::~InputMapper() {
 }
 
 void InputMapper::init_default_mappings() {
-    // Player 1: Arrow keys + Space
-    keyboard_mappings_[{0, Action::Up}] = SDLK_UP;
-    keyboard_mappings_[{0, Action::Down}] = SDLK_DOWN;
-    keyboard_mappings_[{0, Action::Left}] = SDLK_LEFT;
-    keyboard_mappings_[{0, Action::Right}] = SDLK_RIGHT;
-    keyboard_mappings_[{0, Action::Button}] = SDLK_SPACE;
+    // Player 1 (left joystick): Numpad
+    keyboard_mappings_[{0, Action::Up}] = SDLK_KP_8;
+    keyboard_mappings_[{0, Action::Down}] = SDLK_KP_2;
+    keyboard_mappings_[{0, Action::Left}] = SDLK_KP_4;
+    keyboard_mappings_[{0, Action::Right}] = SDLK_KP_6;
+    keyboard_mappings_[{0, Action::Button}] = SDLK_KP_0;
 
-    // Player 2: WASD + Left Shift
-    keyboard_mappings_[{1, Action::Up}] = SDLK_w;
-    keyboard_mappings_[{1, Action::Down}] = SDLK_s;
-    keyboard_mappings_[{1, Action::Left}] = SDLK_a;
-    keyboard_mappings_[{1, Action::Right}] = SDLK_d;
-    keyboard_mappings_[{1, Action::Button}] = SDLK_LSHIFT;
+    // Player 2 (right joystick): Arrow keys + Right Ctrl
+    keyboard_mappings_[{1, Action::Up}] = SDLK_UP;
+    keyboard_mappings_[{1, Action::Down}] = SDLK_DOWN;
+    keyboard_mappings_[{1, Action::Left}] = SDLK_LEFT;
+    keyboard_mappings_[{1, Action::Right}] = SDLK_RIGHT;
+    keyboard_mappings_[{1, Action::Button}] = SDLK_SPACE;
 
     // Default to keyboard for both players
     player_devices_[0] = InputDevice::Keyboard;
