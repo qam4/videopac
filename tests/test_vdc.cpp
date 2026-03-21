@@ -85,6 +85,7 @@ TEST(VDCTest, DoubleSizeSprite) {
 TEST(VDCTest, GridRendering) {
     VDC vdc(VideoStandard::NTSC);
     vdc.reset();
+    vdc.set_luminance_enabled(false);  // Bright palette (indices 8-15)
     
     // Enable grid and display
     vdc.write_register(VDCRegisters::CONTROL, 
@@ -112,6 +113,7 @@ TEST(VDCTest, GridRendering) {
 TEST(VDCTest, GridFillMode) {
     VDC vdc(VideoStandard::NTSC);
     vdc.reset();
+    vdc.set_luminance_enabled(false);  // Bright palette (indices 8-15)
     
     // Enable grid with fill mode and display
     vdc.write_register(VDCRegisters::CONTROL, 

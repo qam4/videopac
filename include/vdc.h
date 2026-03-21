@@ -183,6 +183,12 @@ struct VDCState {
     // Previous scanline (for detecting scanline transitions in tick_one_cycle)
     uint16 prev_scanline;
     
+    // Port 1 P17 luminance enable (set by CPU, used for background/grid color intensity)
+    // When P17=1 (luminance enabled), background/grid use dark palette (indices 0-7)
+    // When P17=0 (luminance disabled), background/grid use bright palette (indices 8-15)
+    // Reference: o2doc section 1.1, o2em vmachine.c ColorVector
+    bool luminance_enabled;
+    
     // Audio state
     uint32 audio_shift_register;
     uint8 audio_shift_counter;
@@ -292,6 +298,9 @@ public:
     
     // Set VBLANK status flag (A1.3) — called by emulator at VBlank transition
     void set_vblank_flag() { state_.registers[VDCRegisters::STATUS] |= StatusBits::VBLANK; }
+    
+    // Port 1 P17 luminance control — called by CPU on Port 1 writes
+    void set_luminance_enabled(bool enabled) { state_.luminance_enabled = enabled; }
     
     // T1 pin output — delegates to master clock (inlined for performance)
     bool get_t1_state() const {

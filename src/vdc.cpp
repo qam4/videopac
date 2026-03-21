@@ -87,6 +87,7 @@ void VDC::reset() {
     state_.display_enabled = false;
     state_.grid_enabled = false;
     state_.latched_color = 0;
+    state_.luminance_enabled = true;  // BIOS sets P17=1 on startup
     
     // Reset audio state
     state_.audio_shift_register = 0;
@@ -474,14 +475,19 @@ void VDC::render_current_pixel() {
     }
     
     // Start with background color
+    // Background color: bits 3-5 of color register are BGR, luminance from Port 1 P17
+    // When P17=1 (luminance enabled): dark palette (indices 0-7)
+    // When P17=0 (luminance disabled): bright palette (indices 8-15)
+    // Reference: o2em vmachine.c ColorVector, 8245 datasheet page 14
     uint8 color_reg = state_.latched_color;
-    uint8 bg_color = ((color_reg & 0x38) >> 3) | (color_reg & 0x80 ? 0 : 8);
+    uint8 bg_color = ((color_reg & 0x38) >> 3) | (state_.luminance_enabled ? 0 : 8);
     uint8 pixel_color = bg_color;
     
     // Check grid at this position (if enabled)
     if (state_.grid_enabled) {
         if (is_grid_pixel_at(beam_x, beam_y)) {
-            uint8 grid_color = (color_reg & 0x07) | ((color_reg & 0x40) >> 3) | (color_reg & 0x80 ? 0 : 8);
+            // Grid color: bits 0-2 are BGR, bit 6 is grid luminance, P17 controls intensity
+            uint8 grid_color = (color_reg & 0x07) | ((color_reg & 0x40) >> 3) | (state_.luminance_enabled ? 0 : 8);
             pixel_color = grid_color;
         }
     }
@@ -708,10 +714,9 @@ void VDC::calculate_timing() {
 void VDC::render_background(int y) {
     // Get background color from color register
     // Background color formula (see types.h for details)
-    // Formula: (color & 0x38) >> 3 | (color & 0x80 ? 0 : 8)
-    // Bits 3-5: BGR components, Bit 7: inverted luminance (0=bright, 1=dark)
+    // Bits 3-5: BGR components, luminance from Port 1 P17
     uint8 color_reg = state_.registers[VDCRegisters::COLOR];
-    uint8 bg_color = ((color_reg & 0x38) >> 3) | (color_reg & 0x80 ? 0 : 8);
+    uint8 bg_color = ((color_reg & 0x38) >> 3) | (state_.luminance_enabled ? 0 : 8);
     
     // Fill entire scanline with background color
     for (int x = 0; x < FRAMEBUFFER_WIDTH; x++) {
@@ -738,10 +743,10 @@ void VDC::render_grid(int y) {
     
     // Get grid color from color register
     // Grid color formula (see types.h for details)
-    // Formula: (color & 0x07) | ((color & 0x40) >> 3) | (color & 0x80 ? 0 : 8)
-    // Bits 0-2: BGR components, Bit 6: luminance, Bit 7: inverted luminance
+    // Formula: (color & 0x07) | ((color & 0x40) >> 3) | (luminance_enabled ? 0 : 8)
+    // Bits 0-2: BGR components, Bit 6: grid luminance, P17 controls intensity
     uint8 color_reg = state_.registers[VDCRegisters::COLOR];
-    uint8 grid_color = (color_reg & 0x07) | ((color_reg & 0x40) >> 3) | (color_reg & 0x80 ? 0 : 8);
+    uint8 grid_color = (color_reg & 0x07) | ((color_reg & 0x40) >> 3) | (state_.luminance_enabled ? 0 : 8);
     
     // Check control register for grid modes
     uint8 control = state_.registers[VDCRegisters::CONTROL];
@@ -2031,7 +2036,9 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
         bool pixel_on = (pattern & (0x80 >> pixel_x)) != 0;
         
         if (pixel_on) {
-            color = ((char_attr >> 1) & 0x07) + 8;  // Characters use high-intensity palette
+            // Character color formula (see types.h): reorders BGR bits to RGB and adds 8 for high-intensity
+            uint8 cl = (char_attr >> 1) & 0x07;
+            color = ((cl & 2) | ((cl & 1) << 2) | ((cl & 4) >> 2)) + 8;
             return true;
         }
     }

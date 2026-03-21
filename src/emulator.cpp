@@ -107,6 +107,7 @@ void EmulatorCore::run_frame() {
             switch (next) {
                 case MasterClock::ExecuteNext::BOTH: {
                     uint8 cycles = cpu_.execute_instruction();
+                    vdc_.set_luminance_enabled(cpu_.get_state().port1 & 0x80);
                     master_clock_.cpu_executed(cycles);
                     vdc_.tick_one_cycle();
                     cpu_.update_counter(vdc_.get_t1_state());
@@ -115,6 +116,7 @@ void EmulatorCore::run_frame() {
                 }
                 case MasterClock::ExecuteNext::CPU: {
                     uint8 cycles = cpu_.execute_instruction();
+                    vdc_.set_luminance_enabled(cpu_.get_state().port1 & 0x80);
                     master_clock_.cpu_executed(cycles);
                     break;
                 }
@@ -186,6 +188,7 @@ void EmulatorCore::run_frame() {
                 
                 // Execute one CPU instruction
                 uint8 cycles = cpu_.execute_instruction();
+                vdc_.set_luminance_enabled(cpu_.get_state().port1 & 0x80);
                 
                 // Log VDC trace if enabled (after instruction execution, in case it wrote to VDC)
                 if (debugger_ && debugger_->is_vdc_trace_enabled()) {
@@ -241,6 +244,7 @@ void EmulatorCore::run_frame() {
                 
                 // Execute one CPU instruction
                 uint8 cycles = cpu_.execute_instruction();
+                vdc_.set_luminance_enabled(cpu_.get_state().port1 & 0x80);
                 
                 // Log VDC trace if enabled (after instruction execution, in case it wrote to VDC)
                 if (debugger_ && debugger_->is_vdc_trace_enabled()) {
@@ -333,6 +337,7 @@ void EmulatorCore::step() {
     log_debugger_trace();
     
     cpu_.execute_instruction();
+    vdc_.set_luminance_enabled(cpu_.get_state().port1 & 0x80);
 }
 
 const uint8* EmulatorCore::get_framebuffer() const {
