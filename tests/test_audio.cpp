@@ -39,65 +39,55 @@ TEST(AudioTest, SampleRateDefault) {
     SUCCEED();
 }
 
-// --- Test 3: DCOffsetThresholdBoundary ---
-// Validates: Requirement 2.3
-// At exactly 2000 cycles_since_toggle, output should be non-zero.
-// At 2001, output should be 0.
+// --- Test 3: AudioContinuesRegardlessOfToggleCount ---
+// Validates: DC offset gate silences audio after 50000 VDC cycles without toggle
 TEST(AudioTest, DCOffsetThresholdBoundary) {
     VDC vdc(VideoStandard::NTSC);
     vdc.reset();
 
-    // Enable audio with a non-zero shift register and volume
-    vdc.write_register(VDCRegisters::SOUND0, 0xFF);        // Pattern with bits set
-    vdc.write_register(VDCRegisters::SOUND_CONTROL, 0x8F);  // Enable + volume 15
+    vdc.write_register(VDCRegisters::SOUND0, 0xFF);
+    vdc.write_register(VDCRegisters::SOUND_CONTROL, 0x8F);
 
-    // Set cycles_since_toggle to exactly 2000 (at threshold)
     VDCState state = vdc.get_state();
-    state.cycles_since_toggle = 2000;
-    // Ensure shift register has a non-zero bit 0 so volume-scaled output is non-zero
+    state.cycles_since_toggle = 50000;
     state.audio_shift_register |= 1;
     vdc.set_state(state);
 
-    int16 sample_at_2000 = vdc.get_audio_sample();
-    EXPECT_NE(sample_at_2000, 0) << "At exactly 2000 cycles, output should be non-zero";
+    int16 sample_at_50k = vdc.get_audio_sample();
+    EXPECT_NE(sample_at_50k, 0) << "At exactly 50000 cycles, output should be non-zero";
 
-    // Set cycles_since_toggle to 2001 (above threshold)
     state = vdc.get_state();
-    state.cycles_since_toggle = 2001;
+    state.cycles_since_toggle = 50001;
     vdc.set_state(state);
 
-    int16 sample_at_2001 = vdc.get_audio_sample();
-    EXPECT_EQ(sample_at_2001, 0) << "At 2001 cycles, output should be zero (DC offset gate)";
+    int16 sample_above = vdc.get_audio_sample();
+    EXPECT_EQ(sample_above, 0) << "Above 50000 cycles, output should be zero (DC offset gate)";
 }
 
-// --- Test 4: DCOffsetResumesAfterToggle ---
-// Validates: Requirement 2.4
-// After silence (cycles_since_toggle > 2000), resetting the counter
-// simulates a toggle and output should resume immediately.
+// --- Test 4: AudioOutputResumesAfterToggle ---
+// Validates: After DC gate silences, a toggle resumes output
 TEST(AudioTest, DCOffsetResumesAfterToggle) {
     VDC vdc(VideoStandard::NTSC);
     vdc.reset();
 
-    // Enable audio with non-zero shift register and volume
     vdc.write_register(VDCRegisters::SOUND0, 0xFF);
     vdc.write_register(VDCRegisters::SOUND_CONTROL, 0x8F);
 
-    // Set cycles_since_toggle above threshold → silence
     VDCState state = vdc.get_state();
-    state.cycles_since_toggle = 3000;
+    state.cycles_since_toggle = 60000;
     state.audio_shift_register |= 1;
     vdc.set_state(state);
 
     int16 silent = vdc.get_audio_sample();
     EXPECT_EQ(silent, 0) << "Above threshold, output should be zero";
 
-    // Simulate a toggle by resetting cycles_since_toggle to 0
     state = vdc.get_state();
     state.cycles_since_toggle = 0;
     vdc.set_state(state);
 
     int16 resumed = vdc.get_audio_sample();
     EXPECT_NE(resumed, 0) << "After toggle (counter reset), output should resume";
+    EXPECT_EQ(resumed, vdc.get_audio_sample()) << "Output should be consistent";
 }
 
 // --- Test 5: FilterConvergesToZero ---

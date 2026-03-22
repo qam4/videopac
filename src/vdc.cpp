@@ -304,7 +304,9 @@ void VDC::write_register(uint8 address, uint8 value) {
             // Flush pending audio to capture samples at old shift register state
             flush_audio_cycles();
             {
-                uint8 byte_index = address - VDCRegisters::SOUND0;
+                // Byte order matches o2em: 0xA7→bits 16-23, 0xA8→bits 8-15, 0xA9→bits 0-7
+                // Bit 0 is the output, register shifts right, so 0xA9 plays first
+                uint8 byte_index = 2 - (address - VDCRegisters::SOUND0);
                 uint32 mask = 0xFF << (byte_index * 8);
                 state_.audio_shift_register = (state_.audio_shift_register & ~mask) | 
                                               (static_cast<uint32>(value) << (byte_index * 8));
@@ -616,8 +618,9 @@ int16 VDC::get_audio_sample() {
         return 0;
     }
 
-    // DC offset elimination: output silence when shift register output is static
-    if (state_.cycles_since_toggle > 2000) {
+    // DC offset elimination: silence when shift register output hasn't toggled
+    // Threshold: ~50000 VDC cycles (allows one full 24-bit pattern at low freq)
+    if (state_.cycles_since_toggle > 50000) {
         return 0;
     }
 
@@ -657,11 +660,11 @@ void VDC::capture_audio_sample() {
         state_.audio_sample_accumulator -= vdc_cycles_per_audio_sample_;
         
         int16 raw = get_audio_sample();
-        // Single-pole IIR low-pass filter (int32 intermediates to avoid overflow)
+        // Gentle low-pass filter (coefficient 3/20 = 15%) to soften square wave harmonics
         int32 filtered = static_cast<int32>(state_.audio_filter_state) +
-            (static_cast<int32>(raw) - static_cast<int32>(state_.audio_filter_state)) * 3 / 205;
+            (static_cast<int32>(raw) - static_cast<int32>(state_.audio_filter_state)) * 3 / 20;
         state_.audio_filter_state = static_cast<int16>(filtered);
-        
+
         if (state_.audio_sample_count < VDCState::AUDIO_BUFFER_SIZE) {
             state_.audio_sample_buffer[state_.audio_sample_write_pos] = state_.audio_filter_state;
             state_.audio_sample_write_pos = (state_.audio_sample_write_pos + 1) % VDCState::AUDIO_BUFFER_SIZE;
@@ -1269,7 +1272,7 @@ void VDC::update_audio() {
     // At 1.79MHz / 5 = 358kHz instruction cycle
     // 983Hz: ~364 cycles per shift, 3933Hz: ~91 cycles per shift
 
-    uint32 cycles_per_shift = (state_.audio_frequency == AUDIO_FREQ_LOW) ? 364 : 91;
+    uint32 cycles_per_shift = (state_.audio_frequency == AUDIO_FREQ_LOW) ? 1820 : 455;
 
     state_.audio_cycle_accumulator += 1;  // Called once per VDC cycle
 

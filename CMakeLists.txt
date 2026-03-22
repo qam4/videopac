@@ -240,6 +240,11 @@ if(BUILD_TOOLS)
     )
     target_link_libraries(videopac_benchmark videopac_core)
 
+    add_executable(dump_audio
+        tools/dump_audio.cpp
+    )
+    target_link_libraries(dump_audio videopac_core)
+
     add_executable(quick_profile
         tools/quick_profile.cpp
     )
