@@ -106,8 +106,8 @@ TEST(InputTest, Joystick1Reading) {
     input.set_joystick_state(0, Direction::Up, true);
     input.set_joystick_button(0, true);
     
-    // Read joystick 1 (P22=1 → P20-P22 = 0b100 = 4)
-    uint8 result = input.read_joystick(0x04);
+    // Read joystick 1 (P20=1 → value 1, per o2doc and o2em)
+    uint8 result = input.read_joystick(0x01);
     
     // Check bits (active low)
     EXPECT_EQ(result & 0x01, 0x00);  // Up pressed
@@ -145,7 +145,7 @@ TEST(InputTest, JoystickAllDirections) {
     input.set_joystick_state(0, Direction::Right, true);
     input.set_joystick_button(0, true);
     
-    uint8 result = input.read_joystick(0x04);  // Joystick 1: P22=1 → 0b100
+    uint8 result = input.read_joystick(0x01);  // Joystick 1: P20=1 → value 1
     
     // All bits should be clear (all pressed)
     EXPECT_EQ(result & 0x1F, 0x00);
@@ -193,7 +193,7 @@ TEST(InputTest, StateSaveRestore) {
     // Key5 is col 5, inverted = 2, bits 5-7 = 2 = 0x40
     EXPECT_EQ(kb_result & 0xE0, 0x40);
     
-    uint8 joy1_result = input2.read_joystick(0x04);  // Joystick 1: P22=1 → 0b100
+    uint8 joy1_result = input2.read_joystick(0x01);  // Joystick 1: P20=1 → value 1
     EXPECT_EQ(joy1_result & 0x01, 0x00);  // Up pressed
     
     uint8 joy2_result = input2.read_joystick(0x00);  // Joystick 2 = 0b000

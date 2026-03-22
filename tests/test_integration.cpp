@@ -181,7 +181,7 @@ TEST(IntegrationTest, InputHandlerIntegration) {
     uint8 keyboard_result = input.read_keyboard(0xFE);  // Row 0
     EXPECT_EQ(keyboard_result & 0x01, 0x00);  // Key0 pressed
     
-    uint8 joystick_result = input.read_joystick(0x04);  // Joystick 1: P22=1 → 0b100
+    uint8 joystick_result = input.read_joystick(0x01);  // Joystick 1: P20=1 → value 1
     EXPECT_EQ(joystick_result & 0x01, 0x00);  // Up pressed
 }
 

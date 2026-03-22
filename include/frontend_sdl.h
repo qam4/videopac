@@ -101,6 +101,7 @@ private:
     bool audio_muted_;
     bool turbo_mode_;
     bool swap_joysticks_;
+    bool shutdown_done_ = false;
     
     // Fullscreen state
     bool is_fullscreen_;

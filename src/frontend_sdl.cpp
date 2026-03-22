@@ -76,6 +76,7 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     // Initialize UI components
     config_manager_ = std::make_unique<ConfigManager>();
     config_manager_->load();  // Load saved configuration
+    std::cout << "Config file: " << config_manager_->get_config_path() << std::endl;
     
     // Apply saved scaling filter preference
     std::string scaling_filter = config_manager_->get_scaling_filter();
@@ -121,6 +122,19 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
     // Load input settings
     swap_joysticks_ = config_manager_->get_swap_joysticks();
     input_mapper_.load_from_config(*config_manager_);
+    
+    // Log input mappings
+    std::cout << "Input mappings:" << std::endl;
+    const char* action_names[] = {"Up", "Down", "Left", "Right", "Button"};
+    for (int p = 0; p < 2; p++) {
+        for (int a = 0; a < 5; a++) {
+            SDL_Keycode key = input_mapper_.get_keyboard_mapping(p, static_cast<Action>(a));
+            std::cout << "  Player " << (p+1) << " " << action_names[a] << ": " << SDL_GetKeyName(key) << std::endl;
+        }
+    }
+    if (swap_joysticks_) {
+        std::cout << "  Joystick ports swapped" << std::endl;
+    }
     
     menu_system_ = std::make_unique<MenuSystem>(renderer_, text_renderer_.get());
     menu_system_->build_main_menu();
@@ -305,6 +319,10 @@ bool SDLFrontend::initialize(const FrontendConfig& config) {
 }
 
 void SDLFrontend::shutdown() {
+    // Guard against double shutdown
+    if (shutdown_done_) return;
+    shutdown_done_ = true;
+    
     // Clean up temporary ZIP files
     if (zip_handler_) {
         zip_handler_->cleanup_temp_files();
