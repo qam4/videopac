@@ -47,8 +47,8 @@ namespace VDCRegisters {
     constexpr uint8 STATUS = 0xA1;
     constexpr uint8 COLLISION = 0xA2;
     constexpr uint8 COLOR = 0xA3;
-    constexpr uint8 BEAM_X = 0xA4;
-    constexpr uint8 BEAM_Y = 0xA5;
+    constexpr uint8 BEAM_Y = 0xA4;
+    constexpr uint8 BEAM_X = 0xA5;
     
     // Audio registers
     constexpr uint8 SOUND0 = 0xA7;

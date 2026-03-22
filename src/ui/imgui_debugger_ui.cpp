@@ -1625,12 +1625,12 @@ void ImGuiDebuggerUI::render_vdc_registers_panel() {
         ImGui::TreePop();
     }
     
-    // Beam position registers (X and Y)
+    // Beam position registers (Y and X)
     if (ImGui::TreeNode("Beam Position")) {
-        uint8 beam_x_reg = vdc_state.registers[0xA4];
-        uint8 beam_y_reg = vdc_state.registers[0xA5];
-        ImGui::Text("X (0xA4): %d (0x%02X)", beam_x_reg, beam_x_reg);
-        ImGui::Text("Y (0xA5): %d (0x%02X)", beam_y_reg, beam_y_reg);
+        uint8 beam_y_reg = vdc_state.registers[0xA4];
+        uint8 beam_x_reg = vdc_state.registers[0xA5];
+        ImGui::Text("Y (0xA4): %d (0x%02X)", beam_y_reg, beam_y_reg);
+        ImGui::Text("X (0xA5): %d (0x%02X)", beam_x_reg, beam_x_reg);
         ImGui::Text("Actual Beam: X=%d Y=%d", vdc_state.beam_x, vdc_state.beam_y);
         ImGui::TreePop();
     }

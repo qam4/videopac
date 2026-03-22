@@ -393,7 +393,7 @@ RETRO_API unsigned retro_api_version(void) {
 RETRO_API void retro_get_system_info(struct retro_system_info* info) {
     memset(info, 0, sizeof(*info));
     info->library_name = "videopac";
-    info->library_version = "0.3.0";
+    info->library_version = "0.5.0";
     info->valid_extensions = "bin|rom|zip";
     info->need_fullpath = false;
     info->block_extract = false;

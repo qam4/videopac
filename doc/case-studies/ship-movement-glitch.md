@@ -109,3 +109,52 @@ The 4-scanline offset between latched Y (141) and rendered position (137) is une
 
 src/vdc.cpp has debug traces that need to be removed before committing.
 The doc/case-studies/ship-movement-glitch.md has been updated with findings.
+
+
+## o2em comparison (from trace)
+
+o2em consistently disables display at scanline 218 (master_clk ~4800).
+Every frame shows the same scanline. No variation.
+
+Our emulator disables display at scanlines 123-180 — highly variable and
+much earlier than o2em.
+
+o2em timing:
+- 21 CPU cycles per scanline (LINECNT=21)
+- VBlank at CPU cycle 5493 (VBLCLK)
+- Display-off at CPU cycle ~4800 = scanline 218
+
+Our timing:
+- 22.75 CPU cycles per scanline (455 master ticks / 20 CPU divisor)
+- Display-off at variable scanlines 123-180
+
+The instruction spacing between display-off calls in o2em is ~3880
+instructions per frame, very consistent.
+
+### Next steps
+
+1. Generate a videopac CPU trace for the same scenario and compare
+   instruction counts per frame with o2em's ~3880
+2. Compare instruction-by-instruction execution around the display-off
+   point to find where the two emulators diverge
+3. Check if the CPU/scanline ratio difference (22.75 vs 21) accounts
+   for the scanline offset
+
+## Additional note
+
+In past investigations, o2em was found to run more CPU cycles per frame
+than real hardware would suggest. o2em uses LINECNT=21 (21 CPU cycles per
+scanline) but the hardware spec gives 22.75 (455 master ticks / 20 CPU
+divisor). This means o2em's CPU is slightly slower relative to the scanline,
+causing game logic to complete later in the frame (higher scanline number).
+
+This may explain why o2em consistently disables display at scanline 218
+while our emulator (which follows the hardware spec) disables earlier
+(scanlines 123-180). The game may have been designed around o2em-like
+timing, or o2em's timing may accidentally match real hardware better
+than the calculated ratio suggests.
+
+The cycle gap per frame at PC=0x708 in our emulator varies from 52550
+to 70760 VDC cycles (should be ~59832 for one frame). This variation
+suggests non-deterministic behavior in our emulator — possibly from the
+beam X value returned in the wait_until_scanline loop.

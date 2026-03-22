@@ -453,11 +453,6 @@ void VDC::render_scanline() {
 // Render pixel at current beam position
 // Reference: Requirements 2.1, 2.3, 2.6, 12.1-12.4
 void VDC::render_current_pixel() {
-    // Check if display is enabled
-    if (!state_.display_enabled) {
-        return;
-    }
-    
     // Use beam coordinates for rendering logic (hardware coordinates)
     int beam_x = static_cast<int>(state_.beam_x);
     int beam_y = static_cast<int>(state_.beam_y);
@@ -476,6 +471,17 @@ void VDC::render_current_pixel() {
                           ext_fb_y >= 0 && ext_fb_y < EXTENDED_FB_HEIGHT);
     }
     if (!in_normal_fb && !in_extended_fb) {
+        return;
+    }
+    
+    // When display is disabled, output background color only (no objects)
+    // The VDC still outputs background to the TV when display is off.
+    if (!state_.display_enabled) {
+        uint8 color_reg = state_.latched_color;
+        uint8 bg_color = ((color_reg & 0x38) >> 3) | (state_.luminance_enabled ? 0 : 8);
+        if (in_normal_fb) {
+            state_.framebuffer[fb_y][fb_x] = bg_color;
+        }
         return;
     }
     
@@ -2144,6 +2150,7 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
         // Double-size sprites: 8 pattern rows × 4 scanlines per row = 32 scanlines
         // Reference: Verified in o2em source (doc/vdc.c lines 502-509)
         int sprite_height = double_size ? 32 : 16;
+        
         if (y < sprite_y || y >= sprite_y + sprite_height) {
             continue;
         }
@@ -2154,7 +2161,7 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
         
         // Get sprite pattern byte for this row
         uint8 pattern_addr = VDCRegisters::SPRITE0_PATTERN + (sprite_num * 8) + sprite_row;
-        uint8 pattern = state_.registers[pattern_addr];
+        uint8 pattern = state_.latched_registers[pattern_addr];
         
         // Calculate pixel position with horizontal shift
         int pixel_x = x - sprite_x;

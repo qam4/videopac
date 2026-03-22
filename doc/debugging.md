@@ -53,12 +53,12 @@ Scanline 261 (NTSC) ────────────────────
 Scanline 311 (PAL)
                  ↻ Beam returns to scanline 0, next frame
 
-Beam Position Registers (0xA4=X, 0xA5=Y):
+Beam Position Registers (0xA4=Y, 0xA5=X):
 • Track electron beam position across entire frame
-• X (0xA4): 0-226 (0-159 visible, 160-226 HBLANK)
-• Y (0xA5): 0-261 (NTSC) or 0-311 (PAL)
+• Y (0xA4): 0-261 (NTSC) or 0-311 (PAL)
   - NTSC: 0-239 visible, 240-261 VBLANK
   - PAL:  0-287 visible, 288-311 VBLANK
+• X (0xA5): 0-226 (0-159 visible, 160-226 HBLANK)
 
 Timing Details:
 - Cycles per scanline: 227 VDC cycles (~63.4 microseconds)
@@ -100,12 +100,12 @@ Games often use specific Y-values to hide objects:
 - Y=200 or higher is **completely off-screen**
 
 #### Beam Position (Registers 0xA4, 0xA5)
-- **0xA4 (BEAM_X)**: Horizontal position (0-226)
-  - 0-159: Visible area
-  - 160-226: HBLANK (horizontal blanking)
-- **0xA5 (BEAM_Y)**: Vertical position (0-261 NTSC, 0-311 PAL)
+- **0xA4 (BEAM_Y)**: Vertical position (0-261 NTSC, 0-311 PAL)
   - 0-239: Visible area (NTSC)
   - 240-261: VBLANK (vertical blanking, NTSC)
+- **0xA5 (BEAM_X)**: Horizontal position (0-226)
+  - 0-159: Visible area
+  - 160-226: HBLANK (horizontal blanking)
 
 #### VBLANK Timing
 VBLANK (Vertical Blanking) occurs at the **bottom** of the screen after all visible scanlines have been drawn. This is when the electron beam returns from the bottom-right to the top-left to start the next frame.
