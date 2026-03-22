@@ -87,6 +87,7 @@ void VDC::reset() {
     state_.display_enabled = false;
     state_.grid_enabled = false;
     state_.latched_color = 0;
+    std::memcpy(state_.latched_registers, state_.registers, 160);
     state_.luminance_enabled = true;  // BIOS sets P17=1 on startup
     
     // Reset audio state
@@ -144,9 +145,11 @@ void VDC::tick_one_cycle() {
         uint16 new_y = master_clock_->get_scanline();
         uint8 new_x = master_clock_->get_beam_x();
         
-        // Detect scanline transition for color latching
+        // Detect scanline transition for color and graphic register latching
         if (new_y != state_.prev_scanline) {
             state_.latched_color = state_.registers[VDCRegisters::COLOR];
+            // Latch graphic registers 0x00-0x9F for rendering
+            std::memcpy(state_.latched_registers, state_.registers, 160);
             state_.prev_scanline = new_y;
         }
         
@@ -560,9 +563,9 @@ void VDC::detect_collision_at_pixel(int x, int y) {
     // Check sprites
     for (int s = 0; s < 4; s++) {
         uint8 base_addr = VDCRegisters::SPRITE0_Y + (s * 4);
-        uint8 sprite_y = state_.registers[base_addr + 0];
-        uint8 sprite_x = state_.registers[base_addr + 1];
-        uint8 sprite_color_attr = state_.registers[base_addr + 2];
+        uint8 sprite_y = state_.latched_registers[base_addr + 0];
+        uint8 sprite_x = state_.latched_registers[base_addr + 1];
+        uint8 sprite_color_attr = state_.latched_registers[base_addr + 2];
         
         bool double_size = (sprite_color_attr & SpriteColorBits::DOUBLE_SIZE) != 0;
         bool shift_even = (sprite_color_attr & SpriteColorBits::SHIFT_EVEN) != 0;
@@ -1991,20 +1994,20 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
     // Check single characters (12 characters, 4 bytes each, starting at 0x10)
     for (int char_num = 0; char_num < 12; char_num++) {
         uint8 base_addr = VDCRegisters::CHAR_BASE + (char_num * 4);
-        uint8 char_y = state_.registers[base_addr + 0];
+        uint8 char_y = state_.latched_registers[base_addr + 0];
         
         // Quick Y reject: max character height is 16 scanlines (8 rows × 2)
         if (y < char_y || y >= char_y + 16) {
             continue;
         }
         
-        uint8 char_x = state_.registers[base_addr + 1];
+        uint8 char_x = state_.latched_registers[base_addr + 1];
         if (x < char_x || x >= char_x + 8) {
             continue;
         }
         
-        uint8 char_ptr_low = state_.registers[base_addr + 2];
-        uint8 char_attr = state_.registers[base_addr + 3];
+        uint8 char_ptr_low = state_.latched_registers[base_addr + 2];
+        uint8 char_attr = state_.latched_registers[base_addr + 3];
         
         // Exact height calculation (see doc/reference/o2doc.md section 4.4)
         // Characters can be "cut off" at the top based on Y position and pattern pointer alignment.
@@ -2052,14 +2055,14 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
     for (int quad_num = 0; quad_num < 4; quad_num++) {
         uint8 base_addr = VDCRegisters::QUAD_BASE + (quad_num * 16);
         
-        uint8 quad_y = state_.registers[base_addr + 0];
+        uint8 quad_y = state_.latched_registers[base_addr + 0];
         
         // Quick Y reject for entire quad group — all sub-chars share the same Y
         if (y < quad_y || y >= quad_y + 16) {
             continue;
         }
         
-        uint8 quad_x = state_.registers[base_addr + 1];
+        uint8 quad_x = state_.latched_registers[base_addr + 1];
         
         for (int sub_char = 0; sub_char < 4; sub_char++) {
             int char_x = quad_x + (sub_char * 16);  // 8 pixels character + 8 pixels space
@@ -2070,8 +2073,8 @@ bool VDC::is_character_pixel_at(int x, int y, uint8& color) const {
             
             uint8 char_offset = sub_char * 4;
             // Y/X from sub-character bytes are ignored; only pattern and color are used
-            uint8 char_ptr_low = state_.registers[base_addr + char_offset + 2];
-            uint8 char_attr = state_.registers[base_addr + char_offset + 3];
+            uint8 char_ptr_low = state_.latched_registers[base_addr + char_offset + 2];
+            uint8 char_attr = state_.latched_registers[base_addr + char_offset + 3];
             
             // Exact height calculation (see doc/reference/o2doc.md section 4.5)
             // Characters can be "cut off" at the top based on Y position and pattern pointer alignment.
@@ -2126,9 +2129,9 @@ bool VDC::is_sprite_pixel_at(int x, int y, uint8& color) const {
     // Sprite 0 has highest priority, so check it last
     for (int sprite_num = 3; sprite_num >= 0; sprite_num--) {
         uint8 base_addr = VDCRegisters::SPRITE0_Y + (sprite_num * 4);
-        uint8 sprite_y = state_.registers[base_addr + 0];
-        uint8 sprite_x = state_.registers[base_addr + 1];
-        uint8 sprite_color_attr = state_.registers[base_addr + 2];
+        uint8 sprite_y = state_.latched_registers[base_addr + 0];
+        uint8 sprite_x = state_.latched_registers[base_addr + 1];
+        uint8 sprite_color_attr = state_.latched_registers[base_addr + 2];
         
         // Extract sprite attributes
         uint8 sprite_color = (sprite_color_attr & SpriteColorBits::COLOR_MASK) >> SpriteColorBits::COLOR_SHIFT;

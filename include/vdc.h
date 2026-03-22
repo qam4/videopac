@@ -183,6 +183,11 @@ struct VDCState {
     // Previous scanline (for detecting scanline transitions in tick_one_cycle)
     uint16 prev_scanline;
     
+    // Latched graphic registers (0x00-0x9F) — snapshot taken at each scanline start
+    // Rendering reads from here; CPU writes go to registers[] and take effect next scanline
+    // Reference: 8245 datasheet — shift registers load from object registers per scanline
+    uint8 latched_registers[160];
+    
     // Port 1 P17 luminance enable (set by CPU, used for background/grid color intensity)
     // When P17=1 (luminance enabled), background/grid use dark palette (indices 0-7)
     // When P17=0 (luminance disabled), background/grid use bright palette (indices 8-15)
