@@ -319,6 +319,12 @@ public:
     std::string get_last_vdc_trace() const { return last_vdc_trace_; }
     void clear_last_vdc_trace() { last_vdc_trace_.clear(); }
 
+    // Scanline rendering mode — renders entire scanlines at once instead of per-pixel.
+    // Much faster (~2-3x) but produces identical output for well-behaved games.
+    // Safe because graphic registers can't change while display is enabled.
+    void set_scanline_render_mode(bool enabled) { scanline_render_mode_ = enabled; }
+    bool is_scanline_render_mode() const { return scanline_render_mode_; }
+
     // Legacy: end_scanline() for tests that don't use master clock
     void end_scanline();
 
@@ -326,6 +332,7 @@ private:
     VDCState state_;
     bool extended_fb_mode_;
     bool vdc_trace_enabled_;
+    bool scanline_render_mode_;
     std::string last_vdc_trace_;
     
     // Master clock reference (single source of truth for beam position)

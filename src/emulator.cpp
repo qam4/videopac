@@ -18,6 +18,11 @@ EmulatorCore::EmulatorCore(const Configuration& config)
     memory_.set_vdc(&vdc_);
     memory_.set_cpu(&cpu_);  // Allow memory system to read Port 1 from CPU
     vdc_.set_master_clock(&master_clock_);  // VDC queries master clock for beam position
+    
+    // Enable scanline rendering mode if configured
+    if (config.scanline_render) {
+        vdc_.set_scanline_render_mode(true);
+    }
 }
 
 Result<void> EmulatorCore::load_bios(const std::string& path) {

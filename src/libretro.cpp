@@ -54,8 +54,12 @@ static struct retro_variable core_options[] = {
     { "videopac_palette", "Palette; Standard|Videopac+" },
     { "videopac_vkbd_transparency", "Virtual Keyboard Transparency; 25%|0%|50%|75%" },
     { "videopac_swap_joysticks", "Swap Joysticks; disabled|enabled" },
+    { "videopac_scanline_render", "Fast Scanline Rendering; disabled|enabled" },
     { nullptr, nullptr }
 };
+
+// Scanline render mode (set via core option, applied at load_game)
+static bool scanline_render = false;
 
 // --- Helper functions ---
 
@@ -127,6 +131,18 @@ static void check_variables() {
     var.value = nullptr;
     if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
         vkb_transparency_pct = static_cast<uint8_t>(atoi(var.value));
+    }
+
+    var.key = "videopac_scanline_render";
+    var.value = nullptr;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        bool new_val = (strcmp(var.value, "enabled") == 0);
+        if (new_val != scanline_render) {
+            scanline_render = new_val;
+            if (emulator) {
+                emulator->get_vdc().set_scanline_render_mode(scanline_render);
+            }
+        }
     }
 }
 
@@ -510,6 +526,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
     // Create emulator
     videopac::Configuration config;
     config.video_standard = video_standard;
+    config.scanline_render = scanline_render;
     emulator = new videopac::EmulatorCore(config);
 
     // Load BIOS

@@ -79,6 +79,7 @@ struct BenchmarkConfig {
     double baseline_fps = 0.0;
     std::string profile_output;  // CSV output path (empty = summary to stdout)
     int select_game    = 0;      // 0 = no game selection, 1-9 = press key N to start game
+    bool scanline_render = false; // Use fast scanline-based rendering
 };
 
 struct BenchmarkResult {
@@ -118,6 +119,7 @@ static void print_usage(const char* prog) {
         "  --baseline-fps <F>       Baseline FPS for --check mode\n"
         "  --profile-output <path>  Write per-frame CSV timing data to file\n"
         "  --select-game <N>        Press key N (1-9) during warmup to start game\n"
+        "  --scanline-render        Use fast scanline-based rendering\n"
         "\n"
         "Exit codes:\n"
         "  0  Success\n"
@@ -197,6 +199,8 @@ static int parse_args(int argc, char* argv[], BenchmarkConfig& config) {
                 fprintf(stderr, "Error: --select-game must be 1-9\n");
                 return 2;
             }
+        } else if (strcmp(argv[i], "--scanline-render") == 0) {
+            config.scanline_render = true;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "Error: unknown option '%s'\n", argv[i]);
             print_usage(argv[0]);
@@ -261,6 +265,7 @@ static int run_benchmark(const BenchmarkConfig& config) {
     videopac::Configuration emu_config;
     emu_config.video_standard = videopac::VideoStandard::NTSC;
     emu_config.enable_profile = false;
+    emu_config.scanline_render = config.scanline_render;
 
     videopac::EmulatorCore emu(emu_config);
 

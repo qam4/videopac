@@ -19,8 +19,9 @@ struct Configuration {
     VideoStandard video_standard;
     std::string bios_path;
     bool enable_profile;
+    bool scanline_render;  // Use fast scanline-based rendering instead of per-pixel
     
-    Configuration() : video_standard(VideoStandard::NTSC), enable_profile(false) {}
+    Configuration() : video_standard(VideoStandard::NTSC), enable_profile(false), scanline_render(false) {}
 };
 
 // Emulator core

@@ -50,6 +50,7 @@ namespace videopac {
 VDC::VDC(VideoStandard standard) {
     state_.video_standard = standard;
     extended_fb_mode_ = false;
+    scanline_render_mode_ = false;
     vdc_trace_enabled_ = false;
     master_clock_ = nullptr;
     latched_beam_y_ = 0;
@@ -147,9 +148,18 @@ void VDC::tick_one_cycle() {
         
         // Detect scanline transition for color and graphic register latching
         if (new_y != state_.prev_scanline) {
+            // Scanline rendering mode: render the previous scanline in one pass
+            if (scanline_render_mode_ && state_.prev_scanline < FRAMEBUFFER_HEIGHT) {
+                uint16 saved_y = state_.beam_y;
+                state_.beam_y = state_.prev_scanline;
+                render_scanline();
+                state_.beam_y = saved_y;
+            }
+            
             state_.latched_color = state_.registers[VDCRegisters::COLOR];
             // Latch graphic registers 0x00-0x9F for rendering
             std::memcpy(state_.latched_registers, state_.registers, 160);
+            
             state_.prev_scanline = new_y;
         }
         
@@ -157,11 +167,13 @@ void VDC::tick_one_cycle() {
         state_.beam_y = new_y;
     }
     
-    // 1. Render pixel at current beam position
-    render_current_pixel();
+    // 1. Render pixel at current beam position (skip in scanline render mode)
+    if (!scanline_render_mode_) {
+        render_current_pixel();
+    }
     
-    // 2. Per-pixel collision detection (hardware does this as objects render)
-    if (state_.display_enabled) {
+    // 2. Per-pixel collision detection (skip in scanline render mode — handled by render_scanline)
+    if (!scanline_render_mode_ && state_.display_enabled) {
         int bx = static_cast<int>(state_.beam_x);
         int by = static_cast<int>(state_.beam_y);
         int fb_x = bx - FramebufferMapping::FRAMEBUFFER_START_X;
@@ -284,7 +296,7 @@ void VDC::write_register(uint8 address, uint8 value) {
             // Control register - update display and grid enable flags
             // Reference: doc/o2doc.md section 4.6, doc/8245.md lines 440-470
             state_.display_enabled = (value & ControlBits::ENABLE_DISPLAY) != 0;
-            state_.grid_enabled = (value & ControlBits::ENABLE_GRID) != 0;          
+            state_.grid_enabled = (value & ControlBits::ENABLE_GRID) != 0;
              break;
         }
             
@@ -422,11 +434,6 @@ uint8 VDC::read_register(uint8 address) {
 // rendering happens per-pixel via render_current_pixel() called from tick_one_cycle().
 // Reference: doc/o2doc.md section 4.0, doc/8245.md lines 200-300
 void VDC::render_scanline() {
-    // Check if display is enabled
-    if (!state_.display_enabled) {
-        return;
-    }
-    
     // Use beam_y directly (hardware coordinate)
     int beam_y = static_cast<int>(state_.beam_y);
     
@@ -438,9 +445,15 @@ void VDC::render_scanline() {
         return;
     }
     
+    // When display is disabled, fill with background color (same as render_current_pixel)
+    if (!state_.display_enabled) {
+        uint8 color_reg = state_.latched_color;
+        uint8 bg_color = ((color_reg & 0x38) >> 3) | (state_.luminance_enabled ? 0 : 8);
+        std::memset(&state_.framebuffer[fb_y][0], bg_color, FRAMEBUFFER_WIDTH);
+        return;
+    }
+    
     // Render in priority order (background to foreground)
-    // Reference: doc/o2doc.md section 4.0, design.md Property 21
-    // Pass fb_y (framebuffer coordinate) to helper functions
     render_background(fb_y);
     render_grid(fb_y);
     render_characters(fb_y);
