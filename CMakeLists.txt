@@ -3,13 +3,13 @@ project(videopac_emulator VERSION 0.6.0 LANGUAGES C CXX)
 
 # Generate version header and libretro info from CMake project version
 configure_file(
-    ${CMAKE_SOURCE_DIR}/include/version.h.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in
     ${CMAKE_BINARY_DIR}/generated/version.h
     @ONLY
 )
 configure_file(
-    ${CMAKE_SOURCE_DIR}/videopac_libretro.info.in
-    ${CMAKE_SOURCE_DIR}/videopac_libretro.info
+    ${CMAKE_CURRENT_SOURCE_DIR}/videopac_libretro.info.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/videopac_libretro.info
     @ONLY
 )
 
@@ -51,8 +51,8 @@ if(O2EM_COMPAT)
 endif()
 
 # Include directories
-include_directories(${CMAKE_SOURCE_DIR}/include)
-include_directories(${CMAKE_SOURCE_DIR}/third_party)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # Source files for core emulator library
 set(CORE_SOURCES
@@ -88,7 +88,7 @@ set(UI_SOURCES
 # Core emulator library
 add_library(videopac_core STATIC ${CORE_SOURCES})
 target_include_directories(videopac_core PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_BINARY_DIR}/generated
 )
 # Required for linking into shared libraries (libretro .so) on Linux
@@ -274,7 +274,7 @@ if(BUILD_LIBRETRO)
     )
     
     target_link_libraries(videopac_libretro videopac_core)
-    target_include_directories(videopac_libretro PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_include_directories(videopac_libretro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     
     # Libretro naming convention
     set_target_properties(videopac_libretro PROPERTIES
@@ -298,7 +298,7 @@ if(BUILD_STANDALONE AND TARGET videopac)
 endif()
 if(BUILD_LIBRETRO AND TARGET videopac_libretro)
     install(TARGETS videopac_libretro LIBRARY DESTINATION lib RUNTIME DESTINATION lib)
-    install(FILES ${CMAKE_SOURCE_DIR}/videopac_libretro.info DESTINATION lib)
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/videopac_libretro.info DESTINATION lib)
 endif()
 
 # Testing
