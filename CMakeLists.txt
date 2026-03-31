@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.15)
-project(videopac_emulator VERSION 1.0.0 LANGUAGES C CXX)
+project(videopac_emulator VERSION 0.6.0 LANGUAGES C CXX)
+
+# Generate version header and libretro info from CMake project version
+configure_file(
+    ${CMAKE_SOURCE_DIR}/include/version.h.in
+    ${CMAKE_BINARY_DIR}/generated/version.h
+    @ONLY
+)
+configure_file(
+    ${CMAKE_SOURCE_DIR}/videopac_libretro.info.in
+    ${CMAKE_SOURCE_DIR}/videopac_libretro.info
+    @ONLY
+)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -75,7 +87,10 @@ set(UI_SOURCES
 
 # Core emulator library
 add_library(videopac_core STATIC ${CORE_SOURCES})
-target_include_directories(videopac_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(videopac_core PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}/generated
+)
 # Required for linking into shared libraries (libretro .so) on Linux
 set_target_properties(videopac_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

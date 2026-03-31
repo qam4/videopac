@@ -325,6 +325,12 @@ public:
     void set_scanline_render_mode(bool enabled) { scanline_render_mode_ = enabled; }
     bool is_scanline_render_mode() const { return scanline_render_mode_; }
 
+    // Render enable — when false, skip all rendering and collision detection.
+    // CPU/VDC timing, status register, audio, and register latching still run.
+    // Used by retro-ai frame_skip: only render the last of N frames.
+    void set_render_enabled(bool enabled) { render_enabled_ = enabled; }
+    bool is_render_enabled() const { return render_enabled_; }
+
     // Legacy: end_scanline() for tests that don't use master clock
     void end_scanline();
 
@@ -333,6 +339,7 @@ private:
     bool extended_fb_mode_;
     bool vdc_trace_enabled_;
     bool scanline_render_mode_;
+    bool render_enabled_;
     std::string last_vdc_trace_;
     
     // Master clock reference (single source of truth for beam position)

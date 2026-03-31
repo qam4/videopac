@@ -1,5 +1,6 @@
 #include "frontend_sdl.h"
 #include "types.h"
+#include "version.h"
 #include "ui/text_renderer.h"
 #include "ui/menu_system.h"
 #include "ui/config_manager.h"
@@ -1959,7 +1960,7 @@ void SDLFrontend::handle_display_info() {
     // Build info message
     std::string rom_info = current_rom_name_.empty() ? "None" : current_rom_name_;
     std::string bios_info = current_bios_name_.empty() ? "None" : current_bios_name_;
-    std::string version_info = "v0.5.0";
+    std::string version_info = "v" + std::string(VIDEOPAC_VERSION);
     
     std::string message = "ROM: " + rom_info + "\n" +
                          "BIOS: " + bios_info + "\n" +

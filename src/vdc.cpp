@@ -51,6 +51,7 @@ VDC::VDC(VideoStandard standard) {
     state_.video_standard = standard;
     extended_fb_mode_ = false;
     scanline_render_mode_ = false;
+    render_enabled_ = true;
     vdc_trace_enabled_ = false;
     master_clock_ = nullptr;
     latched_beam_y_ = 0;
@@ -149,7 +150,7 @@ void VDC::tick_one_cycle() {
         // Detect scanline transition for color and graphic register latching
         if (new_y != state_.prev_scanline) {
             // Scanline rendering mode: render the previous scanline in one pass
-            if (scanline_render_mode_ && state_.prev_scanline < FRAMEBUFFER_HEIGHT) {
+            if (render_enabled_ && scanline_render_mode_ && state_.prev_scanline < FRAMEBUFFER_HEIGHT) {
                 uint16 saved_y = state_.beam_y;
                 state_.beam_y = state_.prev_scanline;
                 render_scanline();
@@ -167,13 +168,13 @@ void VDC::tick_one_cycle() {
         state_.beam_y = new_y;
     }
     
-    // 1. Render pixel at current beam position (skip in scanline render mode)
-    if (!scanline_render_mode_) {
+    // 1. Render pixel at current beam position (skip in scanline render mode or render disabled)
+    if (render_enabled_ && !scanline_render_mode_) {
         render_current_pixel();
     }
     
-    // 2. Per-pixel collision detection (skip in scanline render mode — handled by render_scanline)
-    if (!scanline_render_mode_ && state_.display_enabled) {
+    // 2. Per-pixel collision detection (skip in scanline render mode or render disabled)
+    if (render_enabled_ && !scanline_render_mode_ && state_.display_enabled) {
         int bx = static_cast<int>(state_.beam_x);
         int by = static_cast<int>(state_.beam_y);
         int fb_x = bx - FramebufferMapping::FRAMEBUFFER_START_X;

@@ -38,7 +38,7 @@ public:
     
     // Emulation control
     void reset();
-    void run_frame();
+    void run_frame(bool render = true);
     void step();  // Single instruction for debugging
     
     // Output

@@ -86,10 +86,14 @@ void EmulatorCore::reset() {
     // The BIOS will then jump to 0x400 (cartridge entry point)
 }
 
-void EmulatorCore::run_frame() {
+void EmulatorCore::run_frame(bool render) {
     if (!running_ || paused_) {
         return;
     }
+    
+    // Set VDC render enable — when false, skips rendering and collision detection
+    // but keeps CPU/VDC timing, status register, audio, and register latching intact.
+    vdc_.set_render_enabled(render);
     
     // Reset VBlank flag in status register at start of frame
     // (it will be latched again when vblank_rising_edge fires)
